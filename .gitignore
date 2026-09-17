@@ -1,0 +1,27 @@
+# ===== 机密信息：永远不进仓库 =====
+# .env 存放密码、API 密钥、数据库连接串
+.env
+.env.*
+*.pem
+*.key
+
+# ===== 依赖目录：体积大、可用 package.json 重新安装 =====
+node_modules/
+__pycache__/
+venv/
+
+# ===== 本地数据库文件 =====
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== 系统与编辑器杂物 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# ===== 日志与临时文件 =====
+*.log
+*.tmp
