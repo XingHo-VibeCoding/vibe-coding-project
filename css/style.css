@@ -1,0 +1,481 @@
+/* ============================================================
+   大学生日程助手 · 样式表
+   第 1 步（Day 7）：只写骨架所需的基础样式
+   响应式：手机端底部标签栏 + 卡片式；桌面端宽屏
+   ============================================================ */
+
+:root {
+  --c-bg: #f6f7f9;
+  --c-surface: #ffffff;
+  --c-border: #e3e6ea;
+  --c-text: #1f2329;
+  --c-text-dim: #6b7280;
+  --c-primary: #2f6feb;
+  --c-primary-soft: #eaf1fe;
+  --c-danger: #d64545;
+  --c-warn-bg: #fff6e5;
+  --c-warn-border: #f0c46a;
+  --radius: 10px;
+  --gap: 12px;
+}
+
+* { box-sizing: border-box; }
+
+/* hidden 属性必须永远生效：
+   类选择器（如 .mask 的 display:flex）会盖掉浏览器给 [hidden] 的默认 display:none，
+   导致「标了 hidden 却依然显形」——弹窗遮罩曾因此挡住整个页面。 */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* ---------- 顶部提示条（错误/提示统一出口） ---------- */
+.banner {
+  padding: 10px 16px;
+  background: var(--c-warn-bg);
+  border-bottom: 1px solid var(--c-warn-border);
+  font-size: 14px;
+}
+.banner--error {
+  background: #fdecec;
+  border-bottom-color: var(--c-danger);
+}
+
+/* ---------- 顶栏 + 视图切换 ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  padding: 12px 16px;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-border);
+}
+.topbar__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.topbar__week {
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--c-primary);
+}
+.topbar__week.is-empty { color: var(--c-text-dim); }
+
+.topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tabs { display: flex; gap: 6px; }
+
+.tab {
+  padding: 6px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text-dim);
+  font-size: 14px;
+  cursor: pointer;
+}
+.tab.is-active {
+  background: var(--c-primary-soft);
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+  font-weight: 600;
+}
+
+/* ---------- 主体 ---------- */
+.main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.view { min-height: 200px; }
+
+/* 骨架占位卡片（第③步起会被真实内容替换） */
+.placeholder {
+  padding: 20px;
+  background: var(--c-surface);
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius);
+  color: var(--c-text-dim);
+  font-size: 14px;
+}
+.placeholder h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: var(--c-text);
+}
+.placeholder ul { margin: 8px 0 0; padding-left: 20px; }
+
+/* ---------- 弹窗骨架 ---------- */
+.mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 28, 35, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal {
+  width: 100%;
+  max-width: 460px;
+  max-height: 86vh;
+  overflow: auto;
+  background: var(--c-surface);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+/* ---------- 轻提示 ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(31, 35, 41, 0.9);
+  color: #fff;
+  font-size: 14px;
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  padding: 6px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--c-primary); color: var(--c-primary); }
+.btn--primary {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+  font-weight: 600;
+}
+.btn--primary:hover { background: #2a62d0; border-color: #2a62d0; color: #fff; }
+.btn--ghost { color: var(--c-text-dim); }
+.btn--sm { padding: 3px 10px; font-size: 13px; }
+.btn--danger { color: var(--c-danger); border-color: #f0c4c4; }
+.btn--danger:hover { background: #fdecec; border-color: var(--c-danger); color: var(--c-danger); }
+
+/* 表单内的横向字段行（星期/时间/时长） */
+.form__row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 8px;
+}
+.form__actions--split { justify-content: space-between; }
+.form__actions__right { display: flex; gap: 8px; }
+
+/* ---------- 表单（学期设置等） ---------- */
+.form { display: grid; gap: 12px; }
+.form__title { margin: 0; font-size: 16px; }
+.form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.form__actions--left { justify-content: flex-start; }
+
+.field { display: grid; gap: 5px; }
+.field__label { font-size: 13px; color: var(--c-text-dim); }
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: inherit;
+  font-size: 14px;
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--c-primary);
+}
+.field--invalid input,
+.field--invalid select { border-color: var(--c-danger); background: #fff7f7; }
+.field__error { font-size: 12px; color: var(--c-danger); }
+
+.hint { margin: 0; font-size: 12px; color: var(--c-text-dim); }
+
+/* ---------- 学期摘要条 ---------- */
+.termbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+}
+.termbar__name { font-weight: 600; }
+.termbar__meta { font-size: 13px; color: var(--c-text-dim); }
+.termbar .btn { margin-left: auto; }
+
+/* ---------- 周视图（第③步） ---------- */
+.weeknav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.weeknav__label { font-weight: 600; font-size: 14px; }
+.weeknav .btn--primary { margin-left: auto; }
+
+.weekgrid-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+.weekgrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(128px, 1fr));
+  gap: 8px;
+  min-width: 910px;
+}
+.day-col {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.day-col__head {
+  padding: 7px 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text-dim);
+  border-bottom: 1px solid var(--c-border);
+}
+.day-col.is-today .day-col__head {
+  color: var(--c-primary);
+  background: var(--c-primary-soft);
+}
+.day-col__body {
+  padding: 6px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-height: 110px;
+}
+.day-col__empty {
+  font-size: 12px;
+  color: #c3c8cf;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.course-card {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+  border: 1px solid var(--c-border);
+  border-left: 3px solid var(--c-primary);
+  border-radius: 8px;
+  background: var(--c-primary-soft);
+  font-family: inherit;
+  cursor: pointer;
+}
+.course-card:hover { border-color: var(--c-primary); }
+.course-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.course-card__time { font-size: 11px; color: var(--c-text-dim); }
+.course-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}
+.course-card__loc { font-size: 12px; color: var(--c-text-dim); }
+
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+.weekhint { margin-top: 10px; }
+
+/* ---------- 冲突确认弹窗 ---------- */
+.conflict__list {
+  margin: 8px 0;
+  padding-left: 20px;
+  font-size: 14px;
+}
+.conflict__list li { margin: 4px 0; }
+
+/* ---------- 待办（第④步：周视图列内待办区 + 今日视图） ---------- */
+
+.day-col__todos {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e5e5e5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.todo-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #e2e2e2;
+  border-radius: 8px;
+  padding: 4px 6px;
+}
+
+.todo-chip__check {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid #b9b9b9;
+  border-radius: 5px;
+  background: #fff;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.todo-chip.is-done .todo-chip__check {
+  background: var(--c-primary, #4a7dff);
+  border-color: var(--c-primary, #4a7dff);
+}
+
+.todo-chip__title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+  color: var(--c-text);
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-chip.is-done .todo-chip__title {
+  color: var(--c-text-dim);
+  text-decoration: line-through;
+}
+
+/* ---------- 今日视图 ---------- */
+
+.todayhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.todayhead__date { font-size: 15px; font-weight: 600; }
+.todayhead__week { color: var(--c-text-dim); font-size: 13px; margin-right: auto; }
+
+.today-sec { margin-bottom: 18px; }
+
+.today-sec__title {
+  font-size: 13px;
+  color: var(--c-text-dim);
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.today-sec__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.today-sec__body .course-card,
+.today-sec__body .todo-chip { width: 100%; }
+
+.summary {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.summary[data-empty="1"] { color: var(--c-text-dim); font-weight: 400; }
+
+/* ---------- 手机端（PRD F11） ---------- */
+@media (max-width: 640px) {
+  /* 标题 + 设置按钮留在顶部一行，视图标签落到底部 */
+  .topbar { padding: 10px 12px; }
+  .topbar__title { font-size: 16px; }
+  .topbar__week { font-size: 12px; }
+  .tabs {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    justify-content: space-around;
+    padding: 8px 12px;
+    background: var(--c-surface);
+    border-top: 1px solid var(--c-border);
+    z-index: 10;
+  }
+  .tab {
+    flex: 1;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 0;
+    text-align: center;
+  }
+  .main { padding: 12px 12px 72px; }
+  .toast { bottom: 76px; }
+  .summary { bottom: 64px; }
+  .form__row { grid-template-columns: 1fr; }
+  .weeknav { gap: 6px; }
+}
