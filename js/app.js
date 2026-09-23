@@ -17,6 +17,168 @@ window.App = (function () {
   function isDateStr(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')); }
   function isTimeStr(s) { return /^\d{2}:\d{2}$/.test(String(s || '')); }
 
+  /* 第一周必须是周一，否则周次换算、单双周、.ics 日期全错 */
+  function mondayErrMsg(s) {
+    if (!Rules.parseDate(s)) return null;
+    /* 修 bug：这里原本漏了「是周一就通过」的判断，导致选周一也被拒， */
+    /* 而且文案照实说「你选的是周一」，自相矛盾。 */
+    if (Rules.isMonday(s)) return null;
+    return '必须选一个周一（你选的是' + Rules.weekdayName(s) + '）';
+  }
+
+  /* 节次：从 DOM 逐行收集 [{start,end}] → Rules 校验并重排序号 */
+  function collectPeriods(containerId) {
+    var box = $(containerId);
+    if (!box) return { ok: true, periods: [] };
+    var rows = box.querySelectorAll('.periods__row');
+    var pairs = [];
+    for (var i = 0; i < rows.length; i++) {
+      var st = rows[i].querySelector('[data-role="start"]');
+      var en = rows[i].querySelector('[data-role="end"]');
+      pairs.push({ start: st ? st.value : '', end: en ? en.value : '' });
+    }
+    return Rules.periodsFromPairs(pairs);
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function minToTime(m) {
+    m = ((m % 1440) + 1440) % 1440;
+    return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60);
+  }
+
+  /* 从点击的元素往上找最近的某类祖先（不用 closest，保持兼容）
+     注意：必须「整个类名相等」才算命中，不能用 indexOf 子串判断——
+     .periods__actions / .periods__row / .periods__del 里都含 "periods" 字样，
+     子串匹配会把「添加一节」按钮的父容器误认成节次容器（Day 8 实测踩到）。 */
+  function closestByClass(el, cls) {
+    while (el && el !== document) {
+      if (el.classList && el.classList.contains(cls)) return el;
+      if (!el.classList && el.className) {
+        var parts = String(el.className).split(/\s+/);
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i] === cls) return el;
+        }
+      }
+      el = el.parentNode;
+    }
+    return null;
+  }
+
+  /* 找出某个元素所属的「节次容器」（就是那一串 .periods__row 的父节点）。
+     为什么不能靠 closestByClass 往上找 .periods：
+     .periods__actions（放「添加一节」按钮的那条）和 .periods 是**兄弟**关系，
+     按钮往上永远走不到 .periods。所以改为先找到包裹它们的 .field[data-field="periods"]，
+     再在它里面取 .periods。 */
+  function periodsBoxOf(el) {
+    while (el && el !== document) {
+      if (el.getAttribute && el.getAttribute('data-field') === 'periods') {
+        return el.querySelector('.periods');
+      }
+      el = el.parentNode;
+    }
+    return null;
+  }
+
+  /* 到 15 节上限时把「添加一节」按钮变灰。
+     为什么用轻提示（底部浮动）而不是顶部提示条：
+     表单在页面下方、手机上一屏只看到一截，提示条跑到页面最上面根本看不见。
+     toast 固定在视口底部，正好落在手指附近。 */
+  function periodsCapState(box) {
+    var field = box && box.parentNode;
+    if (!field) return false;
+    var btn = field.querySelector('[data-action="add-period"]');
+    var full = box.querySelectorAll('.periods__row').length >= 15;
+    if (btn) btn.className = full ? 'btn btn--sm is-dim' : 'btn btn--sm';
+    return full;
+  }
+
+  /* 增删节次后重排序号（界面上「第N节」与实际顺序始终一致） */
+  function renumberPeriods(box) {
+    if (!box) return;
+    var rows = box.querySelectorAll('.periods__row');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].setAttribute('data-no', i + 1);
+      var label = rows[i].querySelector('.periods__no');
+      if (label) label.textContent = '第 ' + (i + 1) + ' 节';
+      var st = rows[i].querySelector('[data-role="start"]');
+      var en = rows[i].querySelector('[data-role="end"]');
+      if (st) st.setAttribute('aria-label', '第' + (i + 1) + '节开始时间');
+      if (en) en.setAttribute('aria-label', '第' + (i + 1) + '节结束时间');
+    }
+    periodsCapState(box);
+  }
+
+  function addPeriodRow(btn) {
+    var box = periodsBoxOf(btn);
+    if (!box) return;
+    var rows = box.querySelectorAll('.periods__row');
+    if (rows.length >= 15) { Views.toast('一天最多 15 节，删掉一节才能再加。'); return; }
+
+    var start = '08:00', end = '08:45';
+    if (rows.length) {
+      var lastEnd = rows[rows.length - 1].querySelector('[data-role="end"]');
+      var base = lastEnd && lastEnd.value ? Rules.timeToMin(lastEnd.value) : 8 * 60;
+      if (base < 0) base = 8 * 60;
+      start = minToTime(base + 10);          // 上一节结束后歇 10 分钟
+      end = minToTime(base + 10 + 45);       // 默认一节课 45 分钟
+    }
+    /* 插到「最后一个节次行」之后：box 里只有 .periods__row，
+       「添加一节」按钮在 box 外面（.periods__actions 里），所以不会插到按钮下方 */
+    box.insertAdjacentHTML('beforeend', Views.periodRow(rows.length + 1, start, end));
+    renumberPeriods(box);
+    Views.clearFieldMarks();
+  }
+
+  function removePeriodRow(btn) {
+    var row = closestByClass(btn, 'periods__row');
+    var box = periodsBoxOf(btn);
+    if (!row || !box) return;
+    row.parentNode.removeChild(row);
+    renumberPeriods(box);
+    Views.clearFieldMarks();
+  }
+
+  /* ---------------- 四种页面状态（Day 8） ----------------
+     appState: 'loading' | 'empty' | 'error' | 'success'
+     fetchState 是数据获取的唯一入口：现在是「模拟延迟 + 本地读取」，
+     第 3 周接真实 API 时只改这个函数，渲染层不动。 */
+  var appState = 'loading';
+
+  /* 模拟等待时长。本地读 localStorage 其实是瞬时的，300ms 根本看不见骨架屏，
+     所以调到 600ms —— 足够肉眼确认「加载中」这一态存在。接真实 API 后删掉这个常量。 */
+  var MOCK_LATENCY_MS = 600;
+
+  function fetchState() {
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        var s = Store.load();
+        resolve({ state: s, issue: Store.lastLoadIssue() });
+      }, MOCK_LATENCY_MS);
+    });
+  }
+
+  function showOnly(name) {
+    appState = name;
+    var sk = $('app-skeleton');
+    var setup = $('view-setup');
+    var week = $('view-week');
+    var today = $('view-today');
+    if (sk) sk.hidden = name !== 'loading';
+    if (setup) setup.hidden = !(name === 'empty' || name === 'error');
+    var success = name === 'success';
+    if (week) week.hidden = !success || currentView !== 'week';
+    if (today) today.hidden = !success || currentView !== 'today';
+    var tabs = document.querySelector('.tabs');
+    if (tabs) tabs.hidden = !success;   // 还没有数据时，视图切换没意义
+
+    /* 已有 15 节（例如上次存过）时，按钮上来就该是灰的，不用等点到才知道 */
+    if (setup && !setup.hidden) {
+      var pbox = setup.querySelector('.periods');
+      if (pbox) periodsCapState(pbox);
+    }
+  }
+
   /* ---------------- 视图切换 ---------------- */
 
   function switchView(name) {
@@ -78,12 +240,16 @@ window.App = (function () {
   function openSettings() {
     Views.clearFieldMarks();
     Views.openModal(Views.semesterForm(state ? state.semester : null));
+    /* 打开就把已有值的判定显示出来，别等用户改动才提示 */
+    Views.setWeeksHint('f-weeks');
+    Views.setMondayHint('f-monday');
     Views.banner('');
   }
 
   function onSemesterSubmit(e) {
     e.preventDefault();
     Views.clearFieldMarks();
+    var form = e.target;
 
     var nameEl = $('f-name');
     var mondayEl = $('f-monday');
@@ -97,22 +263,26 @@ window.App = (function () {
     };
 
     var bad = false;
-    if (!String(input.name).trim()) { Views.markField('name', '请填写学期名'); bad = true; }
+    if (!String(input.name).trim()) { Views.markField('name', '请填写学期名', form); bad = true; }
     if (!isDateStr(input.first_monday)) {
-      Views.markField('first_monday', '请选择第一周的周一');
+      Views.markField('first_monday', '请选择第一周的周一', form);
       bad = true;
     } else {
-      /* 第一周必须从周一开始，否则周次换算、单双周、.ics 日期全错 */
-      var fmDate = Rules.parseDate(input.first_monday);
-      if (!fmDate || fmDate.getDay() !== 1) {
-        var wdNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-        Views.markField('first_monday', '必须选一个周一（你选的是' + wdNames[fmDate ? fmDate.getDay() : 0] + '）');
-        bad = true;
-      }
+      var mErr = mondayErrMsg(input.first_monday);
+      if (mErr) { Views.markField('first_monday', mErr, form); bad = true; }
     }
 
-    var tw = Number(input.total_weeks);
-    if (!(tw >= 1 && tw <= 30)) { Views.markField('total_weeks', '请填 1–30 之间的整数'); bad = true; }
+    /* 总周数：与实时提示共用 Rules.weeksError，说法不会两处不一致 */
+    var wErr = Rules.weeksError(input.total_weeks);
+    if (wErr) { Views.markField('total_weeks', wErr, form); bad = true; }
+
+    /* 节次时间（Day 8）：逐节编辑，全删 = 不设节次 */
+    if ($('f-periods')) {
+      var pRes = collectPeriods('f-periods');
+      if (!pRes.ok) { Views.markField('periods', pRes.error, form); bad = true; }
+      else input.periods = pRes.periods;
+    }
+
     if (bad) return;
 
     var res = Store.saveSemester(input);
@@ -124,8 +294,61 @@ window.App = (function () {
     state = Store.load();
     viewWeek = null;          // 学期变了，查看周回到本周
     render();
+    switchView(currentView);
     Views.closeModal();
     Views.toast('学期已保存');
+  }
+
+  /* ---------------- 初始设定页提交（Day 8 空状态主入口） ---------------- */
+
+  function onSetupSubmit(e) {
+    e.preventDefault();
+    Views.clearFieldMarks();
+    var form = e.target;
+
+    var nameEl = $('su-name');
+    var mondayEl = $('su-monday');
+    var weeksEl = $('su-weeks');
+    if (!nameEl || !mondayEl || !weeksEl) return;
+
+    var input = {
+      name: nameEl.value,
+      first_monday: mondayEl.value,
+      total_weeks: weeksEl.value
+    };
+
+    var bad = false;
+    if (!String(input.name).trim()) { Views.markField('name', '请填写学期名', form); bad = true; }
+    if (!isDateStr(input.first_monday)) {
+      Views.markField('first_monday', '请选择第一周的周一', form);
+      bad = true;
+    } else {
+      var mErr = mondayErrMsg(input.first_monday);
+      if (mErr) { Views.markField('first_monday', mErr, form); bad = true; }
+    }
+
+    /* 总周数：与实时提示共用 Rules.weeksError，说法不会两处不一致 */
+    var wErr = Rules.weeksError(input.total_weeks);
+    if (wErr) { Views.markField('total_weeks', wErr, form); bad = true; }
+
+    var pRes = collectPeriods('su-periods');
+    if (!pRes.ok) { Views.markField('periods', pRes.error, form); bad = true; }
+    else input.periods = pRes.periods;
+
+    if (bad) return;
+
+    var res = Store.saveSemester(input);
+    if (!res.ok) {
+      Views.banner(res.error, true);
+      return;
+    }
+
+    state = Store.load();
+    viewWeek = null;
+    render();
+    showOnly('success');
+    Views.toast('学期已保存，开始使用');
+    Views.banner('下一步：在周视图点「＋ 添加课程」，把课表录进来。', false);
   }
 
   /* ---------------- 课程（添加 / 编辑 / 删除） ---------------- */
@@ -313,6 +536,26 @@ window.App = (function () {
     el.click();
   }
 
+  /* 表单里的即时联动（Day 8 反馈）：学期名下拉、第一周周一的星期提示 */
+  function onFormChange(e) {
+    var t = e.target;
+    if (!t || !t.id) return;
+    if (t.id === 'import-file') return;                  // 导入文件由 onImportFile 处理
+
+    var target = t.getAttribute && t.getAttribute('data-name-target');
+    if (target) { Views.applyNameSelect(t, target); return; }
+
+    if (t.id === 'su-monday' || t.id === 'f-monday') Views.setMondayHint(t.id);
+    if (t.id === 'su-weeks' || t.id === 'f-weeks') Views.setWeeksHint(t.id);
+  }
+
+  /* 输入过程中就提示（input 每敲一个字符就触发；change 要失焦才触发，太晚） */
+  function onInput(e) {
+    var t = e.target;
+    if (!t || !t.id) return;
+    if (t.id === 'su-weeks' || t.id === 'f-weeks') Views.setWeeksHint(t.id);
+  }
+
   function onImportFile(e) {
     var file = e.target && e.target.files && e.target.files[0];
     if (!file) return;
@@ -339,7 +582,11 @@ window.App = (function () {
 
   /* ---------------- 事件（统一委托，动态渲染的按钮也能响应） ---------------- */
 
-  function handleAction(action, id) {
+  /* trigger = 被点的那个元素本身。
+     节次行的增删要从「按钮」往上找它所在的行/容器，所以必须把元素传进来。
+     （Day 8 实测 bug：这里原来直接用了 e.target，但本函数没有 e 这个参数，
+       一点「添加一节」就抛 ReferenceError: e is not defined。） */
+  function handleAction(action, id, trigger) {
     if (action === 'open-settings') { openSettings(); return; }
     if (action === 'close-modal') { Views.closeModal(); return; }
 
@@ -393,6 +640,27 @@ window.App = (function () {
       if (q) { Views.clearFieldMarks(); Views.openModal(Views.courseForm(q)); }
       return;
     }
+
+    /* ---------------- 节次行增删（Day 8 反馈） ----------------
+       传 trigger（被点的按钮）而不是 e.target：本函数没有事件对象 e。
+       取不到按钮时 addPeriodRow/removePeriodRow 内部会安全返回，不会抛错。 */
+    if (action === 'add-period') { addPeriodRow(trigger); return; }
+    if (action === 'del-period') { removePeriodRow(trigger); return; }
+
+    /* ---------------- 四种页面状态的动作（Day 8） ---------------- */
+    if (action === 'load-demo') {
+      if (window.Mock) Views.renderDemo(Mock.courses, Mock.todos);
+      return;
+    }
+    if (action === 'retry-load') { location.reload(); return; }
+    if (action === 'reset-data') { Views.openModal(Views.confirmResetModal()); return; }
+    if (action === 'confirm-reset') {
+      var rr = Store.resetAll();
+      if (!rr.ok) { Views.banner(rr.error, true); return; }
+      Views.closeModal();
+      location.reload();
+      return;
+    }
   }
 
   function onClick(e) {
@@ -400,7 +668,7 @@ window.App = (function () {
     while (el && el !== document) {
       var action = el.getAttribute && el.getAttribute('data-action');
       if (action) {
-        handleAction(action, el.getAttribute('data-id'));
+        handleAction(action, el.getAttribute('data-id'), el);
         return;
       }
       el = el.parentNode;
@@ -412,6 +680,7 @@ window.App = (function () {
   function onSubmit(e) {
     if (!e.target) return;
     if (e.target.id === 'semester-form') onSemesterSubmit(e);
+    else if (e.target.id === 'setup-form') onSetupSubmit(e);
     else if (e.target.id === 'course-form') onCourseSubmit(e);
     else if (e.target.id === 'todo-form') onTodoSubmit(e);
   }
@@ -422,6 +691,58 @@ window.App = (function () {
 
   /* ---------------- 启动 ---------------- */
 
+  /* ---------------- 启动自检（Day 8 实测反馈）----------------
+     浏览器会缓存 js：可能出现「新的 views.js + 旧的 rules.js」这种混载，
+     报出来的是「Rules.isMonday is not a function」——看着像代码写错，
+     其实是缓存。这里启动时点一遍各层必须有的函数，缺了就直接告诉他强刷。 */
+  var LAYER_API = [
+    { file: 'store.js', obj: 'Store', need: ['load', 'saveSemester', 'saveSchedule', 'toggleTodo', 'exportAll', 'importAll', 'defaultPeriods', 'resetAll'] },
+    { file: 'rules.js', obj: 'Rules', need: ['parseDate', 'isMonday', 'weekdayName', 'weeksError', 'periodsFromPairs', 'currentWeekNo', 'coursesOfWeek', 'findConflicts', 'todaySummary'] },
+    { file: 'ics.js', obj: 'Ics', need: ['build', 'download'] },
+    { file: 'mock.js', obj: 'Mock', need: ['courses', 'todos'] },
+    { file: 'views.js', obj: 'Views', need: ['setupPage', 'skeleton', 'errorCard', 'semesterForm', 'setMondayHint', 'setWeeksHint', 'renderWeek', 'renderToday'] }
+  ];
+
+  /* 返回缺失清单；空数组 = 各层齐全 */
+  function missingLayers() {
+    var bad = [];
+    for (var i = 0; i < LAYER_API.length; i++) {
+      var spec = LAYER_API[i];
+      var layer = window[spec.obj];
+      if (!layer) { bad.push(spec.file + '（没加载）'); continue; }
+      for (var j = 0; j < spec.need.length; j++) {
+        /* 只看「有没有」：函数和 Mock 的数组都算，旧版文件里没有就是 undefined */
+        if (layer[spec.need[j]] === undefined || layer[spec.need[j]] === null) {
+          bad.push(spec.file + ' 缺 ' + spec.need[j]);
+          break;
+        }
+      }
+    }
+    return bad;
+  }
+
+  /* 自检失败时直接摊开说，不依赖 Views（它可能正是旧的那个） */
+  function reportStaleLayers(bad) {
+    var msg = '页面脚本版本不一致：' + bad.join('、') +
+      '。这是浏览器缓存了旧文件导致的，不是数据坏了——按 Ctrl+Shift+R 强制刷新即可（Mac 用 Cmd+Shift+R）。';
+
+    var el = $('banner');
+    if (el) { el.className = 'banner banner--error'; el.textContent = msg; el.hidden = false; }
+
+    var sk = $('app-skeleton');
+    if (sk) sk.hidden = true;
+
+    var box = $('view-setup');
+    if (box) {
+      box.hidden = false;
+      /* 用 window.Views 而不是裸 Views：万一 views.js 是旧版，这里也不能再抛一次错 */
+      var V = window.Views;
+      box.innerHTML = (V && typeof V.errorCard === 'function')
+        ? V.errorCard(msg)
+        : '<div class="placeholder"><h2>脚本没加载全</h2><p>' + msg + '</p></div>';
+    }
+  }
+
   function init() {
     // 全局错误兜底：任何未捕获异常都不许白屏（TECH_DESIGN §6）
     window.onerror = function (msg) {
@@ -429,7 +750,12 @@ window.App = (function () {
       return false;
     };
 
-    state = Store.load();
+    /* 先自检：混载了旧文件就当场说清楚，不再让用户看到天书报错 */
+    var stale = missingLayers();
+    if (stale.length) {
+      reportStaleLayers(stale);
+      return;
+    }
 
     var tabs = document.querySelectorAll('.tab');
     for (var i = 0; i < tabs.length; i++) {
@@ -442,16 +768,36 @@ window.App = (function () {
     document.addEventListener('submit', onSubmit);
     document.addEventListener('keydown', onKeydown);
     document.addEventListener('change', onImportFile);
+    document.addEventListener('change', onFormChange);
+    document.addEventListener('input', onInput);
 
-    render();
+    /* 四态分流：加载中 → 错误 / 空（初始设定页）/ 成功 */
+    /* 骨架屏内容必须先填进去，否则那 0.6 秒只是一片空白（Day 8 反馈修复） */
+    var skBox = $('app-skeleton');
+    if (skBox) skBox.innerHTML = Views.skeleton();
+    showOnly('loading');
+    fetchState().then(function (r) {
+      state = r.state;
 
-    // 读取时发现的问题（数据损坏等）优先提示
-    var issue = Store.lastLoadIssue();
-    if (issue) {
-      Views.banner(issue, true);
-    } else if (!state.semester) {
-      Views.banner('还没有学期信息，点右上角「学期设置」填一次即可开始。', false);
-    }
+      if (r.issue) {
+        var setupBox = $('view-setup');
+        if (setupBox) setupBox.innerHTML = Views.errorCard(r.issue);
+        Views.banner('');
+        showOnly('error');
+        return;
+      }
+
+      if (!state.semester) {
+        var setupBox2 = $('view-setup');
+        if (setupBox2) setupBox2.innerHTML = Views.setupPage();
+        Views.banner('');
+        showOnly('empty');
+        return;
+      }
+
+      render();
+      showOnly('success');
+    });
   }
 
   return {

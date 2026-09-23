@@ -37,6 +37,54 @@ window.Store = (function () {
 
   function isDateStr(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')); }
   function isTimeStr(s) { return /^\d{2}:\d{2}$/.test(String(s || '')); }
+  function timeToMin(t) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(String(t || ''));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : -1;
+  }
+
+  /* ---------------- 上课节次时间（Day 8，方案 A：模板可编辑） ----------------
+     每所学校节次时间不同，模板只是默认值，学期设置里可整段修改。
+     存储形态：semester.periods = [{ no:1, start:'08:00', end:'08:45' }, ...] */
+
+  function defaultPeriods() {
+    return [
+      { no: 1,  start: '08:00', end: '08:45' },
+      { no: 2,  start: '08:55', end: '09:40' },
+      { no: 3,  start: '10:10', end: '10:55' },
+      { no: 4,  start: '11:05', end: '11:50' },
+      { no: 5,  start: '14:00', end: '14:45' },
+      { no: 6,  start: '14:55', end: '15:40' },
+      { no: 7,  start: '16:10', end: '16:55' },
+      { no: 8,  start: '17:05', end: '17:50' },
+      { no: 9,  start: '18:30', end: '19:15' },
+      { no: 10, start: '19:25', end: '20:10' }
+    ];
+  }
+
+  function normalizePeriods(list) {
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      out.push({ no: Number(list[i].no), start: String(list[i].start), end: String(list[i].end) });
+    }
+    out.sort(function (a, b) { return a.no - b.no; });
+    return out;
+  }
+
+  /* 返回错误文案；null = 合法。允许空数组（不设节次） */
+  function validatePeriods(list) {
+    if (!Array.isArray(list)) return '上课时间段格式不正确。';
+    if (list.length > 15) return '节次数最多 15 节。';
+    var seen = {};
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      var no = Number(p && p.no);
+      if (!(no >= 1 && no <= 15) || seen[no]) return '节次序号必须是 1–15 且不重复。';
+      seen[no] = true;
+      if (!isTimeStr(p.start) || !isTimeStr(p.end)) return '第 ' + no + ' 节的时间格式应为 HH:mm。';
+      if (timeToMin(p.start) >= timeToMin(p.end)) return '第 ' + no + ' 节的结束时间必须晚于开始时间。';
+    }
+    return null;
+  }
 
   /* ---------------- 底层读写：全项目只有这里碰 localStorage ---------------- */
 
@@ -146,6 +194,11 @@ window.Store = (function () {
     var tw = Number(input.total_weeks);
     if (!(tw >= 1 && tw <= 30)) bad.push('总周数（1–30）');
     if (bad.length) return { ok: false, error: '请检查：' + bad.join('、') };
+    /* periods 可选：不传 = 沿用旧值；传了必须合法（Day 8） */
+    if (input.periods !== undefined && input.periods !== null) {
+      var perr = validatePeriods(input.periods);
+      if (perr) return { ok: false, error: perr };
+    }
     return { ok: true };
   }
 
@@ -157,11 +210,20 @@ window.Store = (function () {
     var old = readTable(KEYS.semester, null);
     if (old && (typeof old !== 'object' || Array.isArray(old))) old = null;
 
+    /* 不传 periods = 沿用旧值（旧数据兼容：老学期没有 periods 也能正常保存） */
+    var periods;
+    if (input.periods === undefined || input.periods === null) {
+      periods = (old && Array.isArray(old.periods)) ? old.periods : [];
+    } else {
+      periods = normalizePeriods(input.periods);
+    }
+
     var semester = {
       id: (old && old.id) || genId('sem_'),
       name: String(input.name).trim(),
       first_monday: String(input.first_monday),
       total_weeks: Number(input.total_weeks),
+      periods: periods,
       created_at: (old && old.created_at) || nowIso()
     };
 
@@ -407,6 +469,22 @@ window.Store = (function () {
     };
   }
 
+  /* 清除全部数据并重置（Day 8 错误状态的「重置」出口）。
+     backup 键保留：里面是损坏内容的原始备份，事后还能人工找回。 */
+  function resetAll() {
+    var s = storage();
+    if (!s) return { ok: false, error: '本机存储不可用。' };
+    try {
+      s.removeItem(KEYS.semester);
+      s.removeItem(KEYS.schedules);
+      s.removeItem(KEYS.todos);
+      s.removeItem(KEYS.meta);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: '清除失败：' + ((e && e.message) || e) };
+    }
+  }
+
   return {
     KEYS: KEYS,
     SCHEMA_VERSION: SCHEMA_VERSION,
@@ -420,6 +498,8 @@ window.Store = (function () {
     deleteTodo: deleteTodo,
     toggleTodo: toggleTodo,
     exportAll: exportAll,
-    importAll: importAll
+    importAll: importAll,
+    defaultPeriods: defaultPeriods,
+    resetAll: resetAll
   };
 })();

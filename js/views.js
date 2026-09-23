@@ -93,9 +93,11 @@ window.Views = (function () {
     return !!mask && !mask.hidden;
   }
 
-  /* 表单字段标红 + 错误文案（TECH_DESIGN §6：必填项缺失，表单内标红不提交） */
-  function markField(fieldName, msg) {
-    var field = document.querySelector('.field[data-field="' + fieldName + '"]');
+  /* 表单字段标红 + 错误文案（TECH_DESIGN §6：必填项缺失，表单内标红不提交）
+     scope 传表单元素：初始设定页和设置弹窗可能同时在 DOM 里，必须限定在提交的那张表里找 */
+  function markField(fieldName, msg, scope) {
+    var root = scope || document;
+    var field = root.querySelector('.field[data-field="' + fieldName + '"]');
     if (!field) return;
     field.className = 'field field--invalid';
     var err = field.querySelector('.field__error');
@@ -113,30 +115,170 @@ window.Views = (function () {
 
   /* ---------------- 学期设置表单 ---------------- */
 
+  /* 节次编辑器（Day 8 反馈：一大段文本太不优雅，改成逐节一行、可增删）
+     每行 = 第N节 + 开始时间 + 结束时间 + 删除；容器 id 由调用方给（su-periods / f-periods） */
+  function periodRow(no, start, end) {
+    return [
+      '<div class="periods__row" data-no="' + no + '">',
+      '  <span class="periods__no">第 ' + no + ' 节</span>',
+      '  <input type="time" class="periods__time" data-role="start" value="' + esc(start || '') + '" aria-label="第' + no + '节开始时间" required>',
+      '  <span class="periods__sep">–</span>',
+      '  <input type="time" class="periods__time" data-role="end" value="' + esc(end || '') + '" aria-label="第' + no + '节结束时间" required>',
+      '  <button type="button" class="btn btn--ghost btn--sm periods__del" data-action="del-period">删除</button>',
+      '</div>'
+    ].join('');
+  }
+
+  function periodsEditor(containerId, semester) {
+    var has = semester && Array.isArray(semester.periods) && semester.periods.length;
+    var list = has ? semester.periods : (window.Store ? Store.defaultPeriods() : []);
+    var rows = '';
+    for (var i = 0; i < list.length; i++) {
+      rows += periodRow(list[i].no || (i + 1), list[i].start, list[i].end);
+    }
+    return [
+      '  <div class="field" data-field="periods">',
+      '    <label class="field__label">上课节次时间（各校不同，逐节改成你学校的；删完表示不设置）</label>',
+      '    <div class="periods" id="' + containerId + '">' + rows + '</div>',
+      '    <div class="periods__actions">',
+      '      <button type="button" class="btn btn--sm" data-action="add-period">＋ 添加一节</button>',
+      '    </div>',
+      '    <p class="hint">删除后序号自动连续。这里的时间只是「录课时可以带出的参考」，不影响已有课程。</p>',
+      '    <div class="field__error" hidden></div>',
+      '  </div>'
+    ].join('\n');
+  }
+
+  /* 学期名：常见叫法做成选项一键选（各校不同，所以永远留「自定义」） */
+  function termNameChoices() {
+    var now = new Date();
+    var m = now.getMonth() + 1;
+    var y = now.getFullYear();
+    var sy = (m === 1) ? y - 1 : y;   // 1 月仍属上一年开学的那个学年
+    var ny = sy + 1;
+    return [
+      { value: sy + '-' + ny + ' 秋冬', label: sy + '–' + ny + ' 学年 · 秋冬学期（9 月–次年 1 月）' },
+      { value: sy + ' 秋', label: sy + ' 年 · 秋季学期' },
+      { value: sy + '-' + ny + ' 春夏', label: sy + '–' + ny + ' 学年 · 春夏学期（2 月–7 月）' },
+      { value: ny + ' 春', label: ny + ' 年 · 春季学期' },
+      { value: ny + ' 夏', label: ny + ' 年 · 夏季 / 小学期' }
+    ];
+  }
+
+  function defaultTermName() {
+    var now = new Date();
+    var m = now.getMonth() + 1;
+    var y = now.getFullYear();
+    var sy = (m === 1) ? y - 1 : y;
+    var autumn = (m >= 9 || m <= 1);
+    return autumn ? (sy + '-' + (sy + 1) + ' 秋冬') : (sy + '-' + (sy + 1) + ' 春夏');
+  }
+
+  /* 学期名字段：select（快速选）+ input（真正的值，也用于自定义）
+     注意：input 永远带着当前值，即使被 select 盖住 —— 提交只认它一个来源。 */
+  function termNameField(selId, inputId, current) {
+    var cur = String(current || '');
+    var opts = termNameChoices();
+    var matched = false;
+    for (var i = 0; i < opts.length; i++) { if (opts[i].value === cur) matched = true; }
+    if (!cur) { cur = defaultTermName(); matched = true; }   // 新表单：默认值一定在候选里
+
+    var html = '';
+    for (var j = 0; j < opts.length; j++) {
+      html += '<option value="' + esc(opts[j].value) + '"' + (opts[j].value === cur ? ' selected' : '') + '>' +
+              esc(opts[j].label) + '</option>';
+    }
+    html += '<option value="__custom__"' + (matched ? '' : ' selected') + '>自定义…（各校叫法不同，直接打字）</option>';
+
+    return [
+      '    <label class="field__label" for="' + selId + '">学年 / 学期名（必填）</label>',
+      '    <select id="' + selId + '" class="input-select" data-name-target="' + inputId + '">' + html + '</select>',
+      '    <input id="' + inputId + '" type="text" maxlength="30" placeholder="例如：2026 秋" value="' + esc(cur) + '"' + (matched ? ' hidden' : '') + '>',
+      '    <div class="field__hint" data-hint="name"></div>'
+    ].join('\n');
+  }
+
+  /* select 变化时把值写进真正的 input（选「自定义」则显示输入框） */
+  function applyNameSelect(sel, inputId) {
+    var input = document.getElementById(inputId);
+    if (!sel || !input) return;
+    if (sel.value === '__custom__') {
+      input.hidden = false;
+      input.value = '';
+      input.focus();
+    } else {
+      input.hidden = true;
+      input.value = sel.value;
+    }
+  }
+
+  /* 第一周周一：选完立刻显示「是星期几 / 行不行」，不用等到提交才知道 */
+  function setMondayHint(inputId) {
+    var el = document.getElementById(inputId);
+    if (!el) return;
+    var scope = el.form || document;
+    var hint = scope.querySelector('.field[data-field="first_monday"] .field__hint');
+    if (!hint) return;
+    if (!el.value) { hint.className = 'field__hint'; hint.textContent = ''; return; }
+    if (Rules.isMonday(el.value)) {
+      hint.className = 'field__hint is-ok';
+      hint.textContent = '✓ ' + Rules.weekdayName(el.value) + '，可以用';
+    } else {
+      hint.className = 'field__hint is-bad';
+      hint.textContent = '✗ ' + Rules.weekdayName(el.value) + '，第一周必须从周一开始';
+    }
+  }
+
+  /* 总周数：边填边判（不用等提交才知道填错），判据来自 Rules.weeksError */
+  function setWeeksHint(inputId) {
+    var el = document.getElementById(inputId);
+    if (!el) return;
+    var scope = el.form || document;
+    var hint = scope.querySelector('.field[data-field="total_weeks"] .field__hint');
+    if (!hint) return;
+
+    if (!String(el.value || '').trim()) {
+      hint.className = 'field__hint';
+      hint.textContent = '填 1–30 之间的整数，一般学期是 16 / 18 / 20 周';
+      return;
+    }
+    var msg = Rules.weeksError(el.value);
+    if (msg) {
+      hint.className = 'field__hint is-bad';
+      hint.textContent = '✗ ' + msg;
+    } else {
+      hint.className = 'field__hint is-ok';
+      hint.textContent = '✓ ' + Number(el.value) + ' 周，可以';
+    }
+  }
+
   function semesterForm(semester) {
     var s = semester || {};
     return [
       '<form class="form" id="semester-form" novalidate>',
       '  <h2 class="form__title">学期设置</h2>',
-      '  <p class="hint">周次换算需要一个锚点：填本学期第一周的周一日期（只能选周一，选别的会提示）。</p>',
+      '  <p class="hint">周次换算需要一个锚点：第一周的周一。选完会立刻告诉你行不行。</p>',
 
       '  <div class="field" data-field="name">',
-      '    <label class="field__label" for="f-name">学期名（必填）</label>',
-      '    <input id="f-name" type="text" maxlength="30" placeholder="例如：2026 秋" value="' + esc(s.name) + '">',
+      termNameField('f-name-sel', 'f-name', s.name),
       '    <div class="field__error" hidden></div>',
       '  </div>',
 
       '  <div class="field" data-field="first_monday">',
       '    <label class="field__label" for="f-monday">第一周的周一（必填）</label>',
       '    <input id="f-monday" type="date" value="' + esc(s.first_monday) + '">',
+      '    <div class="field__hint"></div>',
       '    <div class="field__error" hidden></div>',
       '  </div>',
 
       '  <div class="field" data-field="total_weeks">',
       '    <label class="field__label" for="f-weeks">总周数（必填，1–30）</label>',
       '    <input id="f-weeks" type="number" min="1" max="30" step="1" value="' + (s.total_weeks ? esc(s.total_weeks) : '') + '" placeholder="例如：18">',
+      '    <div class="field__hint"></div>',
       '    <div class="field__error" hidden></div>',
       '  </div>',
+
+      periodsEditor('f-periods', semester),
 
       '  <div class="form__actions">',
       '    <button type="button" class="btn" data-action="close-modal">取消</button>',
@@ -170,6 +312,139 @@ window.Views = (function () {
       '  </div>',
       '</div>'
     ].join('\n');
+  }
+
+  /* ---------------- 四种页面状态（Day 8：加载中 / 成功 / 空 / 错误） ----------------
+     成功态 = 现有的周视图 / 今日视图；这里补齐另外三态的独立呈现。 */
+
+  /* 加载中：骨架屏（脉冲动画）。将来数据来自网络时，这就是真实的等待期 */
+  function skeleton() {
+    function card(w) {
+      return '<div class="sk-card" style="width:' + w + '%"></div>';
+    }
+    return [
+      '<div class="skeleton">',
+      '  <p class="skeleton__msg">正在载入你的日程…</p>',
+      card(36) + card(72) + card(55) + card(80) + card(46),
+      '</div>'
+    ].join('\n');
+  }
+
+  /* 错误：数据损坏 / 存储不可用。升级为独立卡片，给出重试与重置两条路 */
+  function errorCard(issue) {
+    return [
+      '<div class="state-error">',
+      '  <h2>数据加载出错了</h2>',
+      '  <p class="state-error__msg">' + esc(issue || '未知错误') + '</p>',
+      '  <p class="hint">本地数据可能已损坏。损坏前的原始内容已自动备份；清除重置后备份仍保留，可人工找回。</p>',
+      '  <div class="form__actions form__actions--left state-error__actions">',
+      '    <button type="button" class="btn btn--primary" data-action="retry-load">重试加载</button>',
+      '    <button type="button" class="btn btn--danger" data-action="reset-data">清除数据并重置</button>',
+      '  </div>',
+      '</div>'
+    ].join('\n');
+  }
+
+  /* 重置确认（沿用项目自有弹窗，不用原生 confirm） */
+  function confirmResetModal() {
+    return [
+      '<div class="confirm-del">',
+      '  <h2 class="form__title">确认清除全部数据</h2>',
+      '  <p class="hint">将清空学期、课程、待办，无法恢复（损坏内容的原始备份仍保留）。</p>',
+      '  <div class="form__actions">',
+      '    <button type="button" class="btn" data-action="close-modal">取消</button>',
+      '    <button type="button" class="btn btn--danger" data-action="confirm-reset">确认清除</button>',
+      '  </div>',
+      '</div>'
+    ].join('\n');
+  }
+
+  /* 空：初始设定主视图（顶部标题 + 欢迎 + 信息填写 + 提交 + 示例预览入口） */
+  function setupPage() {
+    return [
+      '<div class="setup">',
+      '  <div class="setup__hero">',
+      '    <h2 class="setup__title">欢迎来到大学生日程助手</h2>',
+      '    <p class="setup__sub">把课表和 deadline 收进同一张时间轴。开始只需三步：</p>',
+      '    <ol class="setup__steps">',
+      '      <li>填写下面的学期信息——它决定「今天是第几周」怎么算</li>',
+      '      <li>进入周视图，添加你的课程</li>',
+      '      <li>每天打开「今日视图」，看安排、记待办、做结算</li>',
+      '    </ol>',
+      '  </div>',
+
+      '  <form class="form setup__form" id="setup-form" novalidate>',
+      '    <h3 class="form__title">初始设定</h3>',
+
+      '    <div class="field" data-field="name">',
+      termNameField('su-name-sel', 'su-name', ''),
+      '      <div class="field__error" hidden></div>',
+      '    </div>',
+
+      '    <div class="form__row form__row--2">',
+      '      <div class="field" data-field="first_monday">',
+      '        <label class="field__label" for="su-monday">第一周的周一（必填）</label>',
+      '        <input id="su-monday" type="date">',
+      '        <div class="field__hint"></div>',
+      '        <div class="field__error" hidden></div>',
+      '      </div>',
+      '      <div class="field" data-field="total_weeks">',
+      '        <label class="field__label" for="su-weeks">总周数（1–30）</label>',
+      '        <input id="su-weeks" type="number" min="1" max="30" step="1" placeholder="例如：18">',
+      '        <div class="field__hint"></div>',
+      '        <div class="field__error" hidden></div>',
+      '      </div>',
+      '    </div>',
+
+      periodsEditor('su-periods', null),
+
+      '    <div class="form__actions form__actions--left">',
+      '      <button type="submit" class="btn btn--primary">保存并开始使用</button>',
+      '      <button type="button" class="btn" data-action="load-demo">先看看示例效果</button>',
+      '    </div>',
+      '  </form>',
+
+      '  <div id="demo-area"></div>',
+      '</div>'
+    ].join('\n');
+  }
+
+  /* 示例预览：mock 数据渲染的卡片列表。纯静态展示（没有 data-action），不写入 Store */
+  function renderDemo(courses, todos) {
+    var el = $('demo-area');
+    if (!el) return;
+
+    var cards = '';
+    for (var i = 0; i < courses.length; i++) {
+      var c = courses[i];
+      cards += [
+        '<div class="course-card">',
+        '  <span class="course-card__top"><span class="course-card__time">' + esc(fmtRange(c.start_time, c.duration)) + '</span>' + ruleBadge(c.week_rule) + '</span>',
+        '  <span class="course-card__title">' + esc(c.title) + '</span>',
+        c.location ? '<span class="course-card__loc">' + esc(c.location) + '</span>' : '',
+        '</div>'
+      ].join('');
+    }
+
+    var chips = '';
+    for (var j = 0; j < todos.length; j++) {
+      var t = todos[j];
+      chips += [
+        '<div class="todo-chip' + (t.done ? ' is-done' : '') + '">',
+        '  <span class="todo-chip__check demo__check">' + (t.done ? '✓' : '') + '</span>',
+        '  <span class="todo-chip__title">' + esc(t.title) + '<em class="demo__due">' + esc(t.due_date) + ' 截止</em></span>',
+        '</div>'
+      ].join('');
+    }
+
+    el.innerHTML = [
+      '<div class="demo">',
+      '  <h3 class="demo__title">示例数据预览（假数据，不会被保存）</h3>',
+      '  <div class="demo__grid">' + cards + '</div>',
+      '  <div class="demo__todos">' + chips + '</div>',
+      '</div>'
+    ].join('\n');
+    el.hidden = false;
   }
 
   /* ---------------- 周视图（第③步：真实网格） ---------------- */
@@ -556,11 +831,20 @@ window.Views = (function () {
     markField: markField,
     clearFieldMarks: clearFieldMarks,
     semesterForm: semesterForm,
+    periodRow: periodRow,
+    applyNameSelect: applyNameSelect,
+    setMondayHint: setMondayHint,
+    setWeeksHint: setWeeksHint,
     courseForm: courseForm,
     todoForm: todoForm,
     confirmDeleteModal: confirmDeleteModal,
+    confirmResetModal: confirmResetModal,
     conflictModal: conflictModal,
     exportModal: exportModal,
+    skeleton: skeleton,
+    errorCard: errorCard,
+    setupPage: setupPage,
+    renderDemo: renderDemo,
     renderWeek: renderWeek,
     renderToday: renderToday
   };

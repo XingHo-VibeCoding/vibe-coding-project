@@ -139,10 +139,69 @@ window.Rules = (function () {
     return { done: done, total: total };
   }
 
+  /* ---------------- 表单校验用的纯函数（Day 8 反馈修复）----------------
+     这两件事以前散在 app.js 里手写，出过一次「选周一却说『你选的是周一』」的错，
+     移到这里集中 + 可被测试覆盖。 */
+
+  var WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+  /* 'YYYY-MM-DD' → '周一'…'周日'；非法日期返回空字符串 */
+  function weekdayName(str) {
+    var d = parseDate(str);
+    return d ? WEEKDAY_NAMES[d.getDay()] : '';
+  }
+
+  /* 第一周必须落在周一（parseDate 认可且 getDay()===1） */
+  function isMonday(str) {
+    var d = parseDate(str);
+    return !!d && d.getDay() === 1;
+  }
+
+  /* 'HH:mm' 严格时钟格式（00:00–23:59），比只数位数更严 */
+  function isClockTime(t) {
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || ''));
+  }
+
+  /* 总周数：1–30 的整数。合法返回 ''，不合法返回提示文案。
+     实时提示（填完立刻显示）与提交校验都用它，两处口径永远一致。 */
+  function weeksError(v) {
+    var s = String(v === undefined || v === null ? '' : v).trim();
+    if (!s) return '总周数还没填，填 1–30 之间的整数';
+    if (!/^\d+$/.test(s)) return '总周数要填整数（1–30），不能带小数或其它字符';
+    var n = Number(s);
+    if (n < 1 || n > 30) return '总周数要在 1–30 之间（你填的是 ' + n + '）';
+    return '';
+  }
+
+  /* 节次行（从 DOM 收来的 [{start,end}]）→ store 需要的 [{no,start,end}]
+     · 序号按行序重排（删掉中间一节也不会跳号）
+     · 整行留空 = 跳过；一行都没有 = 合法（表示不设置节次）
+     · 时间格式错 / 结束不晚于开始 → 报第几节出问题 */
+  function periodsFromPairs(pairs) {
+    var arr = Array.isArray(pairs) ? pairs : [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var st = String((arr[i] && arr[i].start) || '').trim();
+      var en = String((arr[i] && arr[i].end) || '').trim();
+      if (!st && !en) continue;
+      var nth = out.length + 1;
+      if (!isClockTime(st) || !isClockTime(en)) return { ok: false, error: '第 ' + nth + ' 节的时间没填完整' };
+      if (timeToMin(st) >= timeToMin(en)) return { ok: false, error: '第 ' + nth + ' 节的结束时间要晚于开始时间' };
+      out.push({ no: nth, start: st, end: en });
+    }
+    if (out.length > 15) return { ok: false, error: '节次最多 15 节' };
+    return { ok: true, periods: out };
+  }
+
   return {
     parseDate: parseDate,
     dateKey: dateKey,
     timeToMin: timeToMin,
+    weekdayName: weekdayName,
+    isMonday: isMonday,
+    isClockTime: isClockTime,
+    weeksError: weeksError,
+    periodsFromPairs: periodsFromPairs,
     currentWeekNo: currentWeekNo,
     isBeyondSemester: isBeyondSemester,
     matchWeek: matchWeek,

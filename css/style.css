@@ -177,6 +177,9 @@ html, body {
 .btn--sm { padding: 3px 10px; font-size: 13px; }
 .btn--danger { color: var(--c-danger); border-color: #f0c4c4; }
 .btn--danger:hover { background: #fdecec; border-color: var(--c-danger); color: var(--c-danger); }
+/* 到上限时变灰（仍可点，点了会就近弹出「已满」的轻提示，不至于点了没反应） */
+.btn.is-dim { opacity: 0.45; }
+.btn.is-dim:hover { border-color: var(--c-border); color: var(--c-text); }
 
 /* 表单内的横向字段行（星期/时间/时长） */
 .form__row {
@@ -184,6 +187,9 @@ html, body {
   grid-template-columns: 1.2fr 1fr 1fr;
   gap: 8px;
 }
+/* 只有两个字段的行（初始设定页的「第一周周一 + 总周数」）：等宽，不再右侧空一列
+   （手机宽度下由文件末尾的媒体查询覆盖为单列，那里优先级相同但位置在后） */
+.form__row--2 { grid-template-columns: 1fr 1fr; }
 .form__actions--split { justify-content: space-between; }
 .form__actions__right { display: flex; gap: 8px; }
 
@@ -198,7 +204,10 @@ html, body {
 }
 .form__actions--left { justify-content: flex-start; }
 
-.field { display: grid; gap: 5px; }
+/* align-content: start —— 关键：.field 是 grid，默认会把内容行拉伸填满高度。
+   并排两栏（.form__row）时，一栏出现提示文字会把行撑高，另一栏被拉伸 → 输入框被挤下去，
+   两栏的框就不在同一水平线上了。锚定从顶部排列即可解决（Day 8 反馈）。 */
+.field { display: grid; gap: 5px; align-content: start; }
 .field__label { font-size: 13px; color: var(--c-text-dim); }
 .field input,
 .field select,
@@ -223,6 +232,30 @@ html, body {
 .field__error { font-size: 12px; color: var(--c-danger); }
 
 .hint { margin: 0; font-size: 12px; color: var(--c-text-dim); }
+
+/* ---------- 节次时间编辑器（Day 8 反馈：改成逐节行，可增删，不再是一大段文本） ---------- */
+.periods { display: grid; gap: 6px; }
+.periods__row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+.periods__no { font-size: 12px; color: var(--c-text-dim); }
+.periods__sep { font-size: 12px; color: var(--c-text-dim); }
+.periods__row input[type="time"] {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.periods__actions { margin-top: 8px; }
+.periods .btn--sm { padding: 4px 10px; font-size: 12px; }
+
+/* 学期名下拉 + 选完立刻反馈（周一校验、学期名） */
+.field__hint { font-size: 12px; color: var(--c-text-dim); }
+.field__hint.is-ok { color: #1d9e75; }
+.field__hint.is-bad { color: var(--c-danger); }
+.skeleton__msg { margin: 0 0 4px; font-size: 13px; color: var(--c-text-dim); }
 
 /* ---------- 学期摘要条 ---------- */
 .termbar {
@@ -449,6 +482,80 @@ html, body {
 
 .summary[data-empty="1"] { color: var(--c-text-dim); font-weight: 400; }
 
+/* ---------- 四种页面状态（Day 8：加载中 / 空 / 错误 + 引导页） ---------- */
+
+/* 加载中：骨架屏脉冲（参考 kun-ui 的 KunSkeleton 动效思路） */
+.skeleton {
+  display: grid;
+  gap: 10px;
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 4px 0;
+}
+.sk-card {
+  height: 20px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #eceff3 25%, #f8f9fb 45%, #eceff3 65%);
+  background-size: 400% 100%;
+  animation: sk-pulse 1.2s ease infinite;
+}
+@keyframes sk-pulse {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* 空：初始设定主视图 */
+.setup {
+  display: grid;
+  gap: 16px;
+  max-width: 620px;
+  margin: 0 auto;
+}
+.setup__hero,
+.setup__form {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 2px 10px rgba(31, 35, 41, 0.04);
+}
+.setup__title { margin: 0 0 6px; font-size: 20px; }
+.setup__sub { margin: 0 0 10px; color: var(--c-text-dim); font-size: 14px; }
+.setup__steps { margin: 0; padding-left: 20px; color: var(--c-text-dim); font-size: 13px; }
+.setup__steps li { margin: 3px 0; }
+
+/* 错误：数据损坏卡片 */
+.state-error {
+  background: var(--c-surface);
+  border: 1px solid var(--c-danger);
+  border-radius: 14px;
+  padding: 20px;
+  max-width: 620px;
+  margin: 0 auto;
+}
+.state-error h2 { margin: 0 0 8px; font-size: 17px; }
+.state-error__msg { margin: 0 0 10px; font-size: 14px; color: var(--c-danger); }
+.state-error__actions { margin-top: 14px; }
+
+/* 示例预览（mock 数据渲染的卡片列表） */
+.demo {
+  background: var(--c-surface);
+  border: 1px dashed var(--c-border);
+  border-radius: 14px;
+  padding: 16px;
+}
+.demo__title { margin: 0 0 10px; font-size: 14px; color: var(--c-text-dim); font-weight: 600; }
+.demo__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.demo .course-card { cursor: default; }
+.demo__todos { display: grid; gap: 6px; max-width: 420px; }
+.demo__check { cursor: default; }
+.demo__due { margin-left: 8px; font-style: normal; font-size: 11px; color: var(--c-text-dim); }
+
 /* ---------- 手机端（PRD F11） ---------- */
 @media (max-width: 640px) {
   /* 标题 + 设置按钮留在顶部一行，视图标签落到底部 */
@@ -478,4 +585,13 @@ html, body {
   .summary { bottom: 64px; }
   .form__row { grid-template-columns: 1fr; }
   .weeknav { gap: 6px; }
+  .setup__hero,
+  .setup__form,
+  .state-error,
+  .demo { padding: 16px; border-radius: 12px; }
+  .setup__title { font-size: 18px; }
+  /* 手机宽度：节次行折成「序号 + 开始 + 结束」一行，删除按钮挪到下一行右对齐 */
+  .periods__row { grid-template-columns: 52px 1fr 1fr; row-gap: 4px; }
+  .periods__sep { display: none; }
+  .periods__del { grid-column: 1 / -1; justify-self: end; }
 }
