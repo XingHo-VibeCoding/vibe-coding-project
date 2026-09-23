@@ -93,6 +93,172 @@ window.Views = (function () {
     return !!mask && !mask.hidden;
   }
 
+  /* ---------------- 自建日期 / 时间面板（Day 8 反馈） ----------------
+     为什么自己做：原生 <input type="date|time"> 的浮层是浏览器画的，
+     塞不进 ×；「点别处才关」在触屏上极易误触。面板做成底部升起的 sheet：
+     右上角 ×、日期点即选、时间两列滚动 + 底部「完成」。
+     这里只负责「把 app.js 准备好的数据画出来」，不做任何计算。 */
+
+  var PK_ITEM_H = 44;   /* 时间列每项高度，必须和 css 里 .pk-unit 的高度一致 */
+  var DOW_FULL = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+  /* 只读「值条」：长相还是输入框（.field input 的样式、标红、.value 取值都照旧），
+     但点它开的是我们自己的面板，不再弹原生控件。
+     不换成 <button> 的原因：app.js 和各处校验都读 .value，换标签会牵动一大片。 */
+  function pickerField(id, opts) {
+    var o = opts || {};
+    var aria = o.aria || o.label || '';
+    return [
+      '<span class="wicket">',
+      '  <input' + (id ? ' id="' + esc(id) + '"' : '') +
+        ' type="text" readonly class="input-picker" data-action="open-picker"' +
+        ' data-picker="' + esc(o.type || 'date') + '"' +
+        (o.restrict ? ' data-restrict="' + esc(o.restrict) + '"' : '') +
+        ' data-label="' + esc(o.label || '') + '"' +
+        (o.role ? ' data-role="' + esc(o.role) + '"' : '') +
+        ' value="' + esc(o.value || '') + '"' +
+        (aria ? ' aria-label="' + esc(aria) + '"' : '') +
+        (o.placeholder ? ' placeholder="' + esc(o.placeholder) + '"' : '') +
+        ' autocomplete="off">',
+      '  <span class="wicket__ico" aria-hidden="true">▾</span>',
+      '</span>'
+    ].join('\n');
+  }
+
+  function pickerCol(id, part, list, sel) {
+    var html = ['    <div class="pk-col" id="' + id + '">'];
+    for (var i = 0; i < list.length; i++) {
+      html.push('      <button type="button" class="pk-unit' + (list[i] === sel ? ' is-on' : '') +
+        '" data-action="picker-unit" data-part="' + part + '" data-value="' + esc(list[i]) + '">' +
+        esc(list[i]) + '</button>');
+    }
+    html.push('    </div>');
+    return html.join('\n');
+  }
+
+  function pickerDateHtml(c) {
+    var g = c.grid || { title: '', cells: [] };
+    var html = [
+      '  <div class="pk-cal">',
+      '    <div class="pk-cal__nav">',
+      '      <button type="button" class="pk-nav" data-action="picker-shift" data-delta="-1" aria-label="上一个月">‹</button>',
+      '      <span class="pk-cal__title">' + esc(g.title) + '</span>',
+      '      <button type="button" class="pk-nav" data-action="picker-shift" data-delta="1" aria-label="下一个月">›</button>',
+      '    </div>',
+      '    <div class="pk-cal__dow"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>',
+      '    <div class="pk-cal__grid">'
+    ];
+    for (var i = 0; i < g.cells.length; i++) {
+      var cell = g.cells[i];
+      var cls = 'pk-day';
+      var attr = '';
+      if (cell.out) {
+        cls += ' is-out';      /* 上/下月的补齐位：灰着，不给点（点它跳月容易迷路） */
+      } else {
+        if (g.today && cell.key === g.today) cls += ' is-today';
+        if (c.value === cell.key) cls += ' is-on';
+        if (c.restrict === 'monday' && cell.weekday !== 1) cls += ' is-off';
+        attr = ' data-action="picker-day" data-key="' + esc(cell.key) +
+          '" aria-label="' + esc(cell.key + ' ' + (DOW_FULL[cell.weekday] || '')) + '"';
+      }
+      html.push('      <button type="button" class="' + cls + '"' + attr + '>' + cell.day + '</button>');
+    }
+    html.push('    </div>', '  </div>');
+    return html.join('\n');
+  }
+
+  function pickerTimeHtml(c) {
+    var u = c.units || { hours: [], minutes: [] };
+    var v = String(c.value || '');
+    return [
+      '  <div class="pk-time">',
+      '    <div class="pk-value" id="picker-value">' + esc(v || '--:--') + '</div>',
+      '    <div class="pk-time__cols">',
+      pickerCol('picker-hour', 'hour', u.hours, v.slice(0, 2)),
+      pickerCol('picker-minute', 'minute', u.minutes, v.slice(3, 5)),
+      '    </div>',
+      '  </div>'
+    ].join('\n');
+  }
+
+  /* 整张 sheet 的 HTML：头（标题 + ×）+ 体 + 脚。
+     ctx 由 app.js 备好：{ type, label, value, restrict, grid } 或 { …, units }。 */
+  function pickerSheetHtml(ctx) {
+    var c = ctx || {};
+    var isTime = c.type === 'time';
+    var foot = isTime
+      ? [
+        '  <div class="picker__foot">',
+        '    <label class="pk-manual"><span class="pk-manual__lb">也可以直接输入</span>',
+        '      <input id="picker-manual" class="pk-manual__in" type="text" maxlength="5" placeholder="08:07" autocomplete="off"></label>',
+        '    <button type="button" class="btn btn--primary" data-action="picker-apply">完成</button>',
+        '  </div>'
+      ].join('\n')
+      : [
+        '  <div class="picker__foot">',
+        '    <span class="picker__note">' +
+          esc(c.restrict === 'monday' ? '第一周必须从周一开始，只有周一可以点' : '点一个日期就选好了') +
+        '</span>',
+        '  </div>'
+      ].join('\n');
+
+    return [
+      '  <div class="picker__head">',
+      '    <span class="picker__title">' + esc(c.label || (isTime ? '选择时间' : '选择日期')) + '</span>',
+      '    <button type="button" class="picker__x" data-action="picker-close" aria-label="关闭">×</button>',
+      '  </div>',
+      '  <div class="picker__body">',
+      isTime ? pickerTimeHtml(c) : pickerDateHtml(c),
+      '  </div>',
+      foot
+    ].join('\n');
+  }
+
+  function openPickerSheet(ctx) {
+    var wrap = $('picker-mask');
+    var sheet = $('picker-sheet');
+    if (!wrap || !sheet) return false;
+    sheet.innerHTML = pickerSheetHtml(ctx);
+    wrap.hidden = false;
+    if (document.body.classList) document.body.classList.add('pk-lock');
+    return true;
+  }
+
+  function closePickerSheet() {
+    var wrap = $('picker-mask');
+    var sheet = $('picker-sheet');
+    if (sheet) sheet.innerHTML = '';
+    if (wrap) wrap.hidden = true;
+    if (document.body.classList) document.body.classList.remove('pk-lock');
+  }
+
+  function isPickerOpen() {
+    var wrap = $('picker-mask');
+    return !!wrap && !wrap.hidden;
+  }
+
+  /* 把某一列滚到指定下标（打开时定位、点选后跟随） */
+  function scrollPickerCols(hIdx, mIdx) {
+    var h = $('picker-hour');
+    var m = $('picker-minute');
+    if (h && typeof hIdx === 'number') h.scrollTop = hIdx * PK_ITEM_H;
+    if (m && typeof mIdx === 'number') m.scrollTop = mIdx * PK_ITEM_H;
+  }
+
+  /* 滚动停下后把选中值写回顶部大字与两列高亮。
+     只改文字和类名，不动 scrollTop —— 否则会和用户的手指抢滚动位置。 */
+  function syncPickerTime(hh, mm) {
+    var value = $('picker-value');
+    if (value) value.textContent = hh + ':' + mm;
+    var units = document.querySelectorAll('.pk-unit');
+    for (var i = 0; i < units.length; i++) {
+      var u = units[i];
+      var part = u.getAttribute('data-part');
+      var on = (part === 'hour' ? hh : mm) === u.getAttribute('data-value');
+      u.className = 'pk-unit' + (on ? ' is-on' : '');
+    }
+  }
+
   /* 表单字段标红 + 错误文案（TECH_DESIGN §6：必填项缺失，表单内标红不提交）
      scope 传表单元素：初始设定页和设置弹窗可能同时在 DOM 里，必须限定在提交的那张表里找 */
   function markField(fieldName, msg, scope) {
@@ -121,9 +287,9 @@ window.Views = (function () {
     return [
       '<div class="periods__row" data-no="' + no + '">',
       '  <span class="periods__no">第 ' + no + ' 节</span>',
-      '  <input type="time" class="periods__time" data-role="start" value="' + esc(start || '') + '" aria-label="第' + no + '节开始时间" required>',
+      pickerField('', { type: 'time', role: 'start', label: '第 ' + no + ' 节开始时间', value: start || '' }),
       '  <span class="periods__sep">–</span>',
-      '  <input type="time" class="periods__time" data-role="end" value="' + esc(end || '') + '" aria-label="第' + no + '节结束时间" required>',
+      pickerField('', { type: 'time', role: 'end', label: '第 ' + no + ' 节结束时间', value: end || '' }),
       '  <button type="button" class="btn btn--ghost btn--sm periods__del" data-action="del-period">删除</button>',
       '</div>'
     ].join('');
@@ -266,7 +432,7 @@ window.Views = (function () {
 
       '  <div class="field" data-field="first_monday">',
       '    <label class="field__label" for="f-monday">第一周的周一（必填）</label>',
-      '    <input id="f-monday" type="date" value="' + esc(s.first_monday) + '">',
+      pickerField('f-monday', { type: 'date', restrict: 'monday', label: '第一周的周一', placeholder: '点这里选一个周一', value: s.first_monday }),
       '    <div class="field__hint"></div>',
       '    <div class="field__error" hidden></div>',
       '  </div>',
@@ -384,7 +550,7 @@ window.Views = (function () {
       '    <div class="form__row form__row--2">',
       '      <div class="field" data-field="first_monday">',
       '        <label class="field__label" for="su-monday">第一周的周一（必填）</label>',
-      '        <input id="su-monday" type="date">',
+      pickerField('su-monday', { type: 'date', restrict: 'monday', label: '第一周的周一', placeholder: '点这里选一个周一' }),
       '        <div class="field__hint"></div>',
       '        <div class="field__error" hidden></div>',
       '      </div>',
@@ -617,7 +783,7 @@ window.Views = (function () {
       '    </div>',
       '    <div class="field" data-field="start">',
       '      <label class="field__label" for="f-start">开始时间</label>',
-      '      <input id="f-start" type="time" value="' + esc(c.start_time || '08:00') + '">',
+      pickerField('f-start', { type: 'time', label: '课程开始时间', value: c.start_time || '08:00' }),
       '      <div class="field__error" hidden></div>',
       '    </div>',
       '    <div class="field" data-field="duration">',
@@ -714,7 +880,7 @@ window.Views = (function () {
 
       '  <div class="field" data-field="todo-due">',
       '    <label class="field__label" for="f-t-due">截止日期（必填）</label>',
-      '    <input id="f-t-due" type="date" value="' + esc(t.due_date || '') + '">',
+      pickerField('f-t-due', { type: 'date', label: '截止日期', placeholder: '点这里选日期', value: t.due_date || '' }),
       '    <div class="field__error" hidden></div>',
       '  </div>',
 
@@ -828,6 +994,13 @@ window.Views = (function () {
     openModal: openModal,
     closeModal: closeModal,
     isModalOpen: isModalOpen,
+    pickerField: pickerField,
+    pickerSheetHtml: pickerSheetHtml,
+    openPickerSheet: openPickerSheet,
+    closePickerSheet: closePickerSheet,
+    isPickerOpen: isPickerOpen,
+    scrollPickerCols: scrollPickerCols,
+    syncPickerTime: syncPickerTime,
     markField: markField,
     clearFieldMarks: clearFieldMarks,
     semesterForm: semesterForm,

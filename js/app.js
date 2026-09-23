@@ -139,6 +139,230 @@ window.App = (function () {
     Views.clearFieldMarks();
   }
 
+  /* ---------------- 自建日期 / 时间面板（Day 8 反馈） ----------------
+     为什么自己做：原生 date/time 的浮层由浏览器画，加不了 ×，触屏上
+     「点别处才关」太容易误触。面板的状态只有两件：写回哪个输入框（el）、
+     当前值（value）；HTML 交给 views 画，这里只准备数据 + 处理点击。 */
+  var PICKER_MIN_STEP = 5;    // 分钟粒度：一格 5 分钟
+  var PICKER_ITEM_H = 44;     // 时间列每项高度，必须和 css 里 .pk-unit 一致
+  /* 滚轮累计到这个像素数才走一格。普通鼠标转一格约 100px → 正好走一格；
+     触控板小幅滑动要攒一会儿才走一格，手指能控制得很细。 */
+  var PICKER_WHEEL_UNIT = 50;
+  var picker = null;          // { el, type, restrict, label, value, year, month, manual }
+  var pickerScrollTimer = null;
+
+  /* 点只读值条 → 打开面板；type / 限制 / 标题都写在那个 input 的 data-* 上 */
+  function openPickerFrom(el) {
+    if (!el) return;
+    var type = el.getAttribute('data-picker') === 'time' ? 'time' : 'date';
+    var cur = String(el.value || '');
+    var base = type === 'date' ? Rules.parseDate(cur) : null;
+    var d = base || new Date();
+
+    picker = {
+      el: el,
+      type: type,
+      restrict: el.getAttribute('data-restrict') || '',
+      label: el.getAttribute('data-label') || (type === 'time' ? '选择时间' : '选择日期'),
+      value: cur || (type === 'time' ? '08:00' : ''),
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      manual: ''
+    };
+    redrawPicker();
+  }
+
+  /* 面板要的数据（月历格子 / 时分候选）都在规则层算好，views 只负责画 */
+  function pickerViewModel() {
+    var vm = {
+      type: picker.type, label: picker.label,
+      restrict: picker.restrict, value: picker.value
+    };
+    if (picker.type === 'date') {
+      vm.grid = {
+        title: Rules.monthLabel(picker.year, picker.month),
+        today: Rules.dateKey(new Date()),
+        cells: Rules.monthGrid(picker.year, picker.month)
+      };
+    } else {
+      vm.units = Rules.timeUnits(PICKER_MIN_STEP);
+    }
+    return vm;
+  }
+
+  /* 每次重画都要重新挂滚动监听（旧的列元素被换掉了，监听随元素一起消失） */
+  function redrawPicker() {
+    if (!picker) return;
+    Views.openPickerSheet(pickerViewModel());
+    if (picker.type === 'time') {
+      scrollPickerToValue();
+      attachPickerScroll();
+      attachPickerWheel();
+    }
+  }
+
+  function closePicker() {
+    picker = null;
+    if (pickerScrollTimer) clearTimeout(pickerScrollTimer);
+    pickerScrollTimer = null;
+    Views.closePickerSheet();
+  }
+
+  function scrollPickerToValue() {
+    var u = Rules.timeUnits(PICKER_MIN_STEP);
+    Views.scrollPickerCols(
+      Rules.nearestIndex(u.hours, picker.value.slice(0, 2)),
+      Rules.nearestIndex(u.minutes, picker.value.slice(3, 5))
+    );
+  }
+
+  /* 只改「时」或「分」的一半，另一半保持不变 */
+  function setPickerPart(part, value) {
+    var m = Rules.timeToMin(picker.value);
+    if (m < 0) m = 8 * 60;
+    var mins = part === 'hour'
+      ? (Number(value) * 60 + (m % 60))
+      : (Math.floor(m / 60) * 60 + Number(value));
+    picker.value = pad2(Math.floor(mins / 60)) + ':' + pad2(mins % 60);
+    return picker.value;
+  }
+
+  /* 滚动停下后把正中间那一项当选中（像原生那样「滚到哪就是哪」）。
+     注意：jsdom 没有真正的滚动，这段只能靠手指实测，静态检查覆盖不到。 */
+  function attachPickerScroll() {
+    var ids = ['picker-hour', 'picker-minute'];
+    for (var i = 0; i < ids.length; i++) {
+      (function (id) {
+        var box = $(id);
+        if (!box || !box.addEventListener) return;
+        box.addEventListener('scroll', function () {
+          if (pickerScrollTimer) clearTimeout(pickerScrollTimer);
+          pickerScrollTimer = setTimeout(function () { settlePickerCol(id); }, 140);
+        });
+      })(ids[i]);
+    }
+  }
+
+  /* 滚轮一格 = 走一格。
+     为什么得自己接管：浏览器转一格滚轮是 ~100px，而一项只有 44px，
+     再叠加 scroll-snap 的强制吸附，一滚就跳两格（用户实测反馈）。
+     preventDefault 之后由我们按「累计到 PICKER_WHEEL_UNIT 才走一格」来推。
+     触屏不归这里管：手指是原生滚动 + 吸附，手感本来就是对的。 */
+  function attachPickerWheel() {
+    var ids = ['picker-hour', 'picker-minute'];
+    for (var i = 0; i < ids.length; i++) {
+      (function (id) {
+        var box = $(id);
+        if (!box || !box.addEventListener) return;
+        box.addEventListener('wheel', function (e) {
+          if (!picker || picker.type !== 'time') return;
+          var px = wheelPixels(e);
+          if (!px) return;
+          var dir = px > 0 ? 1 : -1;
+          var list = pickerList(id);
+          var idx = Math.round(Number(box.scrollTop) / PICKER_ITEM_H);
+          var next = idx + dir;
+          if (next < 0 || next > list.length - 1) return;   // 已经到顶/到底：不吞这一下，让外层还能滚
+          e.preventDefault();                              // 关键的这一步：不拦就还是系统那 100px
+
+          var acc = box.__pkAcc || 0;
+          if (acc && (acc > 0) !== (px > 0)) acc = 0;       // 换方向就重新攒
+          acc += px;
+          if (Math.abs(acc) < PICKER_WHEEL_UNIT) { box.__pkAcc = acc; return; }
+          box.__pkAcc = 0;                                 // 走一格就清零：一格滚轮 = 一格
+          stepPickerCol(id, box, next);
+        }, { passive: false });
+      })(ids[i]);
+    }
+  }
+
+  /* 把各浏览器口径不一的 deltaY 统一成像素（Firefox 默认按「行」给） */
+  function wheelPixels(e) {
+    var d = Number(e.deltaY) || 0;
+    if (e.deltaMode === 1) d = d * 40;        // 行模式
+    else if (e.deltaMode === 2) d = d * 400;  // 页模式
+    return d;
+  }
+
+  function pickerList(id) {
+    var u = Rules.timeUnits(PICKER_MIN_STEP);
+    return id === 'picker-hour' ? u.hours : u.minutes;
+  }
+
+  /* 走一格：落点正好是一个吸附点，所以不会又被系统吸回去 */
+  function stepPickerCol(id, box, idx) {
+    box.scrollTop = idx * PICKER_ITEM_H;
+    if (pickerScrollTimer) clearTimeout(pickerScrollTimer);
+    settlePickerCol(id);
+  }
+
+  function settlePickerCol(id) {
+    if (!picker || picker.type !== 'time') return;
+    var box = $(id);
+    if (!box) return;
+    var list = pickerList(id);
+    var idx = Math.round(Number(box.scrollTop) / PICKER_ITEM_H);
+    if (!(idx >= 0)) idx = 0;
+    if (idx > list.length - 1) idx = list.length - 1;
+
+    picker.manual = '';                     // 用了格子就不再认手输
+    var v = setPickerPart(id === 'picker-hour' ? 'hour' : 'minute', list[idx]);
+    Views.syncPickerTime(v.slice(0, 2), v.slice(3, 5));
+  }
+
+  function pickerShift(btn) {
+    if (!picker || picker.type !== 'date') return;
+    var delta = Number(btn && btn.getAttribute('data-delta')) || 1;
+    var nx = Rules.shiftMonth(picker.year, picker.month, delta);
+    picker.year = nx.year;
+    picker.month = nx.month;
+    redrawPicker();                          // 只翻月份，选中的值不动
+  }
+
+  function pickerPickDay(btn) {
+    if (!picker || picker.type !== 'date') return;
+    var key = btn && btn.getAttribute('data-key');
+    if (!isDateStr(key)) return;
+    if (picker.restrict === 'monday' && !Rules.isMonday(key)) {
+      Views.toast('第一周必须从周一开始，' + Rules.weekdayName(key) + '不能当第一周');
+      return;
+    }
+    picker.value = key;
+    applyPicker();                           // 日期点一下即选定并收起
+  }
+
+  function pickerPickUnit(btn) {
+    if (!picker || picker.type !== 'time') return;
+    var part = btn && btn.getAttribute('data-part');
+    var val = btn && btn.getAttribute('data-value');
+    if (!val || (part !== 'hour' && part !== 'minute')) return;
+    picker.manual = '';                      // 用了格子就不再认手输
+    setPickerPart(part, val);
+    redrawPicker();
+  }
+
+  /* 写入输入框并收起。手输框有内容时以它为准（用来填 08:07 这种不在格子里的时间）。 */
+  function applyPicker() {
+    if (!picker) return;
+    var v = String(picker.manual || '').trim() || picker.value;
+
+    if (picker.type === 'time' && !Rules.isClockTime(v)) {
+      Views.toast('时间写成 HH:mm 的样子，比如 08:07');
+      return;
+    }
+    if (picker.type === 'date' && !isDateStr(v)) {
+      Views.toast('还没选日期，点一下日历里的日子');
+      return;
+    }
+
+    var el = picker.el;
+    closePicker();
+    if (!el || !el.parentNode) return;       // 面板开着时那一行被删了 → 什么都不写
+    el.value = v;
+    /* 派发 change，复用既有的「是不是周一 / 总周数」即时提示，不另写一套 */
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   /* ---------------- 四种页面状态（Day 8） ----------------
      appState: 'loading' | 'empty' | 'error' | 'success'
      fetchState 是数据获取的唯一入口：现在是「模拟延迟 + 本地读取」，
@@ -210,6 +434,7 @@ window.App = (function () {
     var currentWeek = Rules.currentWeekNo(semester, today);
     var viewing = viewWeek || (currentWeek > 0 ? currentWeek : 1);
 
+    closePicker();          // 数据一变就收面板，避免它挂在一个已经重建过的输入框上
     Views.renderTerm(semester, today);
     Views.renderWeek(state, viewing);
     Views.renderToday(state, today);
@@ -554,6 +779,8 @@ window.App = (function () {
     var t = e.target;
     if (!t || !t.id) return;
     if (t.id === 'su-weeks' || t.id === 'f-weeks') Views.setWeeksHint(t.id);
+    /* 面板里的「直接输入」：只记下来，不重画（重画会打断光标），点完成时以它为准 */
+    if (t.id === 'picker-manual' && picker) picker.manual = t.value;
   }
 
   function onImportFile(e) {
@@ -647,6 +874,14 @@ window.App = (function () {
     if (action === 'add-period') { addPeriodRow(trigger); return; }
     if (action === 'del-period') { removePeriodRow(trigger); return; }
 
+    /* ---------------- 自建日期 / 时间面板（Day 8 反馈） ---------------- */
+    if (action === 'open-picker') { openPickerFrom(trigger); return; }
+    if (action === 'picker-close') { closePicker(); return; }
+    if (action === 'picker-shift') { pickerShift(trigger); return; }
+    if (action === 'picker-day') { pickerPickDay(trigger); return; }
+    if (action === 'picker-unit') { pickerPickUnit(trigger); return; }
+    if (action === 'picker-apply') { applyPicker(); return; }
+
     /* ---------------- 四种页面状态的动作（Day 8） ---------------- */
     if (action === 'load-demo') {
       if (window.Mock) Views.renderDemo(Mock.courses, Mock.todos);
@@ -675,6 +910,7 @@ window.App = (function () {
     }
     // 点遮罩空白处也能关闭
     if (e.target && e.target.id === 'modal-mask') Views.closeModal();
+    if (e.target && e.target.id === 'picker-mask') closePicker();
   }
 
   function onSubmit(e) {
@@ -686,7 +922,10 @@ window.App = (function () {
   }
 
   function onKeydown(e) {
-    if (e.key === 'Escape' && Views.isModalOpen()) Views.closeModal();
+    if (e.key !== 'Escape') return;
+    /* 面板压在弹窗上面，所以先关面板（一次 Esc 只关一层） */
+    if (Views.isPickerOpen()) { closePicker(); return; }
+    if (Views.isModalOpen()) Views.closeModal();
   }
 
   /* ---------------- 启动 ---------------- */
@@ -697,10 +936,10 @@ window.App = (function () {
      其实是缓存。这里启动时点一遍各层必须有的函数，缺了就直接告诉他强刷。 */
   var LAYER_API = [
     { file: 'store.js', obj: 'Store', need: ['load', 'saveSemester', 'saveSchedule', 'toggleTodo', 'exportAll', 'importAll', 'defaultPeriods', 'resetAll'] },
-    { file: 'rules.js', obj: 'Rules', need: ['parseDate', 'isMonday', 'weekdayName', 'weeksError', 'periodsFromPairs', 'currentWeekNo', 'coursesOfWeek', 'findConflicts', 'todaySummary'] },
+    { file: 'rules.js', obj: 'Rules', need: ['parseDate', 'isMonday', 'weekdayName', 'weeksError', 'periodsFromPairs', 'monthGrid', 'shiftMonth', 'timeUnits', 'nearestIndex', 'monthLabel', 'currentWeekNo', 'coursesOfWeek', 'findConflicts', 'todaySummary'] },
     { file: 'ics.js', obj: 'Ics', need: ['build', 'download'] },
     { file: 'mock.js', obj: 'Mock', need: ['courses', 'todos'] },
-    { file: 'views.js', obj: 'Views', need: ['setupPage', 'skeleton', 'errorCard', 'semesterForm', 'setMondayHint', 'setWeeksHint', 'renderWeek', 'renderToday'] }
+    { file: 'views.js', obj: 'Views', need: ['setupPage', 'skeleton', 'errorCard', 'semesterForm', 'setMondayHint', 'setWeeksHint', 'openPickerSheet', 'closePickerSheet', 'isPickerOpen', 'syncPickerTime', 'scrollPickerCols', 'renderWeek', 'renderToday'] }
   ];
 
   /* 返回缺失清单；空数组 = 各层齐全 */

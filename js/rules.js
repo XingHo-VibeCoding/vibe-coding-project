@@ -193,6 +193,77 @@ window.Rules = (function () {
     return { ok: true, periods: out };
   }
 
+  /* ---------------- 自建日期 / 时间面板要用的纯函数（Day 8 反馈）----------------
+     背景：原生 <input type="date|time"> 的浮层是浏览器自己画的，加不了 ×，
+     触屏上「点别处才关」很容易误触。所以改成自建面板 —— 面板要用到的
+     月历排布、时/分候选这些东西全是「答案唯一」的，按 research.md 第六节
+     的原则放规则层，既不碰 DOM 也能被测试覆盖。 */
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  /* 某年某月排成「周一起始」的 7 列格子。
+     返回 [{ key:'YYYY-MM-DD', day:8, out:false, weekday:2 }, …]
+     out=true 表示上/下月补齐的空位（面板里显示成灰色、不给点）。 */
+  function monthGrid(year, month) {
+    var y = Number(year), m = Number(month);
+    if (!(y > 1900) || !(m >= 1 && m <= 12)) return [];
+
+    var first = new Date(y, m - 1, 1);
+    var lead = (first.getDay() + 6) % 7;                // 周一起始：周一=0、周日=6
+    var days = new Date(y, m, 0).getDate();             // 「下月 0 号」= 本月最后一天
+    var cells = [];
+    var i, dt;
+
+    for (i = 0; i < lead; i++) {                        // 上月补齐
+      dt = new Date(y, m - 1, i - lead + 1);
+      cells.push({ key: dateKey(dt), day: dt.getDate(), out: true, weekday: dt.getDay() });
+    }
+    for (i = 1; i <= days; i++) {                       // 本月
+      dt = new Date(y, m - 1, i);
+      cells.push({ key: dateKey(dt), day: i, out: false, weekday: dt.getDay() });
+    }
+    var tail = (7 - (cells.length % 7)) % 7;
+    for (i = 1; i <= tail; i++) {                       // 下月补齐
+      dt = new Date(y, m - 1, days + i);
+      cells.push({ key: dateKey(dt), day: dt.getDate(), out: true, weekday: dt.getDay() });
+    }
+    return cells;
+  }
+
+  /* 月份加减（跨年自动进位）：shiftMonth(2026, 12, 1) → {year:2027, month:1} */
+  function shiftMonth(year, month, delta) {
+    var d = new Date(Number(year), Number(month) - 1 + Number(delta || 0), 1);
+    return { year: d.getFullYear(), month: d.getMonth() + 1 };
+  }
+
+  /* 时/分两列的候选项。step = 分钟粒度（默认 5）：分钟列是 00 05 … 55 */
+  function timeUnits(step) {
+    var s = Number(step) > 0 ? Number(step) : 5;
+    var hours = [], minutes = [], i;
+    for (i = 0; i < 24; i++) hours.push(pad2(i));
+    for (i = 0; i < 60; i += s) minutes.push(pad2(i));
+    return { hours: hours, minutes: minutes, step: s };
+  }
+
+  /* 在候选里找最接近的一项（'07' 在 00/05/10… 里 → 05 的下标 1）。
+     用途：面板打开时把某一列滚到当前值附近；值不在网格上也不至于没反应。 */
+  function nearestIndex(list, value) {
+    if (!Array.isArray(list) || !list.length) return 0;
+    var target = Number(value);
+    if (isNaN(target)) return 0;
+    var best = 0, bestDiff = Infinity, i, d;
+    for (i = 0; i < list.length; i++) {
+      d = Math.abs(Number(list[i]) - target);
+      if (d < bestDiff) { bestDiff = d; best = i; }
+    }
+    return best;
+  }
+
+  /* 年份 + 月号 → '2026 年 9 月' */
+  function monthLabel(year, month) {
+    return Number(year) + ' 年 ' + Number(month) + ' 月';
+  }
+
   return {
     parseDate: parseDate,
     dateKey: dateKey,
@@ -202,6 +273,11 @@ window.Rules = (function () {
     isClockTime: isClockTime,
     weeksError: weeksError,
     periodsFromPairs: periodsFromPairs,
+    monthGrid: monthGrid,
+    shiftMonth: shiftMonth,
+    timeUnits: timeUnits,
+    nearestIndex: nearestIndex,
+    monthLabel: monthLabel,
     currentWeekNo: currentWeekNo,
     isBeyondSemester: isBeyondSemester,
     matchWeek: matchWeek,
