@@ -295,9 +295,14 @@ window.Views = (function () {
     ].join('');
   }
 
+  /* 【Day 8 补·用户反馈】两种「没有节次」必须分开对待，否则删完保存会「自己长回来」：
+       · 缺字段（semester.periods === undefined）：加这个字段之前的老数据 → 回落默认 10 节
+       · 空数组（[]）：用户主动删完，意思就是「不设置节次」 → 就该渲染 0 行
+     所以这里只看 Array.isArray，**不再看 length**。 */
   function periodsEditor(containerId, semester) {
-    var has = semester && Array.isArray(semester.periods) && semester.periods.length;
-    var list = has ? semester.periods : (window.Store ? Store.defaultPeriods() : []);
+    var hasField = !!(semester && Array.isArray(semester.periods));
+    var list = hasField ? semester.periods : (window.Store ? Store.defaultPeriods() : []);
+    var isEmpty = list.length === 0;
     var rows = '';
     for (var i = 0; i < list.length; i++) {
       rows += periodRow(list[i].no || (i + 1), list[i].start, list[i].end);
@@ -306,8 +311,10 @@ window.Views = (function () {
       '  <div class="field" data-field="periods">',
       '    <label class="field__label">上课节次时间（各校不同，逐节改成你学校的；删完表示不设置）</label>',
       '    <div class="periods" id="' + containerId + '">' + rows + '</div>',
+      '    <p class="hint periods__empty"' + (isEmpty ? '' : ' hidden') + '>当前不设置上课节次。需要的话点右边「恢复默认 10 节」，或自己一节节加。</p>',
       '    <div class="periods__actions">',
       '      <button type="button" class="btn btn--sm" data-action="add-period">＋ 添加一节</button>',
+      '      <button type="button" class="btn btn--ghost btn--sm periods__restore" data-action="restore-periods"' + (isEmpty ? '' : ' hidden') + '>恢复默认 10 节</button>',
       '    </div>',
       '    <p class="hint">删除后序号自动连续。这里的时间只是「录课时可以带出的参考」，不影响已有课程。</p>',
       '    <div class="field__error" hidden></div>',
@@ -580,16 +587,11 @@ window.Views = (function () {
     var el = $('demo-area');
     if (!el) return;
 
+    /* 课程卡片复用 courseCard()，只是换成静态版（div、无点击动作）——
+       不再内联抄一份标记，将来改卡片样式只改一个地方 */
     var cards = '';
     for (var i = 0; i < courses.length; i++) {
-      var c = courses[i];
-      cards += [
-        '<div class="course-card">',
-        '  <span class="course-card__top"><span class="course-card__time">' + esc(fmtRange(c.start_time, c.duration)) + '</span>' + ruleBadge(c.week_rule) + '</span>',
-        '  <span class="course-card__title">' + esc(c.title) + '</span>',
-        c.location ? '<span class="course-card__loc">' + esc(c.location) + '</span>' : '',
-        '</div>'
-      ].join('');
+      cards += courseCard(courses[i], { static: true });
     }
 
     var chips = '';
@@ -669,16 +671,21 @@ window.Views = (function () {
     return out;
   }
 
-  function courseCard(c) {
+  /* 课程卡片。示例预览走 {static:true}：换成 <div> 且不带点击动作（点了不该有反应）。
+     以前 renderDemo 里内联抄了一份同样的标记，卡片样式一改就得改两处（Day 8 补）。 */
+  function courseCard(c, opts) {
+    var isStatic = !!(opts && opts.static);
     return [
-      '<button type="button" class="course-card" data-action="edit-course" data-id="' + esc(c.id) + '" title="点击编辑或删除">',
+      isStatic
+        ? '<div class="course-card">'
+        : '<button type="button" class="course-card" data-action="edit-course" data-id="' + esc(c.id) + '" title="点击编辑或删除">',
       '  <span class="course-card__top">',
       '    <span class="course-card__time">' + esc(fmtRange(c.start_time, c.duration)) + '</span>',
       ruleBadge(c.week_rule),
       '  </span>',
       '  <span class="course-card__title">' + esc(c.title) + '</span>',
       c.location ? '<span class="course-card__loc">' + esc(c.location) + '</span>' : '',
-      '</button>'
+      isStatic ? '</div>' : '</button>'
     ].join('');
   }
 
@@ -1018,6 +1025,7 @@ window.Views = (function () {
     errorCard: errorCard,
     setupPage: setupPage,
     renderDemo: renderDemo,
+    courseCard: courseCard,
     renderWeek: renderWeek,
     renderToday: renderToday
   };

@@ -253,6 +253,8 @@ html, body {
   font-size: 13px;
 }
 .periods__actions { margin-top: 8px; }
+/* 「恢复默认 10 节」只在节次被删空时露出来，和「添加一节」并排时留个缝 */
+.periods__restore { margin-left: 8px; }
 .periods .btn--sm { padding: 4px 10px; font-size: 12px; }
 
 /* ---------- 自建日期 / 时间面板（Day 8 反馈） ----------

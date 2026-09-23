@@ -93,6 +93,19 @@ window.App = (function () {
     return full;
   }
 
+  /* 「当前不设置节次」的提示 + 「恢复默认 10 节」按钮：只在 0 行时露出来。
+     为什么需要它：空数组与缺字段在渲染层已经分开（views.js periodsEditor），
+     但「删掉最后一行」是发生在 DOM 里的，得当场把提示和按钮翻出来。 */
+  function syncPeriodsEmpty(box) {
+    var field = box && box.parentNode;
+    if (!field) return;
+    var empty = box.querySelectorAll('.periods__row').length === 0;
+    var hint = field.querySelector('.periods__empty');
+    var btn = field.querySelector('[data-action="restore-periods"]');
+    if (hint) hint.hidden = !empty;
+    if (btn) btn.hidden = !empty;
+  }
+
   /* 增删节次后重排序号（界面上「第N节」与实际顺序始终一致） */
   function renumberPeriods(box) {
     if (!box) return;
@@ -107,6 +120,7 @@ window.App = (function () {
       if (en) en.setAttribute('aria-label', '第' + (i + 1) + '节结束时间');
     }
     periodsCapState(box);
+    syncPeriodsEmpty(box);
   }
 
   function addPeriodRow(btn) {
@@ -139,6 +153,21 @@ window.App = (function () {
     Views.clearFieldMarks();
   }
 
+  /* 「恢复默认 10 节」：删完后悔了一键灌回来。
+     只改界面，要落库还得等他点保存 —— 与「添加一节」的行为保持一致（都不偷偷写数据）。 */
+  function restoreDefaultPeriods(btn) {
+    var box = periodsBoxOf(btn);
+    if (!box) return;
+    var defs = Store.defaultPeriods();
+    var html = '';
+    for (var i = 0; i < defs.length; i++) {
+      html += Views.periodRow(defs[i].no, defs[i].start, defs[i].end);
+    }
+    box.innerHTML = html;
+    renumberPeriods(box);   /* 内部会同步 15 节上限灰态与空状态提示 */
+    Views.clearFieldMarks();
+  }
+
   /* ---------------- 自建日期 / 时间面板（Day 8 反馈） ----------------
      为什么自己做：原生 date/time 的浮层由浏览器画，加不了 ×，触屏上
      「点别处才关」太容易误触。面板的状态只有两件：写回哪个输入框（el）、
@@ -146,7 +175,9 @@ window.App = (function () {
   var PICKER_MIN_STEP = 5;    // 分钟粒度：一格 5 分钟
   var PICKER_ITEM_H = 44;     // 时间列每项高度，必须和 css 里 .pk-unit 一致
   /* 滚轮累计到这个像素数才走一格。普通鼠标转一格约 100px → 正好走一格；
-     触控板小幅滑动要攒一会儿才走一格，手指能控制得很细。 */
+     触控板小幅滑动要攒一会儿才走一格，手指能控制得很细。
+     要调手感就改这一个数：嫌迟钝调小（如 30），嫌太灵敏调大（如 80）。
+     改完记得升 index.html 的 ?v= 版本号，否则浏览器还会用旧的。 */
   var PICKER_WHEEL_UNIT = 50;
   var picker = null;          // { el, type, restrict, label, value, year, month, manual }
   var pickerScrollTimer = null;
@@ -399,7 +430,10 @@ window.App = (function () {
     /* 已有 15 节（例如上次存过）时，按钮上来就该是灰的，不用等点到才知道 */
     if (setup && !setup.hidden) {
       var pbox = setup.querySelector('.periods');
-      if (pbox) periodsCapState(pbox);
+      if (pbox) {
+        periodsCapState(pbox);
+        syncPeriodsEmpty(pbox);   /* 上次「删完不设置」存过的，进来就该看到空状态提示 */
+      }
     }
   }
 
@@ -873,6 +907,7 @@ window.App = (function () {
        取不到按钮时 addPeriodRow/removePeriodRow 内部会安全返回，不会抛错。 */
     if (action === 'add-period') { addPeriodRow(trigger); return; }
     if (action === 'del-period') { removePeriodRow(trigger); return; }
+    if (action === 'restore-periods') { restoreDefaultPeriods(trigger); return; }
 
     /* ---------------- 自建日期 / 时间面板（Day 8 反馈） ---------------- */
     if (action === 'open-picker') { openPickerFrom(trigger); return; }
