@@ -307,9 +307,29 @@ window.Views = (function () {
     for (var i = 0; i < list.length; i++) {
       rows += periodRow(list[i].no || (i + 1), list[i].start, list[i].end);
     }
+    /* 辅助输入的默认值从现有数据反推：第一节的时长、第 1→2 节的课间。
+       推不出来（比如删空了）才用 45 / 10 兜底。这两个数只在界面上帮着算，
+       **不落库** —— 存的仍然只有 periods 表本身。 */
+    var defDur = 45, defGap = 10;
+    var R0 = window.Rules;
+    if (R0 && list.length) {
+      var s0 = R0.timeToMin(list[0] && list[0].start);
+      var e0 = R0.timeToMin(list[0] && list[0].end);
+      if (s0 >= 0 && e0 > s0) defDur = e0 - s0;
+      if (list.length > 1) {
+        var e0b = R0.timeToMin(list[0] && list[0].end);
+        var s1 = R0.timeToMin(list[1] && list[1].start);
+        if (e0b >= 0 && s1 >= e0b) defGap = s1 - e0b;
+      }
+    }
     return [
       '  <div class="field" data-field="periods">',
       '    <label class="field__label">上课节次时间（各校不同，逐节改成你学校的；删完表示不设置）</label>',
+      '    <div class="periods__assist">',
+      '      <label class="periods__assist-item">每节时长 <input type="number" inputmode="numeric" class="periods__num" id="' + containerId + '-dur" min="10" max="180" step="5" value="' + defDur + '"> 分钟</label>',
+      '      <label class="periods__assist-item">课间 <input type="number" inputmode="numeric" class="periods__num" id="' + containerId + '-gap" min="0" max="120" step="5" value="' + defGap + '"> 分钟</label>',
+      '      <span class="hint periods__assist-hint">改「每节时长 / 课间」→ 下面整表实时重排（午休等大空档保留）；改某节「开始时间」→ 后面整体顺移；特殊情况直接改「结束时间」就行，不会被动。</span>',
+      '    </div>',
       '    <div class="periods" id="' + containerId + '">' + rows + '</div>',
       '    <p class="hint periods__empty"' + (isEmpty ? '' : ' hidden') + '>当前不设置上课节次。需要的话点右边「恢复默认 10 节」，或自己一节节加。</p>',
       '    <div class="periods__actions">',
@@ -671,21 +691,50 @@ window.Views = (function () {
     return out;
   }
 
-  /* 课程卡片。示例预览走 {static:true}：换成 <div> 且不带点击动作（点了不该有反应）。
-     以前 renderDemo 里内联抄了一份同样的标记，卡片样式一改就得改两处（Day 8 补）。 */
+  /* 课程卡片。两种模式：
+     - 默认：流式布局里的完整卡片（初始引导、旧回落布局用）
+     - opts.rows = {start, span}：节次网格模式 —— 内联 grid-row 定位 + 紧凑版式，
+       地点只在跨 2 节以上时显示（单节行高放不下）
+     - opts.static：示例卡片，<div> 且不带点击动作（Day 8 与 courseCard 合并去重） */
   function courseCard(c, opts) {
     var isStatic = !!(opts && opts.static);
+    var rows = opts && opts.rows;
+    var tag = isStatic ? 'div' : 'button';
+    var cls = 'course-card' + (rows ? ' course-card--cell' : '');
+    var pos = rows ? ' style="grid-row:' + rows.start + ' / span ' + rows.span + '"' : '';
+    var head = isStatic
+      ? '<div class="' + cls + '">'
+      : '<button type="button" class="' + cls + '" data-action="edit-course" data-id="' + esc(c.id) + '" title="点击编辑或删除"' + pos + '>';
+    var showLoc = c.location && (!rows || rows.span >= 2);
     return [
-      isStatic
-        ? '<div class="course-card">'
-        : '<button type="button" class="course-card" data-action="edit-course" data-id="' + esc(c.id) + '" title="点击编辑或删除">',
+      head,
       '  <span class="course-card__top">',
       '    <span class="course-card__time">' + esc(fmtRange(c.start_time, c.duration)) + '</span>',
       ruleBadge(c.week_rule),
       '  </span>',
       '  <span class="course-card__title">' + esc(c.title) + '</span>',
-      c.location ? '<span class="course-card__loc">' + esc(c.location) + '</span>' : '',
+      showLoc ? '<span class="course-card__loc">' + esc(c.location) + '</span>' : '',
       isStatic ? '</div>' : '</button>'
+    ].join('');
+  }
+
+  /* 节次时间轴列（周视图第一列 / 今日视图左侧）。行数跟随 periods 长度，
+     行高与列内网格共用同一个 CSS 变量，所以天然对齐。 */
+  function periodAxisHtml(periods) {
+    var rows = '';
+    for (var i = 0; i < periods.length; i++) {
+      rows += [
+        '<div class="axis-row">',
+        '  <span class="axis-row__no">' + esc(String((periods[i] && periods[i].no) || (i + 1))) + '</span>',
+        '  <span class="axis-row__time">' + esc((periods[i] && periods[i].start) || '') + '</span>',
+        '</div>'
+      ].join('');
+    }
+    return [
+      '<div class="period-axis" aria-hidden="true">',
+      '  <div class="period-axis__head">节次</div>',
+      '  <div class="period-axis__rows">' + rows + '</div>',
+      '</div>'
     ].join('');
   }
 
@@ -719,6 +768,12 @@ window.Views = (function () {
       '</div>'
     ].join('');
 
+    /* 节次网格：有生效节次表时按节次分行（B 方案，Day 8）；删空了就回落流式布局 */
+    var periods = Rules.effectivePeriods(semester);
+    var useGrid = !!periods;
+    var axisHtml = useGrid ? periodAxisHtml(periods) : '';
+    var todoRow = useGrid ? ' style="grid-row:' + (periods.length + 1) + '"' : '';
+
     /* 7 列网格：列 = 星期；列内上半是课程卡片，底部是该日截止的待办区（PRD F8） */
     var cols = '';
     for (var d = 1; d <= 7; d++) {
@@ -728,14 +783,21 @@ window.Views = (function () {
       }
 
       var cards = '';
-      for (var j = 0; j < dayCourses.length; j++) cards += courseCard(dayCourses[j]);
-      if (!cards) cards = '<div class="day-col__empty">无课</div>';
+      for (var j = 0; j < dayCourses.length; j++) {
+        var rows = useGrid ? Rules.courseRows(dayCourses[j], periods) : null;
+        cards += courseCard(dayCourses[j], rows ? { rows: rows } : null);
+      }
+      if (!cards) {
+        cards = useGrid
+          ? '<div class="day-col__empty" style="grid-row:1 / span ' + periods.length + '">无课</div>'
+          : '<div class="day-col__empty">无课</div>';
+      }
 
       var dayKey = weekdayDateKey(semester, viewing, d);
       var dayTodos = dayKey ? todosDueOn(state.todos, dayKey) : [];
       var todoArea = '';
       if (dayTodos.length) {
-        todoArea = '<div class="day-col__todos">';
+        todoArea = '<div class="day-col__todos"' + (useGrid ? todoRow : '') + '>';
         for (var k = 0; k < dayTodos.length; k++) todoArea += todoChip(dayTodos[k]);
         todoArea += '</div>';
       }
@@ -743,7 +805,7 @@ window.Views = (function () {
       cols += [
         '<div class="day-col' + (viewingCurrentWeek && d === today ? ' is-today' : '') + '">',
         '  <div class="day-col__head">' + WEEKDAYS[d] + '</div>',
-        '  <div class="day-col__body">' + cards + todoArea + '</div>',
+        '  <div class="day-col__body' + (useGrid ? ' is-grid' : '') + '">' + cards + todoArea + '</div>',
         '</div>'
       ].join('');
     }
@@ -751,7 +813,7 @@ window.Views = (function () {
     box.innerHTML = [
       termBar(semester),
       nav,
-      '<div class="weekgrid-wrap"><div class="weekgrid">' + cols + '</div></div>',
+      '<div class="weekgrid-wrap"><div class="weekgrid">' + axisHtml + cols + '</div></div>',
       '<p class="hint weekhint">点课程卡片或待办可编辑；待办显示在截止日对应列，点方框打勾。</p>'
     ].join('\n');
   }
@@ -960,7 +1022,23 @@ window.Views = (function () {
     if (!todayCourses.length) {
       courseHtml = '<div class="day-col__empty">今天没有课</div>';
     } else {
-      for (var j = 0; j < todayCourses.length; j++) courseHtml += courseCard(todayCourses[j]);
+      /* 有生效节次表 → 节次轴 + 单列网格（与周视图同一套排布规则）；否则流式回落 */
+      var periods = Rules.effectivePeriods(semester);
+      if (periods) {
+        var cells = '';
+        for (var j = 0; j < todayCourses.length; j++) {
+          var rows = Rules.courseRows(todayCourses[j], periods);
+          cells += courseCard(todayCourses[j], rows ? { rows: rows } : null);
+        }
+        courseHtml = [
+          '<div class="today-grid">',
+          periodAxisHtml(periods),
+          '  <div class="today-grid__col is-grid">' + cells + '</div>',
+          '</div>'
+        ].join('');
+      } else {
+        for (var j2 = 0; j2 < todayCourses.length; j2++) courseHtml += courseCard(todayCourses[j2]);
+      }
     }
 
     var todoHtml = '';
@@ -1026,6 +1104,7 @@ window.Views = (function () {
     setupPage: setupPage,
     renderDemo: renderDemo,
     courseCard: courseCard,
+    periodsEditor: periodsEditor,
     renderWeek: renderWeek,
     renderToday: renderToday
   };

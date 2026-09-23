@@ -129,14 +129,17 @@ window.App = (function () {
     var rows = box.querySelectorAll('.periods__row');
     if (rows.length >= 15) { Views.toast('一天最多 15 节，删掉一节才能再加。'); return; }
 
-    var start = '08:00', end = '08:45';
+    /* 时长/课间从编辑器顶部的辅助输入读（Day 8 用户需求），读不到回落 45/10 */
+    var a = periodAssist(box);
+    var start, end;
     if (rows.length) {
       var lastEnd = rows[rows.length - 1].querySelector('[data-role="end"]');
-      var base = lastEnd && lastEnd.value ? Rules.timeToMin(lastEnd.value) : 8 * 60;
+      var base = lastEnd && lastEnd.value ? Rules.timeToMin(lastEnd.value) : -1;
       if (base < 0) base = 8 * 60;
-      start = minToTime(base + 10);          // 上一节结束后歇 10 分钟
-      end = minToTime(base + 10 + 45);       // 默认一节课 45 分钟
+      var nx = Rules.nextPeriodAfter(minToTime(base), a.gap, a.dur);
+      if (nx) { start = nx.start; end = nx.end; }
     }
+    if (!start) { start = '08:00'; end = minToTime(8 * 60 + a.dur); }
     /* 插到「最后一个节次行」之后：box 里只有 .periods__row，
        「添加一节」按钮在 box 外面（.periods__actions 里），所以不会插到按钮下方 */
     box.insertAdjacentHTML('beforeend', Views.periodRow(rows.length + 1, start, end));
@@ -153,6 +156,59 @@ window.App = (function () {
     Views.clearFieldMarks();
   }
 
+  /* 读编辑器顶部的「每节时长 / 课间」辅助输入。范围外的值不报错、直接回落默认 ——
+     这是帮着算的辅助数，不值得为它弹提示打断人。 */
+  function periodAssist(box) {
+    var dur = 45, gap = 10;
+    if (box && box.id) {
+      var d = $(box.id + '-dur'), g = $(box.id + '-gap');
+      var dv = d ? Number(d.value) : NaN;
+      var gv = g ? Number(g.value) : NaN;
+      if (dv >= 10 && dv <= 180) dur = Math.round(dv);
+      if (gv >= 0 && gv <= 120) gap = Math.round(gv);
+    }
+    return { dur: dur, gap: gap };
+  }
+
+  /* 改某节「开始时间」后的联动（Day 8 用户需求）：
+     该节结束 = 新开始 + 每节时长；其后每节起止加相同偏移（整体平移，午休等大空档保留）。
+     prevStart 由 applyPicker 在覆盖输入框之前记下来传入 —— 见 applyPicker 里的注释。 */
+  function cascadePeriodsFrom(input, prevStart) {
+    var row = closestByClass(input, 'periods__row');
+    var box = periodsBoxOf(input);
+    if (!row || !box) return;
+    var rows = box.querySelectorAll('.periods__row');
+    var idx = -1;
+    for (var i = 0; i < rows.length; i++) { if (rows[i] === row) { idx = i; break; } }
+    if (idx < 0) return;
+    var list = [];
+    for (var j = 0; j < rows.length; j++) {
+      var st = rows[j].querySelector('[data-role="start"]');
+      var en = rows[j].querySelector('[data-role="end"]');
+      list.push({ start: st ? st.value : '', end: en ? en.value : '' });
+    }
+    var a = periodAssist(box);
+    var res = Rules.shiftPeriodsAfter(list, idx, input.value, a.dur, prevStart);
+    if (!res.ok) {
+      if (res.reason === 'midnight') {
+        /* 跨午夜不平移，但这一节的「结束 = 新开始 + 时长」仍然算 —— 用户至少看到时长生效 */
+        var enNow = row.querySelector('[data-role="end"]');
+        if (enNow) enNow.value = Rules.minToTime(Rules.timeToMin(input.value) + a.dur);
+        Views.toast('有节次会平移到午夜之外，这次只改了这一节；节次表请在一天之内');
+      } else {
+        Views.toast('开始时间要写成 HH:mm 的样子，比如 08:07');
+      }
+      return;
+    }
+    var out = res.periods;
+    for (var k = idx; k < rows.length; k++) {
+      var st2 = rows[k].querySelector('[data-role="start"]');
+      var en2 = rows[k].querySelector('[data-role="end"]');
+      if (st2) st2.value = out[k].start;
+      if (en2) en2.value = out[k].end;
+    }
+  }
+
   /* 「恢复默认 10 节」：删完后悔了一键灌回来。
      只改界面，要落库还得等他点保存 —— 与「添加一节」的行为保持一致（都不偷偷写数据）。 */
   function restoreDefaultPeriods(btn) {
@@ -166,6 +222,45 @@ window.App = (function () {
     box.innerHTML = html;
     renumberPeriods(box);   /* 内部会同步 15 节上限灰态与空状态提示 */
     Views.clearFieldMarks();
+  }
+
+  /* 改「每节时长 / 课间」→ 全表实时重排（Day 8 用户需求）。
+     第 1 节开始不动；时长全表统一；普通课间（= 重排前第一处间隔）换成新课间，
+     午休 / 大课间这类特殊空档原样保留。输入还没合法（比如想输 15 正打到 1）时不动表，
+     免得节次来回跳。同样只改界面，落库靠「保存」。 */
+  function reperiodAll(input) {
+    var box = periodsBoxOf(input);
+    if (!box) return;
+    var rows = box.querySelectorAll('.periods__row');
+    if (!rows.length) return;
+    var dv = Number(input.value);
+    var isDur = /-dur$/.test(String(input.id || ''));
+    if (isDur ? !(dv >= 10 && dv <= 180) : !(dv >= 0 && dv <= 120)) return;  /* 中途态，先别动 */
+
+    var list = [];
+    for (var i = 0; i < rows.length; i++) {
+      var st = rows[i].querySelector('[data-role="start"]');
+      var en = rows[i].querySelector('[data-role="end"]');
+      list.push({ start: st ? st.value : '', end: en ? en.value : '' });
+    }
+    /* oldGap 取重排前的第一处间隔 —— 辅助框显示的默认值就是从它反推的 */
+    var oldGap = -1;
+    if (rows.length > 1) {
+      var e0 = Rules.timeToMin(list[0].end), s1 = Rules.timeToMin(list[1].start);
+      oldGap = (e0 >= 0 && s1 >= 0) ? s1 - e0 : -1;
+    }
+    var a = periodAssist(box);
+    var res = Rules.reperiod(list, { dur: a.dur, gap: a.gap, oldGap: oldGap });
+    if (!res.ok) {
+      if (res.reason === 'midnight') Views.toast('按这个时长 / 课间排会超出一天，先改小一点');
+      return;
+    }
+    for (var k = 0; k < rows.length; k++) {
+      var st2 = rows[k].querySelector('[data-role="start"]');
+      var en2 = rows[k].querySelector('[data-role="end"]');
+      if (st2) st2.value = res.periods[k].start;
+      if (en2) en2.value = res.periods[k].end;
+    }
   }
 
   /* ---------------- 自建日期 / 时间面板（Day 8 反馈） ----------------
@@ -387,9 +482,16 @@ window.App = (function () {
     }
 
     var el = picker.el;
+    var prevStart = el ? el.value : '';      // 覆盖前记下旧值：整体平移的偏移量靠它算
     closePicker();
     if (!el || !el.parentNode) return;       // 面板开着时那一行被删了 → 什么都不写
     el.value = v;
+    /* 节次行的「开始时间」变了 → 该节结束重算 + 后面整体平移（Day 8 用户需求）。
+       必须在这里调、把 prevStart 显式传进去 —— 等下面的 change 事件再调就晚了，
+       那时输入框里已经是新值，偏移永远算出 0（测试抓到过这个真 bug）。 */
+    if (el.getAttribute('data-role') === 'start' && periodsBoxOf(el)) {
+      cascadePeriodsFrom(el, prevStart);
+    }
     /* 派发 change，复用既有的「是不是周一 / 总周数」即时提示，不另写一套 */
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
@@ -813,6 +915,11 @@ window.App = (function () {
     var t = e.target;
     if (!t || !t.id) return;
     if (t.id === 'su-weeks' || t.id === 'f-weeks') Views.setWeeksHint(t.id);
+    /* 节次辅助输入（…-dur / …-gap）边打边重排全表 —— 实时联动，不落库 */
+    if (/-dur$/.test(t.id) || /-gap$/.test(t.id)) {
+      if (periodsBoxOf(t)) reperiodAll(t);
+      return;
+    }
     /* 面板里的「直接输入」：只记下来，不重画（重画会打断光标），点完成时以它为准 */
     if (t.id === 'picker-manual' && picker) picker.manual = t.value;
   }

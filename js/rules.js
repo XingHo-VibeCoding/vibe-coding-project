@@ -31,6 +31,172 @@ window.Rules = (function () {
     return m ? (Number(m[1]) * 60 + Number(m[2])) : -1;
   }
 
+  /* 分钟 → 'HH:mm'。跨午夜回绕（1440 → 00:00），与 app.js 里的 minToTime 同一套语义 ——
+     两个实现必须一致，否则「添加一节」过午夜时会出现 23:59–23:59 这种非法行 */
+  function minToTime(m) {
+    m = ((Math.round(Number(m) || 0) % 1440) + 1440) % 1440;
+    var h = Math.floor(m / 60), mm = m % 60;
+    return (h < 10 ? '0' + h : '' + h) + ':' + (mm < 10 ? '0' + mm : '' + mm);
+  }
+
+  /* ---------------- 节次编辑器的自动推算（Day 8 用户需求） ---------------- */
+
+  /* 从第 idx 节（0 基）改开始时间为 newStart 后的整表推算：
+     · 该节结束时间 = 新开始 + dur（每节时长，分钟）
+     · 其后每节起止 = 原值 + 相同偏移 —— 「整体平移」，午休等大空档原样保留
+     prevStart = 改动前那一节的开始时间（调用方必须在覆盖前记下来传入）；
+     不传则按 list[idx].start 算（此时偏移为 0，只重算该节结束）。
+     返回 { ok:true, periods:[…] }；输入非法 → { ok:false, reason:'input' }；
+     平移会让某节跨过午夜 → { ok:false, reason:'midnight' } —— 跨天的课表没有意义，
+     硬移只会造出 end<start 的非法行，调用方提示后保持原表不动。 */
+  function shiftPeriodsAfter(list, idx, newStart, dur, prevStart) {
+    if (!Array.isArray(list) || !list.length) return { ok: false, reason: 'input' };
+    if (!(idx >= 0 && idx < list.length)) return { ok: false, reason: 'input' };
+    var s = timeToMin(newStart);
+    var d = Number(dur);
+    if (s < 0 || !(d > 0)) return { ok: false, reason: 'input' };
+    var old = timeToMin(prevStart !== undefined ? prevStart : (list[idx] && list[idx].start));
+    var delta = old >= 0 ? s - old : 0;
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i] || {};
+      if (i === idx) { out.push({ start: minToTime(s), end: minToTime(s + d) }); continue; }
+      var st = timeToMin(r.start);
+      var en = timeToMin(r.end);
+      if (i > idx && delta) {
+        if (st >= 0 && (st + delta < 0 || st + delta > 1439)) return { ok: false, reason: 'midnight' };
+        if (en >= 0 && (en + delta < 0 || en + delta > 1439)) return { ok: false, reason: 'midnight' };
+        st += delta;
+        en += delta;
+      }
+      out.push({
+        start: st >= 0 ? minToTime(st) : String(r.start || ''),
+        end: en >= 0 ? minToTime(en) : String(r.end || '')
+      });
+    }
+    return { ok: true, periods: out };
+  }
+
+  /* 「添加一节」的默认时间：上一节结束 + 课间 gap，上 dur 分钟。
+     prevEnd 解析不了时返回 null，调用方回落 08:00。 */
+  function nextPeriodAfter(prevEnd, gap, dur) {
+    var e = timeToMin(prevEnd);
+    var g = Number(gap), d = Number(dur);
+    if (e < 0 || !(g >= 0) || !(d > 0)) return null;
+    var s = e + g;
+    return { start: minToTime(s), end: minToTime(s + d) };
+  }
+
+  /* 改「每节时长 / 课间」后的整表重排（Day 8 用户需求）：
+     · 第 1 节开始时间是锚点，不动；
+     · 每节结束 = 该节开始 + dur（时长全表统一）；
+     · 相邻间隔 = 上一节结束到下一节开始的空档：
+         空档等于 oldGap（改动前的普通课间）→ 换成新 gap；
+         空档不等于 oldGap（午休、大课间这类特殊空档）→ 原样保留。
+       所以改完后所有节都会顺移，但午休不会被抹平 —— 与「整体平移」的语义一致。
+     opts = { dur, gap, oldGap }；oldGap 不传或解析不了 = 所有空档原样保留（保守，
+       识别不了基准就不乱动空档；某处空档本身解析失败才回落用 gap）。
+     返回 { ok, periods } 或 { ok:false, reason:'midnight'|'input' }（不改入参）。 */
+  function reperiod(list, opts) {
+    if (!Array.isArray(list) || !list.length) return { ok: false, reason: 'input' };
+    var o = opts || {};
+    var d = Number(o.dur), g = Number(o.gap);
+    var og = (o.oldGap !== undefined && Number(o.oldGap) >= 0) ? Math.round(Number(o.oldGap)) : null;
+    if (!(d > 0) || !(g >= 0)) return { ok: false, reason: 'input' };
+    var anchor = timeToMin(list[0] && list[0].start);
+    if (anchor < 0) return { ok: false, reason: 'input' };
+
+    /* 先记下每处旧空档（用旧表的 start/end），再从锚点重排 */
+    var gaps = [];
+    for (var i = 0; i < list.length - 1; i++) {
+      var en = timeToMin(list[i] && list[i].end);
+      var st = timeToMin(list[i + 1] && list[i + 1].start);
+      gaps.push(en >= 0 && st >= 0 ? st - en : null);
+    }
+    var out = [];
+    var t = anchor;
+    for (var j = 0; j < list.length; j++) {
+      if (t + d > 1439) return { ok: false, reason: 'midnight' };
+      out.push({ start: minToTime(t), end: minToTime(t + d) });
+      if (j < list.length - 1) {
+        var gp = gaps[j];
+        if (og !== null && gp !== null && gp === og) gp = Math.round(g);
+        if (gp === null || gp < 0) gp = Math.round(g);   /* 表本身乱 / 只有一节 → 按普通课间接 */
+        t = t + d + gp;
+      }
+    }
+    return { ok: true, periods: out };
+  }
+
+  /* ---------------- 节次排布（Day 8：周/日视图节次轴） ---------------- */
+
+  /* 学期「实际生效」的节次表。
+     返回数组 = 拿它画格子；返回 null = 不画格子（视图回落到旧的流式布局）。
+     与空数组语义（Day 8 修复）对齐：
+       periods 缺字段（老数据）        → 用默认 10 节
+       periods 是空数组（用户删空了）  → null，表示「不设置节次」 */
+  function effectivePeriods(semester) {
+    if (!semester) return null;
+    if (Array.isArray(semester.periods)) {
+      return semester.periods.length ? semester.periods : null;
+    }
+    return window.Store ? Store.defaultPeriods() : null;
+  }
+
+  /* 一门课落在节次格子的第几行、占几行。
+     正常情况：课程开始时间就填的节次表的某个 start，精确匹配。
+     兜底（填错了也不崩）：起点就近吸附到某节；卡片上仍显示真实时间。
+     返回 { start: 起始节(1起), span: 占几节 }；periods 无效时返回 null。 */
+  function courseRows(course, periods) {
+    if (!course || !Array.isArray(periods) || !periods.length) return null;
+
+    var s = timeToMin(course.start_time);
+    if (s < 0) return null;
+    var e = s + (Number(course.duration) || 0);
+
+    var mins = [];
+    for (var i = 0; i < periods.length; i++) {
+      mins.push({
+        start: timeToMin(periods[i] && periods[i].start),
+        end: timeToMin(periods[i] && periods[i].end)
+      });
+    }
+
+    /* 起始行：① 精确等于某节 start → ② 落在某节区间内 → ③ 就近吸附 */
+    var startRow = 0;
+    for (var j = 0; j < mins.length; j++) {
+      if (s === mins[j].start) { startRow = j + 1; break; }
+    }
+    if (!startRow) {
+      for (var k = 0; k < mins.length; k++) {
+        if (s >= mins[k].start && s < mins[k].end) { startRow = k + 1; break; }
+      }
+    }
+    if (!startRow) {
+      var best = Infinity;
+      for (var m = 0; m < mins.length; m++) {
+        if (mins[m].start < 0) continue;
+        var d = Math.abs(s - mins[m].start);
+        if (d < best) { best = d; startRow = m + 1; }
+      }
+    }
+    if (!startRow) return null;
+
+    /* 结束行：找「包含结束时刻」的节（start < e ≤ end）；
+       结束落在节间空档时，退到 start 在 e 之前的最后一节。 */
+    var endRow = startRow;
+    for (var n = 0; n < mins.length; n++) {
+      if (mins[n].start < e && e <= mins[n].end) { endRow = n + 1; break; }
+    }
+    if (endRow === startRow) {
+      for (var p = mins.length - 1; p >= 0; p--) {
+        if (mins[p].start >= 0 && mins[p].start < e) { endRow = p + 1; break; }
+      }
+    }
+
+    return { start: startRow, span: Math.max(1, endRow - startRow + 1) };
+  }
+
   /* 当前是第几周（学期未设置或还没开学 → 0）
      算法：目标日期与第一周周一相差几天 ÷ 7 向下取整，再 +1 */
   function currentWeekNo(semester, date) {
@@ -268,6 +434,10 @@ window.Rules = (function () {
     parseDate: parseDate,
     dateKey: dateKey,
     timeToMin: timeToMin,
+    minToTime: minToTime,
+    shiftPeriodsAfter: shiftPeriodsAfter,
+    nextPeriodAfter: nextPeriodAfter,
+    reperiod: reperiod,
     weekdayName: weekdayName,
     isMonday: isMonday,
     isClockTime: isClockTime,
@@ -282,6 +452,8 @@ window.Rules = (function () {
     isBeyondSemester: isBeyondSemester,
     matchWeek: matchWeek,
     coursesOfWeek: coursesOfWeek,
+    effectivePeriods: effectivePeriods,
+    courseRows: courseRows,
     findConflicts: findConflicts,
     todaySummary: todaySummary
   };
