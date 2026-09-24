@@ -982,8 +982,75 @@ window.Views = (function () {
       '    <button type="button" class="btn btn--primary" data-action="export-ics">导出 .ics 日历</button>',
       '    <button type="button" class="btn" data-action="export-json">导出 JSON 备份</button>',
       '    <button type="button" class="btn" data-action="import-json">导入 JSON 数据</button>',
+      '    <button type="button" class="btn" data-action="open-ai-import">AI 导入课表（示例）</button>',
       '  </div>',
+      '  <p class="hint">「AI 导入课表」目前是演示：用内置样例数据走通「识别 → 确认 → 入库」，接入真接口后会变成识别你自己的课表。</p>',
       '  <p class="hint">修改课程后需重新导出 .ics，系统日历的提醒才会同步更新。</p>',
+      '  <div class="form__actions form__actions--left">',
+      '    <button type="button" class="btn btn--danger" data-action="reset-data">清除数据并重置</button>',
+      '  </div>',
+      '  <p class="hint">想从头开始（换学期 / 重测）用它：清空学期、课程、待办并回到初始设定，需要再点一次确认，无法恢复。</p>',
+      '</div>'
+    ].join('\n');
+  }
+
+  /* ---------------- AI 课表识别确认弹窗（js/ai/ai.js 解析结果的确认页） ----------------
+     勾选制：勾选状态留在 DOM 的 checkbox 里，不用往 app 状态里搬，
+     保存时 app.js 直接按 data-idx 从确认结果里取勾中的候选。 */
+
+  function aiRow(c, i) {
+    var meta = WEEKDAYS[c.weekday] || ('周' + c.weekday);
+    meta += ' ' + fmtRange(c.start_time, c.duration);
+    if (c.week_rule !== 'every') meta += ' ' + ruleBadge(c.week_rule);
+    if (c.location) meta += ' · ' + esc(c.location);
+    return [
+      '<label class="ai-row">',
+      '  <input type="checkbox" class="ai-row__check" data-idx="' + i + '" checked>',
+      '  <span class="ai-row__main"><b class="ai-row__title">' + esc(c.title) + '</b>' +
+      '<span class="ai-row__meta">' + meta + '</span></span>',
+      '</label>'
+    ].join('');
+  }
+
+  function aiImportModal(parsed) {
+    var rows = '';
+    for (var i = 0; i < parsed.courses.length; i++) rows += aiRow(parsed.courses[i], i);
+
+    var warns = '';
+    for (var w = 0; w < (parsed.warnings || []).length; w++) {
+      warns += '<p class="hint ai-warn">' + esc(parsed.warnings[w]) + '</p>';
+    }
+
+    var skips = '';
+    if (parsed.skipped.length) {
+      skips = '<p class="hint">有 ' + parsed.skipped.length + ' 条没识别出来（不导入）：</p><div class="ai-skips">';
+      for (var s = 0; s < parsed.skipped.length; s++) {
+        skips += '<p class="ai-skip">' + esc(parsed.skipped[s].reason) +
+          (parsed.skipped[s].raw ? ' — ' + esc(parsed.skipped[s].raw) : '') + '</p>';
+      }
+      skips += '</div>';
+    }
+
+    var actions;
+    if (!rows) {
+      actions = '<div class="form__actions"><button type="button" class="btn" data-action="close-modal">知道了</button></div>';
+    } else {
+      actions = [
+        '<div class="form__actions">',
+        '  <button type="button" class="btn" data-action="close-modal">取消</button>',
+        '  <button type="button" class="btn btn--primary" data-action="ai-save">导入选中课程</button>',
+        '</div>'
+      ].join('\n');
+    }
+
+    return [
+      '<div class="confirm-del ai-import">',
+      '  <h2 class="form__title">AI 课表识别（示例数据）</h2>',
+      '  <p class="hint">这一步走的是内置样例（真接口还没接）：数据长什么样、怎么确认、怎么入库，就是将来真实课表的样子。勾掉不想导入的再点确认。</p>',
+      warns,
+      rows ? '<div class="ai-list">' + rows + '</div>' : '<p class="hint">没有识别出课程。</p>',
+      skips,
+      actions,
       '</div>'
     ].join('\n');
   }
@@ -1099,6 +1166,7 @@ window.Views = (function () {
     confirmResetModal: confirmResetModal,
     conflictModal: conflictModal,
     exportModal: exportModal,
+    aiImportModal: aiImportModal,
     skeleton: skeleton,
     errorCard: errorCard,
     setupPage: setupPage,

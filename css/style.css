@@ -337,6 +337,22 @@ html, body {
 }
 
 /* 宽屏（电脑 / 平板横屏）：底对齐会显得整块沉在窗口最下面，改成垂直居中 */
+/* AI 课表识别确认弹窗（js/ai/）：勾选行 + 未识别清单 */
+.ai-import .ai-list { margin: 10px 0 4px; }
+.ai-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 4px; border-bottom: 1px solid var(--line, #e5e7eb);
+  cursor: pointer;
+}
+.ai-row:last-child { border-bottom: none; }
+.ai-row__check { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--primary, #2563eb); }
+.ai-row__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ai-row__title { font-size: 15px; }
+.ai-row__meta { font-size: 12.5px; color: var(--text-dim, #6b7280); }
+.ai-import .ai-warn { color: var(--warn, #b45309); }
+.ai-skips { margin: 4px 0 8px; }
+.ai-skip { font-size: 12.5px; color: var(--text-dim, #6b7280); margin: 2px 0; word-break: break-all; }
+
 @media (min-width: 600px) {
   .picker { align-items: center; padding-bottom: 12px; }
   .picker__sheet { max-height: 82vh; }

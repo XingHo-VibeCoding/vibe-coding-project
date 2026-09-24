@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>可复用卡片 / 列表组件 · 演示</title>
+  <!-- Day 9 附加任务：独立演示页，不接主应用（主应用 index.html 不加载本页任何文件） -->
+  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/components.css">
+</head>
+<body class="cp-demo">
+  <h1>可复用卡片 / 列表组件</h1>
+  <p class="cp-lead">组件只做一件事：把「数据」拼成 HTML。样式改版只动 css/components.css，调用方不用改。</p>
+  <p class="cp-lead">下面的搜索框体现了这一点——它只负责过滤数据，然后重新交给同一个列表组件渲染。</p>
+
+  <h2>列表：可搜索的课程（配置驱动）</h2>
+  <div class="cp-toolbar">
+    <input type="search" id="cp-q" placeholder="搜课程名 / 地点 / 星期…">
+    <select id="cp-sort">
+      <option value="weekday">按星期排</option>
+      <option value="title">按名称排</option>
+    </select>
+  </div>
+  <div id="cp-demo-courses"></div>
+
+  <h2>列表：待办（可勾选 + 分隔线）</h2>
+  <div id="cp-demo-todos"></div>
+
+  <h2>列表：其他用途（同一组件换数据）</h2>
+  <div id="cp-demo-notes"></div>
+
+  <h2>卡片：单张（头部 / 徽章 / 元信息 / 正文 / 操作）</h2>
+  <div id="cp-demo-card"></div>
+  <div id="cp-demo-empty"></div>
+
+  <details class="cp-panel">
+    <summary>组件 API（cardHtml / listHtml 的参数长什么样）</summary>
+    <pre id="cp-api" class="cp-log"></pre>
+  </details>
+
+  <div id="cp-log" class="cp-log" hidden></div>
+
+  <script src="./js/components.js"></script>
+  <script src="./js/components-demo.js"></script>
+</body>
+</html>

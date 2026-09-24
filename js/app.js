@@ -11,6 +11,7 @@ window.App = (function () {
   var currentView = 'week';
   var viewWeek = null;       // 正在查看第几周；null = 跟随本周
   var pendingCourse = null;  // 冲突确认弹窗里暂存的待保存课程
+  var aiResult = null;       // AI 识别确认弹窗暂存的解析结果（关弹窗即弃）
 
   function $(id) { return document.getElementById(id); }
 
@@ -897,6 +898,66 @@ window.App = (function () {
     el.click();
   }
 
+  /* ---------------- AI 课表识别（js/ai/ai.js：现在是指令桩，接真接口只换 recognizeRaw） ---------------- */
+
+  function openAiImport() {
+    var semester = state && state.semester;
+    if (!semester) { Views.toast('请先设置学期，识别出的课程才有地方挂'); return; }
+
+    /* recognizeRaw 返回 Promise：真接口有网络延迟，桩是立即的，写法保持一致 */
+    Ai.recognizeRaw(null).then(function (raw) {
+      var parsed = Ai.parseCourses(raw, { periods: semester.periods || [] });
+      if (!parsed.ok) { Views.banner('AI 识别失败：' + parsed.error, true); return; }
+      aiResult = parsed;
+      Views.openModal(Views.aiImportModal(parsed));
+    }).catch(function (e) {
+      Views.banner('AI 识别失败：' + ((e && e.message) || e), true);
+    });
+  }
+
+  /* 勾选的候选逐条过 Store.saveSchedule（它自会校验）；坏一条不算整体失败。
+     重导去重（Day 9 实测反馈「多点几次并排重复」）：
+     本学期已有「AI 导入且未手动改过」的同名同星期课 → 原地更新，不再追加；
+     手动建的 / 手动改过的永远不碰（manual_edited 语义，TECH_DESIGN §3.1）。 */
+  function saveAiImport() {
+    if (!aiResult) { Views.closeModal(); return; }
+    var semester = state && state.semester;
+    var boxes = document.querySelectorAll('.ai-row__check:checked');
+    if (!boxes.length) { Views.toast('没有勾选任何课程'); return; }
+
+    var existing = (state && state.schedules) || [];
+    var updated = 0, added = 0, bad = 0;
+    for (var i = 0; i < boxes.length; i++) {
+      var c = aiResult.courses[Number(boxes[i].getAttribute('data-idx'))];
+      if (!c) continue;
+      var dup = Rules.aiDuplicateOf(existing, c);
+      var res = Store.saveSchedule({
+        id: dup ? dup.id : undefined,
+        type: 'course',
+        semester_id: semester ? semester.id : '',
+        title: c.title,
+        weekday: c.weekday,
+        start_time: c.start_time,
+        duration: c.duration,
+        week_rule: c.week_rule,
+        location: c.location,
+        note: c.note,
+        manual_edited: false
+      });
+      if (!res.ok) { bad++; continue; }
+      if (dup) updated++; else added++;
+    }
+
+    aiResult = null;
+    state = Store.load();
+    Views.closeModal();
+    render();
+    if (bad) Views.toast('导入 ' + (updated + added) + ' 门，' + bad + ' 门没过校验被拦下');
+    else if (updated && added) Views.toast('已导入：新增 ' + added + ' 门、更新 ' + updated + ' 门（重叠可在周视图检查）');
+    else if (updated) Views.toast('已更新 ' + updated + ' 门（和上次识别相同，原地覆盖）');
+    else Views.toast('已导入 ' + added + ' 门课程（时间重叠可在周视图里检查）');
+  }
+
   /* 表单里的即时联动（Day 8 反馈）：学期名下拉、第一周周一的星期提示 */
   function onFormChange(e) {
     var t = e.target;
@@ -996,6 +1057,8 @@ window.App = (function () {
     if (action === 'export-ics') { exportIcs(); return; }
     if (action === 'export-json') { exportJson(); return; }
     if (action === 'import-json') { pickImportFile(); return; }
+    if (action === 'open-ai-import') { openAiImport(); return; }
+    if (action === 'ai-save') { saveAiImport(); return; }
 
     if (action === 'save-anyway') {
       var p = pendingCourse;
@@ -1080,6 +1143,7 @@ window.App = (function () {
     { file: 'store.js', obj: 'Store', need: ['load', 'saveSemester', 'saveSchedule', 'toggleTodo', 'exportAll', 'importAll', 'defaultPeriods', 'resetAll'] },
     { file: 'rules.js', obj: 'Rules', need: ['parseDate', 'isMonday', 'weekdayName', 'weeksError', 'periodsFromPairs', 'monthGrid', 'shiftMonth', 'timeUnits', 'nearestIndex', 'monthLabel', 'currentWeekNo', 'coursesOfWeek', 'findConflicts', 'todaySummary'] },
     { file: 'ics.js', obj: 'Ics', need: ['build', 'download'] },
+    { file: 'js/ai/ai.js', obj: 'Ai', need: ['parseCourses', 'recognizeRaw'] },
     { file: 'mock.js', obj: 'Mock', need: ['courses', 'todos'] },
     { file: 'views.js', obj: 'Views', need: ['setupPage', 'skeleton', 'errorCard', 'semesterForm', 'setMondayHint', 'setWeeksHint', 'openPickerSheet', 'closePickerSheet', 'isPickerOpen', 'syncPickerTime', 'scrollPickerCols', 'renderWeek', 'renderToday'] }
   ];

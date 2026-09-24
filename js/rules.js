@@ -430,6 +430,25 @@ window.Rules = (function () {
     return Number(year) + ' 年 ' + Number(month) + ' 月';
   }
 
+  /* AI 课表识别的重导去重（Day 9 前置，TECH_DESIGN §2 补记）：
+     在现有日程里找「AI 导入且未手动改过」的同名同星期课程 → 原地更新它；
+     手动建的 / 手动改过的一律不匹配（永不覆盖，manual_edited 语义）。
+     返回匹配到的日程或 null。 */
+  function aiDuplicateOf(list, candidate) {
+    if (!Array.isArray(list) || !candidate) return null;
+    var title = String(candidate.title || '');
+    var wd = Number(candidate.weekday);
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i];
+      if (!x || x.type !== 'course') continue;
+      if (x.manual_edited !== false) continue;          // 手动建 / 手动改过 → 不碰
+      if (String(x.title) !== title) continue;
+      if (Number(x.weekday) !== wd) continue;
+      return x;
+    }
+    return null;
+  }
+
   return {
     parseDate: parseDate,
     dateKey: dateKey,
@@ -438,6 +457,7 @@ window.Rules = (function () {
     shiftPeriodsAfter: shiftPeriodsAfter,
     nextPeriodAfter: nextPeriodAfter,
     reperiod: reperiod,
+    aiDuplicateOf: aiDuplicateOf,
     weekdayName: weekdayName,
     isMonday: isMonday,
     isClockTime: isClockTime,
