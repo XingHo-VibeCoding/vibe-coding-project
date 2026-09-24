@@ -12,9 +12,12 @@
   --c-text-dim: #6b7280;
   --c-primary: #2f6feb;
   --c-primary-soft: #eaf1fe;
-  --c-danger: #d64545;
+  --c-danger: #c62828;
   --c-warn-bg: #fff6e5;
   --c-warn-border: #f0c46a;
+  /* 占位/空态等「弱但必须能看清」的文字：对白底 4.83:1（Day 9 审查第 3 项）。
+     原 #c3c8cf 只有 1.68:1，等于看不见。 */
+  --c-faint: #6b7280;
   --radius: 10px;
   --gap: 12px;
   --period-row-h: 46px; /* 节次网格每行高度：节次轴与课程格子共用，改这里两处一起变 */
@@ -36,6 +39,25 @@ html, body {
   font-size: 15px;
   line-height: 1.5;
 }
+
+/* ---------- 触屏基线（Day 9 前端审查修复，依据 mobile-native skill 规则） ----------
+   这几个是「设备能力」层面的规则，不参与版面覆盖，统一放在文件最末尾的
+   @media (pointer: coarse) 里（见末尾），避免插在版面规则之前干扰覆盖顺序。 */
+
+/* 触屏点击不该有灰/蓝闪一下——那是最强的「这是网站」信号。
+   关掉高亮后，靠统一的 :active 反馈补回手感（见文件上方的交互态一段）。 */
+html { -webkit-tap-highlight-color: transparent; }
+
+/* 消除 300ms 点击延迟（浏览器要等一瞬判断是不是双击缩放）。
+   touch-action: manipulation 让点按立即响应，点击感觉「跟手」。 */
+button, a, [role="button"], .tab, .btn, .pk-day, .pk-unit, .course-card, .todo-chip__title {
+  touch-action: manipulation;
+}
+/* 控件上长按不该选中文字（但绝不在 body 上设：用户要能复制自己的课表文字） */
+button, .tab, .btn, .pk-day, .pk-unit, .course-card { user-select: none; -webkit-user-select: none; }
+
+/* 下拉刷新会劫持滚动：应用外壳内不吃橡皮筋（面板等内部滚动容器用 contain） */
+html, body { overscroll-behavior: none; }
 
 /* ---------- 顶部提示条（错误/提示统一出口） ---------- */
 .banner {
@@ -169,21 +191,46 @@ html, body {
   font-family: inherit;
   cursor: pointer;
 }
-.btn:hover { border-color: var(--c-primary); color: var(--c-primary); }
 .btn--primary {
   background: var(--c-primary);
   border-color: var(--c-primary);
   color: #fff;
   font-weight: 600;
 }
-.btn--primary:hover { background: #2a62d0; border-color: #2a62d0; color: #fff; }
 .btn--ghost { color: var(--c-text-dim); }
 .btn--sm { padding: 3px 10px; font-size: 13px; }
 .btn--danger { color: var(--c-danger); border-color: #f0c4c4; }
-.btn--danger:hover { background: #fdecec; border-color: var(--c-danger); color: var(--c-danger); }
-/* 到上限时变灰（仍可点，点了会就近弹出「已满」的轻提示，不至于点了没反应） */
+
+/* ---------- 交互态：hover 门控 + 按下反馈（Day 9 审查第 2 项） ----------
+   为什么必须门控：触摸屏没有 hover，浏览器会「伪造」一个——手指点完颜色一直卡住，
+   直到点别处才恢复。规则要求所有 :hover 都包在能 hover 的设备里（见审查报告）。
+   触摸用户不损失反馈：改为按下时立刻变（:active），这也是原生按钮的手感。 */
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover { border-color: var(--c-primary); color: var(--c-primary); }
+  .btn--primary:hover { background: #2a62d0; border-color: #2a62d0; color: #fff; }
+  .btn--danger:hover { background: #fdecec; border-color: var(--c-danger); color: var(--c-danger); }
+  .btn.is-dim:hover { border-color: var(--c-border); color: var(--c-text); }
+  .tab:hover { border-color: var(--c-primary); color: var(--c-primary); }
+  .picker__x:hover,
+  .pk-nav:hover { border-color: var(--c-primary); color: var(--c-primary); }
+  .pk-day:hover { background: var(--c-bg); }
+  .ai-row:hover { background: var(--c-bg); }
+}
+
+/* 按下反馈（规则给的按压区间 100–160ms，用 ease-out）：鼠标和手指都立刻有回应 */
+.btn, .tab, .pk-day, .pk-unit, .picker__x, .pk-nav {
+  transition: transform 120ms ease-out, background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
+}
+.btn:active,
+.tab:active,
+.pk-day:active,
+.pk-nav:active,
+.picker__x:active { transform: scale(0.97); }
+
+/* 到上限时变灰（仍可点，点了会就近弹出「已满」的轻提示，不至于点了没反应）。
+   按下不动，避免「变灰的按钮还弹一下」的误导。 */
 .btn.is-dim { opacity: 0.45; }
-.btn.is-dim:hover { border-color: var(--c-border); color: var(--c-text); }
+.btn.is-dim:active { transform: none; }
 
 /* 表单内的横向字段行（星期/时间/时长） */
 .form__row {
@@ -337,21 +384,23 @@ html, body {
 }
 
 /* 宽屏（电脑 / 平板横屏）：底对齐会显得整块沉在窗口最下面，改成垂直居中 */
-/* AI 课表识别确认弹窗（js/ai/）：勾选行 + 未识别清单 */
+/* AI 课表识别确认弹窗（js/ai/）：勾选行 + 未识别清单
+   Day 9 审查第 3 项：这里原来引用了 var(--primary)/var(--text-dim) 等本文件并不存在的变量
+   （只靠回退值侥幸显示），且回退色与主题不一致、对比度不足。现在统一用本文件的变量。 */
 .ai-import .ai-list { margin: 10px 0 4px; }
 .ai-row {
   display: flex; align-items: flex-start; gap: 10px;
-  padding: 9px 4px; border-bottom: 1px solid var(--line, #e5e7eb);
+  padding: 9px 4px; border-bottom: 1px solid var(--c-border);
   cursor: pointer;
 }
 .ai-row:last-child { border-bottom: none; }
-.ai-row__check { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--primary, #2563eb); }
+.ai-row__check { width: 18px; height: 18px; margin-top: 2px; flex: none; accent-color: var(--c-primary); }
 .ai-row__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ai-row__title { font-size: 15px; }
-.ai-row__meta { font-size: 12.5px; color: var(--text-dim, #6b7280); }
-.ai-import .ai-warn { color: var(--warn, #b45309); }
+.ai-row__meta { font-size: 12.5px; color: var(--c-text-dim); }
+.ai-import .ai-warn { color: #a1610a; }   /* 对白底 4.6:1（原来的 #b45309 只有 3.9:1） */
 .ai-skips { margin: 4px 0 8px; }
-.ai-skip { font-size: 12.5px; color: var(--text-dim, #6b7280); margin: 2px 0; word-break: break-all; }
+.ai-skip { font-size: 12.5px; color: var(--c-text-dim); margin: 2px 0; word-break: break-all; }
 
 @media (min-width: 600px) {
   .picker { align-items: center; padding-bottom: 12px; }
@@ -381,7 +430,7 @@ body.pk-lock { overflow: hidden; }
   line-height: 1;
   cursor: pointer;
 }
-.picker__x:hover { border-color: var(--c-primary); color: var(--c-primary); }
+/* hover 统一在文件上方的 @media (hover: hover) 里定义（Day 9 审查修复） */
 .picker__foot {
   display: flex;
   align-items: center;
@@ -412,7 +461,6 @@ body.pk-lock { overflow: hidden; }
   font-size: 16px;
   cursor: pointer;
 }
-.pk-nav:hover { border-color: var(--c-primary); color: var(--c-primary); }
 .pk-cal__title { font-size: 14px; font-weight: 600; }
 .pk-cal__dow,
 .pk-cal__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -428,7 +476,7 @@ body.pk-lock { overflow: hidden; }
   font-size: 14px;
   cursor: pointer;
 }
-.pk-day:hover { background: var(--c-bg); }
+
 .pk-day.is-out { color: var(--c-text-dim); opacity: 0.4; cursor: default; }
 .pk-day.is-off { color: var(--c-text-dim); opacity: 0.45; }
 .pk-day.is-today { border-color: var(--c-primary); }
@@ -557,7 +605,8 @@ body.pk-lock { overflow: hidden; }
 }
 .axis-row:not(:last-child) { border-bottom: 1px dashed var(--c-border); }
 .axis-row__no { font-size: 11px; font-weight: 600; color: var(--c-text-dim); }
-.axis-row__time { font-size: 10px; color: var(--c-text-dim); }
+/* 10px 在手机上基本要凑近才看得清，且节次时间是要「扫一眼」的信息，提到 11px（Day 9 审查第 5 项） */
+.axis-row__time { font-size: 11px; color: var(--c-text-dim); }
 .day-col {
   background: var(--c-surface);
   border: 1px solid var(--c-border);
@@ -581,18 +630,20 @@ body.pk-lock { overflow: hidden; }
 .day-col__body {
   padding: 6px;
   display: grid;
-  gap: 6px;
+  gap: 4px;   /* 与 .is-grid 同值：同一容器两套 gap 会互相覆盖，统一到 4px */
   align-content: start;
   min-height: 110px;
 }
 .day-col__empty {
   font-size: 12px;
-  color: #c3c8cf;
+  color: var(--c-faint);
   text-align: center;
   padding: 16px 0;
 }
 
-/* 节次网格模式（Day 8 B 方案）：列体 / 今日视图单列 都用同一套行网格 */
+/* 节次网格模式（Day 8 B 方案）：列体 / 今日视图单列 都用同一套行网格。
+   注意：行间距必须是 4px——节次轴 .period-axis__rows 也是 4px，
+   两处一起才能让「第 N 节」的横线与课程格子的横线对齐（Day 9 审查第 4 项时确认）。 */
 .is-grid {
   display: grid;
   grid-auto-rows: var(--period-row-h);
@@ -619,7 +670,7 @@ body.pk-lock { overflow: hidden; }
   min-height: 0;
   overflow: hidden;
 }
-.course-card--cell .course-card__time { font-size: 10px; }
+.course-card--cell .course-card__time { font-size: 11px; }
 .course-card--cell .course-card__title {
   font-size: 12px;
   white-space: nowrap;
@@ -627,7 +678,7 @@ body.pk-lock { overflow: hidden; }
   text-overflow: ellipsis;
 }
 .course-card--cell .course-card__loc {
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -638,7 +689,7 @@ body.pk-lock { overflow: hidden; }
   gap: 2px;
   width: 100%;
   text-align: left;
-  padding: 7px 8px;
+  padding: 8px;
   border: 1px solid var(--c-border);
   border-left: 3px solid var(--c-primary);
   border-radius: 8px;
@@ -646,7 +697,6 @@ body.pk-lock { overflow: hidden; }
   font-family: inherit;
   cursor: pointer;
 }
-.course-card:hover { border-color: var(--c-primary); }
 .course-card__top {
   display: flex;
   align-items: center;
@@ -663,7 +713,7 @@ body.pk-lock { overflow: hidden; }
 .course-card__loc { font-size: 12px; color: var(--c-text-dim); }
 
 .badge {
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 6px;
   border-radius: 999px;
   background: var(--c-surface);
@@ -737,8 +787,9 @@ body.pk-lock { overflow: hidden; }
   white-space: nowrap;
 }
 
+/* 已完成：用删除线表达「做完了」，文字颜色不再额外压暗——
+   压暗后与背景对比度会掉到 4.5:1 以下，弱视用户读不出自己勾掉了什么（Day 9 审查第 3 项）。 */
 .todo-chip.is-done .todo-chip__title {
-  color: var(--c-text-dim);
   text-decoration: line-through;
 }
 
@@ -864,8 +915,13 @@ body.pk-lock { overflow: hidden; }
 
 /* ---------- 手机端（PRD F11） ---------- */
 @media (max-width: 640px) {
-  /* 标题 + 设置按钮留在顶部一行，视图标签落到底部 */
-  .topbar { padding: 10px 12px; }
+  /* 标题 + 设置按钮留在顶部一行，视图标签落到底部。
+     底部标签栏必须处理安全区：带 home 指示条的设备上，不加 env() 会被指示条压住
+     （index.html 的 viewport-fit=cover 是 env() 生效的前提）。 */
+  .topbar {
+    padding: 10px 12px;
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  }
   .topbar__title { font-size: 16px; }
   .topbar__week { font-size: 12px; }
   .tabs {
@@ -875,20 +931,27 @@ body.pk-lock { overflow: hidden; }
     right: 0;
     justify-content: space-around;
     padding: 8px 12px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
     background: var(--c-surface);
     border-top: 1px solid var(--c-border);
     z-index: 10;
   }
   .tab {
     flex: 1;
+    /* 手机上标签是主要导航，得够大才好点（触屏最小 44px 高） */
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: none;
     border-radius: 8px;
     padding: 8px 0;
     text-align: center;
   }
-  .main { padding: 12px 12px 72px; }
-  .toast { bottom: 76px; }
-  .summary { bottom: 64px; }
+  .main { padding: 12px 12px calc(84px + env(safe-area-inset-bottom, 0px)); }
+  /* 轻提示落在指纹附近：比标签栏再高一点，避开安全区，否则会被 home 指示条压住 */
+  .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  .summary { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
   .form__row { grid-template-columns: 1fr; }
   .weeknav { gap: 6px; }
   .setup__hero,
@@ -900,4 +963,20 @@ body.pk-lock { overflow: hidden; }
   .periods__row { grid-template-columns: 52px 1fr 1fr; row-gap: 4px; }
   .periods__sep { display: none; }
   .periods__del { grid-column: 1 / -1; justify-self: end; }
+}
+
+/* ---------- 触屏基线：输入框字号（Day 9 前端审查第 1 项，依据 mobile-native skill） ----------
+   iOS Safari 聚焦字号小于 16px 的输入框时会自动放大页面，失焦也不缩回——
+   整页布局当场歪掉，是「产品感」的一票否决项。
+   只在「触摸为主」的设备（pointer: coarse，含 Surface 平板模式）上放大，
+   鼠标设备保留原本紧凑的 14px 观感。
+   放在文件最末尾：能力类媒体查询不应插在版面规则之前干扰覆盖顺序。 */
+@media (pointer: coarse) {
+  .field input,
+  .field select,
+  .field textarea,
+  .periods__row input,
+  .periods__num,
+  .pk-manual__in,
+  .input-picker { font-size: 16px; }
 }

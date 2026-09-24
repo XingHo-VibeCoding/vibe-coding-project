@@ -2,8 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
   <title>大学生日程助手</title>
+  <!-- viewport-fit=cover 是安全区（env(safe-area-inset-*)）生效的前提：
+       没有它，底部标签栏在带 home 指示条的设备上会被挡住（Day 9 前端审查修复）。 -->
   <!-- 相对路径引用：GitHub Pages 子路径部署也能正常加载（TECH_DESIGN §8.2）
        ?v= 是「缓存版本号」：改了 css/js 就把这个日期改成当天，浏览器会当成新文件重新下载。
        不加的话浏览器可能拿旧 js 配新 js（会出现 Rules.isMonday is not a function 这类怪错）。 -->
