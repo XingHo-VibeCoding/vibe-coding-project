@@ -1031,10 +1031,15 @@ body.pk-lock { overflow: hidden; }
   /* 「每节时长 45 分钟」这类组合在窄屏被 flex 压碎组内文字（标签折成竖排）。
      nowrap 让文字不许组内折行，放不下就整组换行到下一行，永远完整可读 */
   .periods__assist-item { white-space: nowrap; }
-  /* 弹窗里 4 个导出按钮被硬塞一行、每个分到 <80px，文字被压成竖排。
-     wrap + nowrap：放不下就整颗按钮换行，自然形成 2×2 排布 */
+  /* 节次辅助行改「文字靠左、输入框靠右」：两行的输入框上下严格对齐，不再错位 */
+  .periods__assist-item { display: flex; width: 100%; align-items: center; }
+  .periods__assist-label { flex: 1; }
+  /* 弹窗里按钮多时放不下就整颗换行（flex-wrap 兜底）；导出弹窗进一步升级为
+     两列等宽网格：4 颗排成整齐 2×2，奇数颗时最后一颗（如「清除数据并重置」）占满整行 */
   .form__actions { flex-wrap: wrap; }
   .form__actions .btn { white-space: nowrap; }
+  .confirm-del .form__actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .confirm-del .form__actions .btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 
 /* ---------- 触屏基线：输入框字号（Day 9 前端审查第 1 项，依据 mobile-native skill） ----------
