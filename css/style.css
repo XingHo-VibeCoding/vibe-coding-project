@@ -612,6 +612,12 @@ body.pk-lock { overflow: hidden; }
   gap: 8px;
   min-width: 966px;
 }
+/* 无生效节次表时不渲染时间轴（axisHtml 为空），必须去掉 48px 死轨道，
+   否则周一直接掉进轴位被挤成竖条（Day 9 手机实测发现） */
+.weekgrid--noaxis {
+  grid-template-columns: repeat(7, minmax(128px, 1fr));
+  min-width: 896px;
+}
 .period-axis {
   display: grid;
   grid-template-rows: 32px 1fr;
@@ -962,8 +968,23 @@ body.pk-lock { overflow: hidden; }
     padding: 10px 12px;
     padding-top: calc(10px + env(safe-area-inset-top, 0px));
   }
-  .topbar__title { font-size: var(--t-h2); }
-  .topbar__week { font-size: var(--t-small); }
+  .topbar__title {
+    font-size: var(--t-h3);
+    /* 390px 实测：标题+两按钮挤不下、双双内部换行把顶栏撑高。
+       标题改成可收缩 + 超出截断省略；标题是 flex 子项，min-width:0 是省略号生效的前提 */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* 「第 X 周」小字手机上隐藏：周导航栏里已有同样的信息，不丢功能 */
+  .topbar__week { display: none; }
+  .topbar__actions .btn {
+    /* 按钮禁止内部换行（「导出 / 备份」曾折成两行），收紧内边距给标题让位 */
+    white-space: nowrap;
+    padding: 9px 10px;
+    font-size: var(--t-small);
+  }
   .tabs {
     position: fixed;
     bottom: 0;
@@ -994,6 +1015,10 @@ body.pk-lock { overflow: hidden; }
   .summary { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
   .form__row { grid-template-columns: 1fr; }
   .weeknav { gap: 6px; }
+  /* 手机上收紧周网格：列 128→104px、节次轴 48→40px，横向总宽 966→768px，
+     少滚约一屏；7 列在 390px 里物理放不下，横滚保留、由 JS 落地时定位到「今天」列 */
+  .weekgrid { grid-template-columns: 40px repeat(7, minmax(104px, 1fr)); min-width: 768px; }
+  .weekgrid--noaxis { grid-template-columns: repeat(7, minmax(104px, 1fr)); min-width: 728px; }
   .setup__hero,
   .setup__form,
   .state-error,

@@ -810,12 +810,19 @@ window.Views = (function () {
       ].join('');
     }
 
+    /* 横向滚动位置跨重绘保留：勾个待办也会整块重绘，别把用户滚到的位置弹回开头 */
+    var prevWrap = box.querySelector('.weekgrid-wrap');
+    var keepLeft = prevWrap ? prevWrap.scrollLeft : 0;
+
     box.innerHTML = [
       termBar(semester),
       nav,
-      '<div class="weekgrid-wrap"><div class="weekgrid">' + axisHtml + cols + '</div></div>',
+      '<div class="weekgrid-wrap"><div class="weekgrid' + (useGrid ? '' : ' weekgrid--noaxis') + '">' + axisHtml + cols + '</div></div>',
       '<p class="hint weekhint">点课程卡片或待办可编辑；待办显示在截止日对应列，点方框打勾。</p>'
     ].join('\n');
+
+    var wrap2 = box.querySelector('.weekgrid-wrap');
+    if (wrap2) wrap2.scrollLeft = keepLeft;
   }
 
   /* ---------------- 课程表单（添加 / 编辑共用，PRD F2 F3） ---------------- */

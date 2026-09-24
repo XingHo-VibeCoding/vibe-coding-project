@@ -10,6 +10,7 @@ window.App = (function () {
   var state = null;          // 当前数据快照
   var currentView = 'week';
   var viewWeek = null;       // 正在查看第几周；null = 跟随本周
+  var weekFocusKey = '';     // 上次「跳到今天列」的锚点（周数:今天列有无），防止原地重绘时把用户滚走
   var pendingCourse = null;  // 冲突确认弹窗里暂存的待保存课程
   var aiResult = null;       // AI 识别确认弹窗暂存的解析结果（关弹窗即弃）
 
@@ -565,6 +566,27 @@ window.App = (function () {
 
   /* ---------------- 渲染 ---------------- */
 
+  /* 手机上 7 列放不下、周视图要横向滚：落地周视图时把「今天」那列带回可视区，
+     打开就看到今天的课，不用手动划。只在「锚点」（看的周 / 今天列有无）变化时跳——
+     勾待办这类原地重绘走 views.js 的位置保留，不抢用户滚到的位置。 */
+  function focusWeekToday() {
+    if (currentView !== 'week') return;
+    var weekBox = $('view-week');
+    var wrap = weekBox && weekBox.querySelector('.weekgrid-wrap');
+    if (!wrap) return;
+    var col = wrap.querySelector('.day-col.is-today');
+    var current = Rules.currentWeekNo(state && state.semester, new Date());
+    var viewing = viewWeek || (current > 0 ? current : 1);
+    var key = viewing + ':' + (col ? '1' : '0');
+    if (key === weekFocusKey) return;
+    weekFocusKey = key;
+    if (!col) return;
+    var wr = wrap.getBoundingClientRect();
+    var cr = col.getBoundingClientRect();
+    var target = wrap.scrollLeft + (cr.left - wr.left) - 8;   /* 8 = 网格 gap，给列留点呼吸 */
+    wrap.scrollLeft = Math.max(0, target);
+  }
+
   function render() {
     var today = new Date();
     var semester = state ? state.semester : null;
@@ -576,6 +598,7 @@ window.App = (function () {
     Views.renderWeek(state, viewing);
     Views.renderToday(state, today);
     switchView(currentView);
+    focusWeekToday();
   }
 
   /* ---------------- 周次切换 ---------------- */
@@ -1206,6 +1229,7 @@ window.App = (function () {
     for (var i = 0; i < tabs.length; i++) {
       tabs[i].onclick = function () {
         switchView(this.getAttribute('data-view'));
+        focusWeekToday();     // 切回周视图时把「今天」列带回可视区（hidden 期间滚动位置会丢）
       };
     }
 
