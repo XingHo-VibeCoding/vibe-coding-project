@@ -1062,7 +1062,14 @@ body.pk-lock { overflow: hidden; }
      两列等宽网格：4 颗排成整齐 2×2，奇数颗时最后一颗（如「清除数据并重置」）占满整行 */
   .form__actions { flex-wrap: wrap; }
   .form__actions .btn { white-space: nowrap; }
-  .confirm-del .form__actions { display: grid; grid-template-columns: 1fr 1fr; }
+  /* Day 10 修复：导出/备份弹窗在窄屏（或系统字体放大）下横向溢出。
+     根因：1fr 的下限是 min-content，配 nowrap 的长按钮（「AI 导入课表（示例）」）
+     会把两列网格撑破 → 弹窗内出现左右滚动。
+     minmax(0,1fr) 把列宽上限钳回容器；这组按钮改回允许折行兜底——
+     正常宽度下依旧单行，只有放不下时才折两行。
+     删除确认弹窗共用 .confirm-del，但它按钮短，此改动对它无感。 */
+  .confirm-del .form__actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .confirm-del .form__actions .btn { white-space: normal; }
   .confirm-del .form__actions .btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 
