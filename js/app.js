@@ -622,12 +622,24 @@ window.App = (function () {
 
   /* ---------------- 学期设置 ---------------- */
 
+  /* ---------------- 主题（Day 10 板块②） ----------------
+     应用方式就是给 <html> 设/删 data-theme 属性，颜色全在 css 变量里。 */
+  function applyTheme(theme) {
+    var root = document.documentElement;
+    if (!root) return;
+    if (theme === 'anime') root.setAttribute('data-theme', 'anime');
+    else root.removeAttribute('data-theme');
+  }
+
   function openSettings() {
     Views.clearFieldMarks();
     Views.openModal(Views.semesterForm(state ? state.semester : null));
     /* 打开就把已有值的判定显示出来，别等用户改动才提示 */
     Views.setWeeksHint('f-weeks');
     Views.setMondayHint('f-monday');
+    /* 主题选中态回填 */
+    var themeEl = $('f-theme');
+    if (themeEl) themeEl.value = Store.getTheme();
     Views.banner('');
   }
 
@@ -674,6 +686,13 @@ window.App = (function () {
     if (!res.ok) {
       Views.banner(res.error, true);
       return;
+    }
+
+    /* 主题（Day 10）：跟着设置弹窗一起保存并立即生效 */
+    var themeEl = $('f-theme');
+    if (themeEl) {
+      var tRes = Store.setTheme(themeEl.value);
+      if (tRes.ok) applyTheme(themeEl.value);
     }
 
     state = Store.load();
@@ -1163,8 +1182,8 @@ window.App = (function () {
      报出来的是「Rules.isMonday is not a function」——看着像代码写错，
      其实是缓存。这里启动时点一遍各层必须有的函数，缺了就直接告诉他强刷。 */
   var LAYER_API = [
-    { file: 'store.js', obj: 'Store', need: ['load', 'saveSemester', 'saveSchedule', 'toggleTodo', 'exportAll', 'importAll', 'defaultPeriods', 'resetAll'] },
-    { file: 'rules.js', obj: 'Rules', need: ['parseDate', 'isMonday', 'weekdayName', 'weeksError', 'periodsFromPairs', 'monthGrid', 'shiftMonth', 'timeUnits', 'nearestIndex', 'monthLabel', 'currentWeekNo', 'coursesOfWeek', 'findConflicts', 'todaySummary'] },
+    { file: 'store.js', obj: 'Store', need: ['load', 'saveSemester', 'saveSchedule', 'toggleTodo', 'exportAll', 'importAll', 'defaultPeriods', 'getTheme', 'setTheme', 'resetAll'] },
+    { file: 'rules.js', obj: 'Rules', need: ['parseDate', 'isMonday', 'weekdayName', 'weeksError', 'periodsFromPairs', 'monthGrid', 'shiftMonth', 'timeUnits', 'nearestIndex', 'monthLabel', 'currentWeekNo', 'coursesOfWeek', 'findConflicts', 'todaySummary', 'todayGreeting'] },
     { file: 'ics.js', obj: 'Ics', need: ['build', 'download'] },
     { file: 'js/ai/ai.js', obj: 'Ai', need: ['parseCourses', 'recognizeRaw'] },
     { file: 'mock.js', obj: 'Mock', need: ['courses', 'todos'] },
@@ -1224,6 +1243,9 @@ window.App = (function () {
       reportStaleLayers(stale);
       return;
     }
+
+    /* 主题（Day 10）：启动即应用，任何视图都跟着换色 */
+    applyTheme(Store.getTheme());
 
     var tabs = document.querySelectorAll('.tab');
     for (var i = 0; i < tabs.length; i++) {

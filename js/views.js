@@ -473,6 +473,15 @@ window.Views = (function () {
 
       periodsEditor('f-periods', semester),
 
+      /* 主题偏好（Day 10 板块②）：本机生效，不进备份文件 */
+      '  <div class="field" data-field="theme">',
+      '    <label class="field__label" for="f-theme">主题（只对这台设备生效）</label>',
+      '    <select id="f-theme">',
+      '      <option value="default">蓝白（默认）</option>',
+      '      <option value="anime">薰衣草紫</option>',
+      '    </select>',
+      '  </div>',
+
       '  <div class="form__actions">',
       '    <button type="button" class="btn" data-action="close-modal">取消</button>',
       '    <button type="submit" class="btn btn--primary">保存</button>',
@@ -1064,6 +1073,18 @@ window.Views = (function () {
 
   /* ---------------- 今日视图（PRD F7：今日课程 + 到期待办 + 结算条） ---------------- */
 
+  /* 今日问候条（Day 10）：Rules.todayGreeting 算好结果，这里只负责渲染。
+     颜文字脸用 aria-hidden 挡住读屏；句子里的课程名等已整体 esc。 */
+  function todayGreetHtml(g) {
+    if (!g || !g.line) return '';
+    return [
+      '<div class="todaygreet" data-greet="' + esc(String(g.key || '')) + '">',
+      '  <span class="todaygreet__face" aria-hidden="true">' + esc(g.face) + '</span>',
+      '  <span class="todaygreet__line">' + esc(g.line) + '</span>',
+      '</div>'
+    ].join('');
+  }
+
   function renderToday(state, date) {
     var box = $('view-today');
     if (!box) return;
@@ -1091,6 +1112,9 @@ window.Views = (function () {
 
     /* 结算条（A7：只统计待办） */
     var sum = Rules.todaySummary(state.todos, d);
+
+    /* 问候条：跟视图同一个日期走（渲染即刷新，不做分钟级自动跳变） */
+    var greetHtml = todayGreetHtml(Rules.todayGreeting(d, todayCourses, sum));
 
     var courseHtml = '';
     if (!todayCourses.length) {
@@ -1123,6 +1147,7 @@ window.Views = (function () {
     }
 
     box.innerHTML = [
+      greetHtml,
       '<div class="todayhead">',
       '  <span class="todayhead__date">' + esc(todayKey) + ' · ' + WEEKDAYS[wd] + '</span>',
       '  <span class="todayhead__week">' + (weekNo > 0 ? '第 ' + weekNo + ' 周' : '学期未开始') + '</span>',

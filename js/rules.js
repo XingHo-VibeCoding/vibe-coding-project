@@ -305,6 +305,73 @@ window.Rules = (function () {
     return { done: done, total: total };
   }
 
+  /* ---------------- 今日问候（Day 10：两条轴，状态轴优先） ----------------
+     时段轴：只看现在几点；状态轴：看今天的课和待办，命中就盖过时段的话。
+     返回 { axis, key, face, line }；views 只渲染不掺逻辑。
+     语气表集中在这两个常量里 —— 想改文案（或换语气）只改这里，不碰任何逻辑。 */
+  var GREET_TIME = [
+    { from: 5,  to: 8,  key: 'dawn',      face: '(๑•̀ㅂ•́)و', line: '早上好！新的一天，冲呀！' },
+    { from: 8,  to: 12, key: 'morning',   face: '(๑•̀ㅂ•́)و', line: '上午好！上课也要元气满满哦！' },
+    { from: 12, to: 14, key: 'noon',      face: '(￣﹃￣)',    line: '中午好！吃饱饱才有力气上课！' },
+    { from: 14, to: 18, key: 'afternoon', face: '(ง •̀_•́)ง', line: '下午好！坚持住，胜利就在前方！' },
+    { from: 18, to: 23, key: 'evening',   face: '(＾▽＾)',     line: '晚上好！今天也辛苦啦！' },
+    { from: 23, to: 24, key: 'night',     face: '(´-ω-`)',    line: '这么晚还没睡？！快去休息啦！' },
+    { from: 0,  to: 5,  key: 'night',     face: '(´-ω-`)',    line: '这么晚还没睡？！快去休息啦！' }
+  ];
+
+  function timeGreeting(h) {
+    for (var i = 0; i < GREET_TIME.length; i++) {
+      if (h >= GREET_TIME[i].from && h < GREET_TIME[i].to) return GREET_TIME[i];
+    }
+    return GREET_TIME[4]; /* 理论到不了（h 恒在 0–24），兜底给傍晚 */
+  }
+
+  /* now: Date（跟今日视图用的同一个日期走，测试可控）
+     todayCourses: 今日视图已筛好的课程数组；sum: Rules.todaySummary 的结果
+     优先级：临近下一节(≤30min) > 今天没课 > 全部上完 > 待办清零 > 时段轴 */
+  function todayGreeting(now, todayCourses, sum) {
+    var d = now instanceof Date ? now : new Date();
+    var h = d.getHours() + d.getMinutes() / 60;
+    var minNow = d.getHours() * 60 + d.getMinutes();
+
+    var list = Array.isArray(todayCourses) ? todayCourses : [];
+    if (!list.length) {
+      return { axis: 'state', key: 'free', face: '(＾▽＾)', line: '今天没课！想干什么就干什么，超赞！' };
+    }
+
+    /* 下一节 = 开始时间晚于现在的最早一节；lastEnd = 最后一节课的结束时刻。
+       start_time 解析不了的脏数据直接跳过，不参与判定也不崩。 */
+    var next = null, nextStart = -1, lastEnd = -1;
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i] || {};
+      var s = timeToMin(c.start_time);
+      if (s < 0) continue;
+      var e = s + (Number(c.duration) || 0);
+      if (s > minNow && (nextStart < 0 || s < nextStart)) { next = c; nextStart = s; }
+      if (e > lastEnd) lastEnd = e;
+    }
+
+    if (next && nextStart - minNow <= 30) {
+      var diff = nextStart - minNow;
+      return {
+        axis: 'state', key: 'soon', face: '(๑•̀ㅂ•́)و',
+        line: '下一节《' + String(next.title || '课程') + '》' + next.start_time +
+              ' 开始，还有 ' + diff + ' 分钟，出发！'
+      };
+    }
+    if (lastEnd >= 0 && minNow >= lastEnd) {
+      return { axis: 'state', key: 'done', face: '٩(๑•◡•๑)۶', line: '今天的课全部上完啦！去玩吧！' };
+    }
+
+    /* 待办清零：课程间隙里也能夸（有课没上完但待办全勾完的场景） */
+    if (sum && sum.total > 0 && sum.done === sum.total) {
+      return { axis: 'state', key: 'todo', face: '٩(๑•◡•๑)۶', line: '待办清单全部清空！太厉害了！' };
+    }
+
+    var t = timeGreeting(h);
+    return { axis: 'time', key: t.key, face: t.face, line: t.line };
+  }
+
   /* ---------------- 表单校验用的纯函数（Day 8 反馈修复）----------------
      这两件事以前散在 app.js 里手写，出过一次「选周一却说『你选的是周一』」的错，
      移到这里集中 + 可被测试覆盖。 */
@@ -475,6 +542,7 @@ window.Rules = (function () {
     effectivePeriods: effectivePeriods,
     courseRows: courseRows,
     findConflicts: findConflicts,
-    todaySummary: todaySummary
+    todaySummary: todaySummary,
+    todayGreeting: todayGreeting
   };
 })();

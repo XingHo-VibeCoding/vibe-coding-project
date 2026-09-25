@@ -841,6 +841,30 @@ body.pk-lock { overflow: hidden; }
 
 /* ---------- 今日视图 ---------- */
 
+/* 今日问候条（Day 10）：Rules.todayGreeting 的文案 + 颜文字脸，无图片。
+   只用品牌色软底，警示红绿等语义色不掺进来。 */
+.todaygreet {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--c-primary-soft);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: var(--gap);
+}
+.todaygreet__face {
+  font-size: 18px;
+  line-height: var(--lh-tight);
+  flex-shrink: 0;
+}
+.todaygreet__line {
+  font-size: var(--t-body);
+  font-weight: var(--w-label);
+  color: var(--c-text);
+  line-height: var(--lh-body);
+}
+
 .todayhead {
   display: flex;
   align-items: center;

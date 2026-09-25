@@ -14,7 +14,8 @@ window.Store = (function () {
     schedules: 'sched.v1.schedules',
     todos:     'sched.v1.todos',
     meta:      'sched.v1.meta',
-    backup:    'sched.v1.backup'
+    backup:    'sched.v1.backup',
+    ui:        'sched.v1.ui'
   };
 
   var SCHEMA_VERSION = 1;
@@ -469,6 +470,23 @@ window.Store = (function () {
     };
   }
 
+  /* ---------------- 界面偏好（Day 10：主题） ----------------
+     独立键 sched.v1.ui，不进 exportAll/importAll —— 备份带走的是课程数据，
+     主题是「这台设备」的偏好，跟着备份走反而会在导入时意外覆盖。
+     schema_version 不升：全新独立键，旧数据读写完全不受影响（§9.3）。 */
+  var THEMES = ['default', 'anime'];
+
+  function getTheme() {
+    var ui = readTable(KEYS.ui, null);
+    return (ui && typeof ui === 'object' && !Array.isArray(ui) && THEMES.indexOf(ui.theme) > -1)
+      ? ui.theme : 'default';
+  }
+
+  function setTheme(theme) {
+    if (THEMES.indexOf(theme) < 0) return { ok: false, error: '未知主题。' };
+    return writeTable(KEYS.ui, { theme: theme });
+  }
+
   /* 清除全部数据并重置（Day 8 错误状态的「重置」出口）。
      backup 键保留：里面是损坏内容的原始备份，事后还能人工找回。 */
   function resetAll() {
@@ -500,6 +518,8 @@ window.Store = (function () {
     exportAll: exportAll,
     importAll: importAll,
     defaultPeriods: defaultPeriods,
+    getTheme: getTheme,
+    setTheme: setTheme,
     resetAll: resetAll
   };
 })();
