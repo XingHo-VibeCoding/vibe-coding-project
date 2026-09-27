@@ -82,11 +82,11 @@ html { -webkit-tap-highlight-color: transparent; }
 
 /* 消除 300ms 点击延迟（浏览器要等一瞬判断是不是双击缩放）。
    touch-action: manipulation 让点按立即响应，点击感觉「跟手」。 */
-button, a, [role="button"], .tab, .btn, .pk-day, .pk-unit, .course-card, .todo-chip__title {
+button, a, [role="button"], .tab, .fchip, .btn, .pk-day, .pk-unit, .course-card, .todo-chip__title {
   touch-action: manipulation;
 }
 /* 控件上长按不该选中文字（但绝不在 body 上设：用户要能复制自己的课表文字） */
-button, .tab, .btn, .pk-day, .pk-unit, .course-card { user-select: none; -webkit-user-select: none; }
+button, .tab, .fchip, .btn, .pk-day, .pk-unit, .course-card { user-select: none; -webkit-user-select: none; }
 
 /* 下拉刷新会劫持滚动：应用外壳内不吃橡皮筋（面板等内部滚动容器用 contain） */
 html, body { overscroll-behavior: none; }
@@ -145,6 +145,29 @@ html, body { overscroll-behavior: none; }
   cursor: pointer;
 }
 .tab.is-active {
+  background: var(--c-primary-soft);
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+  font-weight: var(--w-strong);
+}
+
+/* ---------- 待办状态筛选 chips（Day 12） ----------
+   外观沿用 .tab 的药丸语言（同一套边框/圆角/主色激活），但独立成类：
+   这是列表内的筛选，不是页面级视图切换，语义不同不共用。
+   热区 ≥44px 用 min-height 撑满（缩视觉不缩热区），字号取 --t-small。 */
+.fchips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.fchip {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text-dim);
+  font-size: var(--t-small);
+  font-weight: var(--w-label);
+  cursor: pointer;
+}
+.fchip.is-active {
   background: var(--c-primary-soft);
   border-color: var(--c-primary);
   color: var(--c-primary);
@@ -243,6 +266,7 @@ html, body { overscroll-behavior: none; }
   .btn--danger:hover { background: #fdecec; border-color: var(--c-danger); color: var(--c-danger); }
   .btn.is-dim:hover { border-color: var(--c-border); color: var(--c-text); }
   .tab:hover { border-color: var(--c-primary); color: var(--c-primary); }
+  .fchip:hover { border-color: var(--c-primary); color: var(--c-primary); }
   .picker__x:hover,
   .pk-nav:hover { border-color: var(--c-primary); color: var(--c-primary); }
   .pk-day:hover { background: var(--c-bg); }
@@ -250,11 +274,12 @@ html, body { overscroll-behavior: none; }
 }
 
 /* 按下反馈（规则给的按压区间 100–160ms，用 ease-out）：鼠标和手指都立刻有回应 */
-.btn, .tab, .pk-day, .pk-unit, .picker__x, .pk-nav {
+.btn, .tab, .fchip, .pk-day, .pk-unit, .picker__x, .pk-nav {
   transition: transform 120ms ease-out, background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
 }
 .btn:active,
 .tab:active,
+.fchip:active,
 .pk-day:active,
 .pk-nav:active,
 .picker__x:active { transform: scale(0.97); }

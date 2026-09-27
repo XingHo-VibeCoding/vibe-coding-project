@@ -1085,7 +1085,7 @@ window.Views = (function () {
     ].join('');
   }
 
-  function renderToday(state, date) {
+  function renderToday(state, date, todoFilter) {
     var box = $('view-today');
     if (!box) return;
 
@@ -1109,6 +1109,33 @@ window.Views = (function () {
 
     /* 今日待办（按截止日期） */
     var todayTodos = todosDueOn(state.todos, todayKey);
+
+    /* 状态筛选（Day 12）：'all' 全部 / 'open' 未完成 / 'done' 已完成。
+       只是「这一屏显示谁」的视图参数：不写存储、不改数据，重渲染时由 app 层传入。
+       白名单外的值一律回落 all——清空恢复 = 点「全部」。 */
+    var filter = todoFilter === 'open' || todoFilter === 'done' ? todoFilter : 'all';
+    var shownTodos = [];
+    for (var ft = 0; ft < todayTodos.length; ft++) {
+      var ftDone = !!todayTodos[ft].done;
+      if (filter === 'all' || (filter === 'open' && !ftDone) || (filter === 'done' && ftDone)) {
+        shownTodos.push(todayTodos[ft]);
+      }
+    }
+
+    /* 筛选 chips：一条待办都没有且不在筛选态时不出现（无感易用：没得筛就不占地方）。
+       is-active 档配 aria-pressed，读屏也能知道当前筛的是哪个。 */
+    var chipsHtml = '';
+    if (todayTodos.length || filter !== 'all') {
+      var chipDefs = [['all', '全部'], ['open', '未完成'], ['done', '已完成']];
+      var chipBtns = '';
+      for (var ci = 0; ci < chipDefs.length; ci++) {
+        var ck = chipDefs[ci][0];
+        chipBtns += '<button type="button" class="fchip' + (filter === ck ? ' is-active' : '') +
+          '" data-action="todo-filter" data-id="' + ck + '" aria-pressed="' + (filter === ck ? 'true' : 'false') + '">' +
+          chipDefs[ci][1] + '</button>';
+      }
+      chipsHtml = '<div class="fchips" role="group" aria-label="待办状态筛选">' + chipBtns + '</div>';
+    }
 
     /* 结算条（A7：只统计待办） */
     var sum = Rules.todaySummary(state.todos, d);
@@ -1140,11 +1167,23 @@ window.Views = (function () {
     }
 
     var todoHtml = '';
-    if (!todayTodos.length) {
-      todoHtml = '<div class="day-col__empty">今天没有到期待办</div>';
+    if (!shownTodos.length) {
+      /* 空态文案分三档：没筛选时是「今天没有」；筛选中是「没有未完成/已完成」——
+         让用户明确知道是筛选导致列表空，不是数据丢了 */
+      todoHtml = '<div class="day-col__empty">' +
+        (filter === 'open' ? '没有未完成的待办' : filter === 'done' ? '没有已完成的待办' : '今天没有到期待办') +
+        '</div>';
     } else {
-      for (var k = 0; k < todayTodos.length; k++) todoHtml += todoChip(todayTodos[k]);
+      for (var k = 0; k < shownTodos.length; k++) todoHtml += todoChip(shownTodos[k]);
     }
+
+    var todoSection = [
+      '<section class="today-sec">',
+      '  <h3 class="today-sec__title">到期待办</h3>',
+      '  <div class="today-sec__body">' + todoHtml + '</div>',
+      '</section>'
+    ];
+    if (chipsHtml) todoSection.splice(2, 0, '  ' + chipsHtml);
 
     box.innerHTML = [
       greetHtml,
@@ -1159,10 +1198,7 @@ window.Views = (function () {
       '  <div class="today-sec__body">' + courseHtml + '</div>',
       '</section>',
 
-      '<section class="today-sec">',
-      '  <h3 class="today-sec__title">到期待办</h3>',
-      '  <div class="today-sec__body">' + todoHtml + '</div>',
-      '</section>',
+      todoSection.join('\n'),
 
       '<div class="summary"' + (sum.total === 0 ? ' data-empty="1"' : '') + '>',
       '  今日完成 ' + sum.done + ' 项 / 共 ' + sum.total + ' 项' + (sum.total === 0 ? '（今天没有到期待办）' : ''),

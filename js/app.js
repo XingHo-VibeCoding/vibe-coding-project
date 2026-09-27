@@ -10,6 +10,7 @@ window.App = (function () {
   var state = null;          // 当前数据快照
   var currentView = 'week';
   var viewWeek = null;       // 正在查看第几周；null = 跟随本周
+  var todoFilter = 'all';    // 今日待办筛选（Day 12）：'all' 全部 / 'open' 未完成 / 'done' 已完成
   var weekFocusKey = '';     // 上次「跳到今天列」的锚点（周数:今天列有无），防止原地重绘时把用户滚走
   var pendingCourse = null;  // 冲突确认弹窗里暂存的待保存课程
   var aiResult = null;       // AI 识别确认弹窗暂存的解析结果（关弹窗即弃）
@@ -596,7 +597,7 @@ window.App = (function () {
     closePicker();          // 数据一变就收面板，避免它挂在一个已经重建过的输入框上
     Views.renderTerm(semester, today);
     Views.renderWeek(state, viewing);
-    Views.renderToday(state, today);
+    Views.renderToday(state, today, todoFilter);
     switchView(currentView);
     focusWeekToday();
   }
@@ -1093,6 +1094,15 @@ window.App = (function () {
       return;
     }
     if (action === 'delete-todo') { askRemove('todo', id); return; }
+
+    /* ---------------- 待办状态筛选（Day 12） ----------------
+       id = 'all' / 'open' / 'done'。只是改「这一屏显示谁」的视图参数，
+       不写存储；白名单外一律回落 all（清空恢复 = 点「全部」或传别的值）。 */
+    if (action === 'todo-filter') {
+      todoFilter = (id === 'open' || id === 'done') ? id : 'all';
+      render();
+      return;
+    }
 
     /* ---------------- 导出 / 备份（PRD F9） ---------------- */
     if (action === 'open-export') { Views.openModal(Views.exportModal()); return; }
