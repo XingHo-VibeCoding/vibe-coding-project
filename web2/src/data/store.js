@@ -26,6 +26,26 @@ export function addCourse(c) {
   localStorage.setItem(ADDED_KEY, JSON.stringify(arr))
 }
 
+/* 清理 web2.added 里重复的课程（同星期+同时间+同名+同周规则视为重复，保留第一条） */
+export function dedupAdded() {
+  const arr = loadAdded()
+  const seen = new Set()
+  const next = []
+  for (const c of arr) {
+    if (c.type !== 'course') {
+      next.push(c)
+      continue
+    }
+    const key = `${c.weekday}|${c.start}|${c.end}|${c.name}|${c.week_rule || 'every'}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    next.push(c)
+  }
+  const removed = arr.length - next.length
+  localStorage.setItem(ADDED_KEY, JSON.stringify(next))
+  return removed
+}
+
 /* 删一门手动加的课（只能删自己加的，mock / 导入数据不受影响） */
 export function removeCourse(id) {
   localStorage.setItem(ADDED_KEY, JSON.stringify(loadAdded().filter((c) => c.id !== id)))

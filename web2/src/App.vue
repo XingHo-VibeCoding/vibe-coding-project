@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf } from './data/store.js'
+import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf } from './data/store.js'
 import { normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt } from './data/periods.js'
 import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange } from './data/weekGrid.js'
 import { recorderAvailable, ensureMicPermission, startRecording as recStart, stopRecording as recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning } from './data/recorder.js'
@@ -162,6 +162,13 @@ function reloadDataset() {
      之前只在页面初始化时刷新，导入带录音场次/打卡记录的文件后列表不更新（测试抓出） */
   refreshLectures()
   reloadHabits()
+}
+
+/* 清理重复课程：只处理 web2.added 里的重复（多次导入同一课表会叠加在这里） */
+function dedupCourses() {
+  const removed = dedupAdded()
+  reloadDataset()
+  importMsg.value = removed > 0 ? `已清理 ${removed} 门重复课程` : '没有重复课程'
 }
 
 function onImportFile(e, opts) {
@@ -1265,13 +1272,16 @@ function recImport() {
   const ps = recPeriods.value // 与确认页预览同一份换算表（含「全删节次→默认 13 节」的回落）
   if (recFromMine.value) {
     let ok = 0
-    let skipped = 0
+    let dup = 0
+    let bad = 0
     const conflictNames = []
+    const seen = new Set()
+    const exists = (c) => weekAll.value.some((x) => x.type === 'course' && x.weekday === c.weekday && x.start === c.start && x.end === c.end && x.name === c.name && x.week_rule === c.week_rule)
     for (const it of items) {
       const a = ps.find((p) => p.no === Number(it.startSec))
       const b = ps.find((p) => p.no === Number(it.endSec))
       if (!a || !b || !String(it.title || '').trim()) {
-        skipped++
+        bad++
         continue
       }
       const course = {
@@ -1283,6 +1293,12 @@ function recImport() {
         end: b.end,
         week_rule: it.weekRule,
       }
+      const key = `${course.weekday}|${course.start}|${course.end}|${course.name}|${course.week_rule}`
+      if (seen.has(key) || exists(course)) {
+        dup++
+        continue
+      }
+      seen.add(key)
       const conf = findConflicts({ type: 'course', weekday: course.weekday, start: course.start, end: course.end, week_rule: course.week_rule }, weekAll.value)
       if (conf.length) conflictNames.push(...conf.map((c) => c.name))
       addCourse(course)
@@ -1291,7 +1307,8 @@ function recImport() {
     reloadDataset()
     mineRecCancel()
     importMsg.value = `导入成功：新增 ${ok} 门课`
-      + (skipped ? `，${skipped} 门因课程名没填或节次超出被跳过` : '')
+      + (dup ? `，${dup} 门重复已跳过` : '')
+      + (bad ? `，${bad} 门因课程名没填或节次超出被跳过` : '')
       + (conflictNames.length ? `；与现有课表时间冲突：${[...new Set(conflictNames)].join('、')}（没动现有课，冲突的课可在周视图调整）` : '')
     return
   }
@@ -1308,15 +1325,18 @@ function recImport() {
   events.value = r.data.events
   todos.value = r.data.todos.map((t) => ({ ...t }))
   let ok = 0
-  let skipped = 0
+  let dup = 0
+  let bad = 0
+  const seen = new Set()
+  const exists = (c) => weekAll.value.some((x) => x.type === 'course' && x.weekday === c.weekday && x.start === c.start && x.end === c.end && x.name === c.name && x.week_rule === c.week_rule)
   for (const it of items) {
     const a = ps.find((p) => p.no === Number(it.startSec))
     const b = ps.find((p) => p.no === Number(it.endSec))
     if (!a || !b || !String(it.title || '').trim()) {
-      skipped++
+      bad++
       continue
     }
-    addCourse({
+    const course = {
       weekday: it.weekday,
       name: String(it.title).trim(),
       place: [it.location, it.teacher].filter(Boolean).join(' · '),
@@ -1324,15 +1344,23 @@ function recImport() {
       start: a.start,
       end: b.end,
       week_rule: it.weekRule,
-    })
+    }
+    const key = `${course.weekday}|${course.start}|${course.end}|${course.name}|${course.week_rule}`
+    if (seen.has(key) || exists(course)) {
+      dup++
+      continue
+    }
+    seen.add(key)
+    addCourse(course)
     ok++
   }
   reloadDataset()
   finishOnboarding()
   tab.value = 'week'
-  importMsg.value = skipped
-    ? `课表识别已导入 ${ok} 门课，${skipped} 门因课程名没填或节次超出被跳过（可在周视图手动补）`
-    : `课表识别已导入 ${ok} 门课：双击或长按课表空白处还能继续加课`
+  importMsg.value = `课表识别已导入 ${ok} 门课`
+    + (dup ? `，${dup} 门重复已跳过` : '')
+    + (bad ? `，${bad} 门因课程名没填或节次超出被跳过（可在周视图手动补）` : '')
+    + (ok && !dup && !bad ? '：双击或长按课表空白处还能继续加课' : '')
 }
 
 /* ---------------- 主题（浅色 / 深色） ---------------- */
@@ -2696,6 +2724,21 @@ function gridDbl(e) {
           </div>
           <p v-if="notifyPerm === false" class="mt-2 text-[11px] text-red-400">通知权限被拒绝了：请在系统设置里允许本应用发通知，否则提醒收不到。</p>
           <p v-if="notifyMsg" class="mt-2 text-[11px]" :class="notifyMsgBad ? 'text-red-400' : 'text-primary-500'">{{ notifyMsg }}</p>
+        </div>
+
+        <!-- 数据清理：多次导入叠加的重复课程 -->
+        <div class="flex items-center gap-3.5 p-4">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-amber-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6l-1.6 7.2a1.5 1.5 0 01-1.5 1.3H4.6a1.5 1.5 0 01-1.5-1.3L1.5 6M6 6V4a2 2 0 012-2h0a2 2 0 012 2v2M14 6H2" /></svg>
+          </span>
+          <div class="flex-1">
+            <span class="block text-sm font-medium">清理重复课程</span>
+            <span class="block text-[11px] text-ink-dim/70">删掉多次导入叠加的同一门课</span>
+          </div>
+          <button
+            class="rounded-full bg-ink/5 px-3 py-1.5 text-xs font-medium transition active:scale-95"
+            @click="dedupCourses"
+          >一键清理</button>
         </div>
 
         <!-- 关于 -->
