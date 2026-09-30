@@ -36,6 +36,21 @@ const delta = (a, b) => {
   if (d > SPAN / 2) d -= SPAN
   return d
 }
+/* 「视觉位移」：三份内容相位相同，位移恰好是整数份时渲染完全一样 = 用户看不见。
+   非整份的位移才是用户真正看到的滚动。用于钉住「跨份边界松手空转一整圈」这个 bug。
+   抖动阈值只能取 1px（不能用 ROW/2）：缓动的每帧位移可能只有十几 px，
+   阈值开大就会把真实的可见滚动吃掉，断言变成永远 PASS 的假绿（D4 踩过）。 */
+const visualDelta = (d) => {
+  if (Math.abs(d) < 1) return 0
+  const k = Math.round(d / SPAN)
+  if (k !== 0 && Math.abs(d - k * SPAN) < ROW) return 0
+  return d
+}
+const visualItems = (tops) => {
+  let sum = 0
+  for (let i = 1; i < tops.length; i++) sum += Math.abs(visualDelta(tops[i] - tops[i - 1]))
+  return sum / ROW
+}
 
 try {
   await page.goto(URL, { waitUntil: 'domcontentloaded' })
@@ -146,6 +161,95 @@ try {
   await send('touchEnd', cy + 120)
   await page.waitForTimeout(700)
   t('C4 反方向也通（下移手指 → 值递减）', Number(await val()) < Number(seen[2]), `${seen[2]} → ${await val()}`)
+
+  console.log('\n=== D. 跨份边界松手不空转（分钟从 58 拖到 2，跨过 59/0）===')
+  /* 页面内 rAF 全程记录 scrollTop：跨份瞬移与动画首帧发生在 touchend 的同一个任务里，
+     CDP 往返回合之间会漏掉，只在页面里采才拿得到真序列。 */
+  const traceStart = () =>
+    page.evaluate(() => {
+      window.__recEl = document.querySelectorAll('.wheel')[1]
+      window.__trace = []
+      window.__rec = true
+      if (!window.__tracing) {
+        window.__tracing = true
+        const loop = () => {
+          if (window.__rec) window.__trace.push(window.__recEl.scrollTop)
+          requestAnimationFrame(loop)
+        }
+        requestAnimationFrame(loop)
+      }
+    })
+  const traceStop = () =>
+    page.evaluate(() => {
+      window.__rec = false
+      return window.__trace
+    })
+
+  await page.evaluate((t) => {
+    document.querySelectorAll('.wheel')[1].scrollTop = t
+  }, SPAN + 58 * ROW)
+  await page.waitForTimeout(320)
+  const dStartVal = await val()
+  const dStartTop = await rawTop()
+  await traceStart()
+  /* 手指上移（值递增）4 格：58 → 59 → 00 → 01 → 02，必然跨过循环边界。
+     手写在段内而不复用 swipe()：swipe 是「手指下移」方向，反了就到不了 59/0。
+     末帧后等 80ms 再读位置（触摸事件在主线程排队，紧跟其后读会读到上一帧）。 */
+  await send('touchStart', cy)
+  for (let i = 1; i <= 4; i++) {
+    await page.waitForTimeout(300)
+    await send('touchMove', cy - i * 40)
+  }
+  await page.waitForTimeout(80)
+  const dMid = await rawTop()
+  await send('touchEnd', cy - 160)
+  await page.waitForTimeout(700)
+  const traceD = await traceStop()
+  const dEndVal = await val()
+  const dEnd = await rawTop()
+
+  const segBefore = Math.floor(dStartTop / SPAN)
+  const segAfter = Math.floor(dMid / SPAN)
+  const movedItems = Math.round(delta(dStartTop, dMid) / ROW)
+  const dVisual = visualItems([...traceD, dEnd])
+  t(
+    'D1 拖动确实跨出了中间份（复现条件成立：起点在中间份，松手前已越界）',
+    segBefore === 1 && segAfter === 2,
+    `份 ${segBefore} → ${segAfter}，top ${Math.round(dStartTop)} → ${Math.round(dMid)}`
+  )
+  t('D2 跨边界落点值 = 起点 + 实际拖动格数', Number(dEndVal) === (58 + movedItems) % 60, `58 + ${movedItems} → ${dEndVal}`)
+  t(
+    'D3 整个手势视觉位移 ≈ 拖动格数（松手不额外空转；bug 版 ≈ 拖动格数 + 60 格 = 转一整圈）',
+    dVisual <= movedItems + 1.5,
+    `视觉 ${dVisual.toFixed(1)} 格 vs 拖动 ${movedItems} 格，采样 ${traceD.length} 帧`
+  )
+  console.log(`   拖动 top ${Math.round(dStartTop)} → ${Math.round(dMid)} → 落定 ${Math.round(dEnd)}（采样 ${traceD.length} 帧）`)
+
+  /* D4：跨边界 + 快甩。快甩才会叠加惯性，也是最容易「跨份 + 甩动」叠在一起出错的一档。 */
+  await page.evaluate((t) => {
+    document.querySelectorAll('.wheel')[1].scrollTop = t
+  }, SPAN + 58 * ROW)
+  await page.waitForTimeout(320)
+  const d4StartTop = await rawTop()
+  await traceStart()
+  await send('touchStart', cy)
+  for (let i = 1; i <= 4; i++) {
+    await page.waitForTimeout(8)
+    await send('touchMove', cy - i * 40)
+  }
+  await page.waitForTimeout(60)
+  const d4Mid = await rawTop()
+  await send('touchEnd', cy - 160)
+  await page.waitForTimeout(900)
+  const traceD4 = await traceStop()
+  const d4End = await rawTop()
+  const d4Moved = Math.round(delta(d4StartTop, d4Mid) / ROW)
+  const d4Visual = visualItems([...traceD4, d4End])
+  t(
+    `D4 跨边界快甩：视觉位移 ≤ 拖动格数 + 甩动封顶 ${MAX_FLING} 格（bug 版会多出 60 格整圈）`,
+    d4Visual <= d4Moved + MAX_FLING + 1.5,
+    `视觉 ${d4Visual.toFixed(1)} 格，拖动 ${d4Moved} 格，落点 ${await val()}`
+  )
 
   await ctx.close()
 } catch (e) {

@@ -8,6 +8,9 @@
 //       原生惯性一次快甩能跑很远 = 用户说的「太快」）
 //     · 循环：列表重复 3 份（REPEAT），越界时平移整数份——内容完全重复、对 ROW 相位相同，
 //       所以视觉绝对无缝，永远到不了底
+// 2026-09-30 第三轮（用户反馈「从 58 滚到 2，松手一瞬间转一整圈」）：
+//   · 松手时先「同步瞬移归位到中间份」再算吸附目标，否则跨份后目标会被映射到另一份，
+//     缓动横跨整整一份 = 空转一圈（详细原因写在 finish 里；回归测试见 tmp/wheel-touch-gesture-check.mjs D 段）
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { flingSteps, velocityFromSamples, normalizeTop, easeOutCubic } from '../data/wheelPhysics.js'
 
@@ -155,8 +158,17 @@ function attachTouch(colRef, count, setVal) {
     const v = velocityFromSamples(samples)
     const dir = v > 0 ? 1 : -1
     const steps = flingSteps(v) * dir
+    /* 关键一步：**先把位置拉回「中间一份」，再算吸附目标**（2026-09-30 第三轮修复）。
+       这是同步瞬移，发生在 touchend 同一个任务里、浏览器还没机会绘制，位移又恰好是整数份
+       （三份内容相位相同、渲染像素完全一样）→ 用户看不到这一下。
+       为什么必须做：拖动阶段不做 normalize（那会闪），所以跨过 59/0 边界后 scrollTop 已落在
+       相邻份里；若此时交给 normalizeTop 去算「目标」，目标会被映射回中间份，两者相差整整一份
+       → 那段短缓动就成了「松手瞬间空转一整圈」（用户实测 58→2 必现，测试 D 抓到 63 格）。
+       归位之后再算 target 就**不能再 normalize**：±8 格的偏移本来就该落在相邻份，
+       normalize 会把「前进 8 格」掰成「后退 52 格」。动画结束的回调里再瞬移归位一次。 */
+    el.scrollTop = normalizeTop(el.scrollTop, span)
     const snapped = Math.round(el.scrollTop / ROW) * ROW
-    const target = normalizeTop(snapped + steps * ROW, span)
+    const target = snapped + steps * ROW
     const dur = steps ? ANIM_FLING_BASE + Math.abs(steps) * ANIM_FLING_PER_STEP : ANIM_SNAP_MS
     animTo(el, target, dur, () => {
       el.scrollTop = normalizeTop(el.scrollTop, span)
