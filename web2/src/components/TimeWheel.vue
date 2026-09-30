@@ -1,9 +1,15 @@
 <script setup>
-// 时间滚轮面板：时/分两列 scroll-snap，滚动或点选；对齐主项目「自建时间面板」口径
-// 2026-09-30 用户反馈：改为**循环滚轮**——从 0 滚到 59 之后无缝衔接 0，不会「到底」。
-// 做法：列表重复 3 份（REPEAT=3），滚动越过中间份边界 ±半份时把 scrollTop 平移恰好一份。
-// 平移一份 = 内容完全重复、对 ROW 相位相同（吸附点一一对应），所以视觉绝对无缝。
+// 时间滚轮面板：时/分两列，滚动或点选；对齐主项目「自建时间面板」口径
+// 2026-09-30 第二轮改造（用户反馈「改完之后滑动手感没有之前好了：快滑太快、慢滑拖沓」）：
+//   触屏改为**自接管**，与「组件手感三定律」第一条同源（物理纯函数见 src/data/wheelPhysics.js）：
+//     · 拖动：1:1 直写 scrollTop，全程不做吸附 → 跟手（旧版交给原生 mandatory 吸附，
+//       实测慢速档跟手度只有 0.56~0.80，手指走 72px 内容只挪 40px = 用户说的「拖沓」）
+//     · 松手：按速度换算滑几格，**封顶 8 格** → 可控（循环化后没有了顶/底兜底，
+//       原生惯性一次快甩能跑很远 = 用户说的「太快」）
+//     · 循环：列表重复 3 份（REPEAT），越界时平移整数份——内容完全重复、对 ROW 相位相同，
+//       所以视觉绝对无缝，永远到不了底
 import { ref, computed, onMounted, nextTick } from 'vue'
+import { flingSteps, velocityFromSamples, normalizeTop, easeOutCubic } from '../data/wheelPhysics.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' }, // 'HH:mm' 或 ''
@@ -11,7 +17,12 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const ROW = 40 // 每项高度，需与模板样式一致
-const REPEAT = 3 // 循环份数：活动窗口维持在中间一份 ±半份余量
+const REPEAT = 3 // 循环份数：活动窗口维持在中间一份
+const ANIM_SNAP_MS = 150 // 松手只吸附（没甩起来）的时长
+const ANIM_FLING_BASE = 150 // 甩动动画基础时长
+const ANIM_FLING_PER_STEP = 26 // 每多滑一格补的时长
+const AXIS_LOCK_PX = 8 // 手指移动超过它才判方向（避免轻微抖动被当成横向手势）
+
 const init = props.modelValue || '08:00'
 const [initH, initM] = init.split(':').map(Number)
 
@@ -26,40 +37,143 @@ const minutes = Array.from({ length: 60 * REPEAT }, (_, i) => i % 60)
 const pad = (n) => String(n).padStart(2, '0')
 
 const display = computed(() => `${pad(hour.value)}:${pad(min.value)}`)
+const spanOf = (count) => count * ROW
 
-/* 循环归位：scrollTop 一旦跑出「中间一份 ±半份」余量，就平移恰好一份拉回。
-   余量（半份）内的滚动完全不动 → 小幅惯性不被打断；只有快冲出边界才拉一次，
-   拉完视觉位置不变（内容重复），惯性即使被截停用户也无感。 */
-function keepMiddle(el, count) {
-  const span = count * ROW
-  const st = el.scrollTop
-  if (st < span * 0.5) el.scrollTop = st + span
-  else if (st >= span * 2.5) el.scrollTop = st - span
-}
-function snap(colRef, count, setVal) {
-  const el = colRef.value
+/* ---------- 滚动位置读写：所有写入都过 normalizeTop，永远待在中间那份 ---------- */
+function cancelAnim(el) {
   if (!el) return
-  keepMiddle(el, count)
-  const idx = Math.min(count * REPEAT - 1, Math.max(0, Math.round(el.scrollTop / ROW)))
-  setVal(idx % count)
+  if (el._raf) cancelAnimationFrame(el._raf)
+  el._raf = 0
+  el._anim = false
+}
+/* 短缓动到目标位置（自己写的 rAF，不用 scrollTo smooth——那个又慢又被吸附回吸） */
+function animTo(el, to, dur, done) {
+  cancelAnim(el)
+  const from = el.scrollTop
+  if (Math.abs(to - from) < 0.5) {
+    done && done()
+    return
+  }
+  const t0 = performance.now()
+  el._anim = true
+  const frame = (now) => {
+    const p = Math.min(1, (now - t0) / dur)
+    el.scrollTop = from + (to - from) * easeOutCubic(p)
+    if (p < 1) {
+      el._raf = requestAnimationFrame(frame)
+      return
+    }
+    el._raf = 0
+    done && done() // 回调里还在 _anim 状态，避免 scroll 监听插一脚
+    el._anim = false
+  }
+  el._raf = requestAnimationFrame(frame)
+}
+/* 兜底：万一还有非我方可控的 scrollTop 变化（测试直写、键盘），也拉回中间那份并同步值 */
+function onScroll(colRef, count, setVal) {
+  const el = colRef.value
+  if (!el || el._anim || el._dragging) return
+  const span = spanOf(count)
+  const st = el.scrollTop
+  if (st < span) el.scrollTop = st + span
+  else if (st >= span * 2) el.scrollTop = st - span
+  clearTimeout(el._t)
+  el._t = setTimeout(() => {
+    if (el._anim || el._dragging) return
+    setVal(Math.round(el.scrollTop / ROW) % count)
+  }, 140)
 }
 function onScrollHour() {
-  if (hourCol.value) keepMiddle(hourCol.value, 24)
-  clearTimeout(hourCol.value?._t)
-  hourCol.value._t = setTimeout(() => snap(hourCol, 24, (i) => (hour.value = i)), 140)
+  onScroll(hourCol, 24, (i) => (hour.value = i))
 }
 function onScrollMin() {
-  if (minCol.value) keepMiddle(minCol.value, 60)
-  clearTimeout(minCol.value?._t)
-  minCol.value._t = setTimeout(() => snap(minCol, 60, (i) => (min.value = i)), 140)
+  onScroll(minCol, 60, (i) => (min.value = i))
 }
-/* 点选：i 是三份中的实际渲染索引，scrollTop = i*ROW 恰是吸附点（相位对，不会回吸） */
+
+/* ---------- 触屏自接管：拖动 1:1，松手按速度滑几格 ---------- */
+function attachTouch(colRef, count, setVal) {
+  const el = colRef.value
+  if (!el) return
+  const span = spanOf(count)
+  let dragging = false
+  let axis = '' // '' 未定 / 'y' 纵向（接管）/ 'x' 横向（让出去）
+  let startX = 0
+  let startY = 0
+  let startTop = 0
+  let samples = []
+
+  const syncVal = () => setVal(Math.round(el.scrollTop / ROW) % count)
+
+  el.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches.length !== 1) return
+      cancelAnim(el)
+      const t = e.touches[0]
+      dragging = true
+      axis = ''
+      startX = t.clientX
+      startY = t.clientY
+      startTop = normalizeTop(el.scrollTop, span) // 先把起点拉回中间份，之后按位移累加
+      el.scrollTop = startTop
+      samples = [{ t: Date.now(), y: startY }]
+    },
+    { passive: true }
+  )
+
+  el.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!dragging) return
+      const t = e.touches[0]
+      const dx = t.clientX - startX
+      const dy = t.clientY - startY
+      if (!axis) {
+        if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return
+        axis = Math.abs(dy) >= Math.abs(dx) ? 'y' : 'x'
+        if (axis === 'x') {
+          dragging = false // 横向手势让出去（别抢弹层/切页的横滑）
+          return
+        }
+        el._dragging = true
+      }
+      // 1:1 直写：手指走多少，内容走多少，全程不吸附
+      el.scrollTop = normalizeTop(startTop - dy, span)
+      samples.push({ t: Date.now(), y: t.clientY })
+      if (samples.length > 16) samples.shift()
+      syncVal() // 高亮实时跟手
+    },
+    { passive: true }
+  )
+
+  const finish = () => {
+    if (!dragging) return
+    dragging = false
+    el._dragging = false
+    const v = velocityFromSamples(samples)
+    const dir = v > 0 ? 1 : -1
+    const steps = flingSteps(v) * dir
+    const snapped = Math.round(el.scrollTop / ROW) * ROW
+    const target = normalizeTop(snapped + steps * ROW, span)
+    const dur = steps ? ANIM_FLING_BASE + Math.abs(steps) * ANIM_FLING_PER_STEP : ANIM_SNAP_MS
+    animTo(el, target, dur, () => {
+      el.scrollTop = normalizeTop(el.scrollTop, span)
+      syncVal()
+    })
+  }
+  el.addEventListener('touchend', finish, { passive: true })
+  el.addEventListener('touchcancel', finish, { passive: true })
+}
+
+/* 点选：i 是三份中的实际渲染索引，scrollTop = i*ROW 恰是项中心（相位对，不会回吸） */
 function pickAt(colRef, i, count, setVal) {
   const el = colRef.value
-  if (el) el.scrollTop = i * ROW // 瞬移到吸附点：落点正好对齐，系统不会再吸回去（主项目同款，smooth 反而慢吞吞）
+  if (!el) return
+  cancelAnim(el)
+  el.scrollTop = i * ROW // 瞬移到吸附点：点一下就走，别慢吞吞（主项目同款）
   setVal(i % count)
 }
-/* 点选入口必须在 script 里包一层：模板中 ref 会自动解包成数字/元素，
+/* 点选入口必须在 script 里包一层：模板中 ref 会自动解包成元素，
    直接在模板里写 min.value = i 会变成给数字赋值而报错 */
 function pickHour(i) {
   pickAt(hourCol, i, 24, (v) => (hour.value = v))
@@ -68,7 +182,7 @@ function pickMin(i) {
   pickAt(minCol, i, 60, (v) => (min.value = v))
 }
 
-/* ---------- 鼠标滚轮接管（主项目 app.js 同款口径） ---------- */
+/* ---------- 鼠标滚轮接管（主项目 app.js 同款口径；触屏不归这里管） ---------- */
 const WHEEL_UNIT = 50 // 滚轮累计到这个像素数才走一格：嫌迟钝调小、嫌太灵敏调大
 /* 把各浏览器口径不一的 deltaY 统一成像素（Firefox 默认按「行」给） */
 function wheelPixels(e) {
@@ -78,30 +192,39 @@ function wheelPixels(e) {
   return d
 }
 /* 一格滚轮 = 走一格。为什么得自己接管：浏览器转一格 ~100px 而一项只有 40px，
-   再叠加 scroll-snap 强制吸附，一滚就跳 2~3 格还一顿一顿（用户实测反馈）。
-   preventDefault 后按「累计到 WHEEL_UNIT 才走一格」来推；触屏不归这里管：
-   手指是原生滚动 + 吸附，手感本来就是对的。
-   循环后没有顶/底：keepMiddle 把 scrollTop 维持在中间份附近，±1 永远不出界。 */
+   再叠加吸附，一滚就跳 2~3 格还一顿一顿（用户实测反馈）。
+   preventDefault 后按「累计到 WHEEL_UNIT 才走一格」来推。
+   循环后没有顶/底：位置始终被 normalizeTop 维持在中间份附近，±1 永远不出界。 */
 function attachWheel(colRef, count, setVal) {
   const el = colRef.value
   if (!el) return
-  el.addEventListener('wheel', (e) => {
-    const px = wheelPixels(e)
-    if (!px) return
-    const dir = px > 0 ? 1 : -1
-    const idx = Math.round(el.scrollTop / ROW)
-    const next = idx + dir
-    if (next < 0 || next > count * REPEAT - 1) return // 理论上到不了（keepMiddle 兜底）；真到了不吞，让外层还能滚
-    e.preventDefault() // 关键的一步：不拦就还是系统那 ~100px
-    let acc = el._acc || 0
-    if (acc && (acc > 0) !== (px > 0)) acc = 0 // 换方向就重新攒
-    acc += px
-    if (Math.abs(acc) < WHEEL_UNIT) { el._acc = acc; return }
-    el._acc = 0 // 走一格就清零：一格滚轮 = 一格
-    el.scrollTop = next * ROW
-    setVal(next % count)
-  }, { passive: false })
+  const span = spanOf(count)
+  el.addEventListener(
+    'wheel',
+    (e) => {
+      const px = wheelPixels(e)
+      if (!px) return
+      const dir = px > 0 ? 1 : -1
+      const idx = Math.round(el.scrollTop / ROW)
+      const next = idx + dir
+      if (next < 0 || next > count * REPEAT - 1) return // 理论上到不了（normalizeTop 兜底）；真到了不吞
+      e.preventDefault() // 关键的一步：不拦就还是系统那 ~100px
+      let acc = el._acc || 0
+      if (acc && (acc > 0) !== (px > 0)) acc = 0 // 换方向就重新攒
+      acc += px
+      if (Math.abs(acc) < WHEEL_UNIT) {
+        el._acc = acc
+        return
+      }
+      el._acc = 0 // 走一格就清零：一格滚轮 = 一格
+      cancelAnim(el)
+      el.scrollTop = normalizeTop(next * ROW, span)
+      setVal(next % count)
+    },
+    { passive: false }
+  )
 }
+
 onMounted(async () => {
   await nextTick()
   // 双 rAF：等弹层 Transition 期间布局真正稳定再定位，防止 scrollTo 被 clamp 到 0
@@ -111,6 +234,8 @@ onMounted(async () => {
   minCol.value?.scrollTo({ top: (60 + initM) * ROW })
   attachWheel(hourCol, 24, (v) => (hour.value = v))
   attachWheel(minCol, 60, (v) => (min.value = v))
+  attachTouch(hourCol, 24, (v) => (hour.value = v))
+  attachTouch(minCol, 60, (v) => (min.value = v))
 })
 defineExpose({ display })
 </script>
@@ -136,6 +261,7 @@ defineExpose({ display })
           <button
             v-for="(h, i) in hours"
             :key="i"
+            v-memo="[h === hour]"
             type="button"
             class="flex h-10 w-full shrink-0 cursor-pointer items-center justify-center tabular-nums"
             :class="h === hour ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim/60'"
@@ -154,6 +280,7 @@ defineExpose({ display })
           <button
             v-for="(m, i) in minutes"
             :key="i"
+            v-memo="[m === min]"
             type="button"
             class="flex h-10 w-full shrink-0 cursor-pointer items-center justify-center tabular-nums"
             :class="m === min ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim/60'"
@@ -172,21 +299,18 @@ defineExpose({ display })
 .wheel {
   height: 200px;
   overflow-y: auto;
-  scroll-snap-type: y mandatory;
   scrollbar-width: none;
   overscroll-behavior: contain;
+  /* 触屏自接管：交给浏览器就等于把「跟手」和「滑多远」都交出去了（见 wheelPhysics.js 顶部注释）。
+     touch-action:none 让浏览器不再原生滚动这一列，滚动位置完全由组件的 rAF/手势代码写。
+     随之 scroll-snap-type 也去掉——没有原生滚动就没有东西需要吸附，
+     留着反而会在 rAF 动画逐帧写 scrollTop 时把位置回吸到吸附点。 */
+  touch-action: none;
   /* 上下边缘渐隐：滚动的数字「进出」有层次，接近原生 picker 观感（纯视觉，不影响点击） */
   mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
 }
 .wheel::-webkit-scrollbar {
   display: none;
-}
-/* 垫片和数字项都要吸附居中：programmatic scrollTo(i*ROW) 才会正好落在吸附点，
-   否则 mandatory 回吸会把位置弹到最近的垫片上，snap() 读到错误 scrollTop。
-   不加 scroll-snap-stop:always——它把惯性逐格急刹，阻尼感太重（用户实测）；
-   触屏用普通 mandatory 吸附（主项目同款），鼠标滚轮已由 attachWheel 接管 */
-.wheel > * {
-  scroll-snap-align: center;
 }
 </style>

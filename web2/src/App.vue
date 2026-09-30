@@ -2501,7 +2501,7 @@ function gridDbl(e) {
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4" /></svg>
           </span>
           <span class="flex-1 text-sm font-medium">关于</span>
-          <span class="text-xs text-ink-dim/70">v1.23</span>
+          <span class="text-xs text-ink-dim/70">v1.24</span>
         </div>
       </section>
 
