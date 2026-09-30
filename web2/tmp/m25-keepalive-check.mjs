@@ -170,7 +170,8 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.locator('text=后台录音').first().scrollIntoViewIfNeeded()
   t('F1 App 环境显示「后台录音」说明行', (await page.locator('text=后台录音').count()) > 0)
   t('F2 说明里含通知权限提示', (await page.locator('text=打开本应用的通知权限').count()) > 0)
-  t('F3 版本串已到 v1.23', (await page.locator('text=v1.23').count()) > 0)
+  const verText = (await page.locator('text=/^v\\d+\\.\\d+$/').first().innerText()).trim()
+  t('F3 页面上有 vX.Y 版本串（宽松匹配：以前写死 v1.23，每次升版本都要回来改，漏改就假红）', /^v\d+\.\d+$/.test(verText), verText)
   await ctx.close()
 }
 
