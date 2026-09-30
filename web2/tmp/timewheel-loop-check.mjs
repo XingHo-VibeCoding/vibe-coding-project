@@ -1,6 +1,7 @@
 /* TimeWheel 循环滚轮验证（2026-09-30 用户反馈：0→59 之后应无缝衔接 0，不要到底）
    手法：引导页二级页点开第 1 节开始时间（08:00），对分钟/时列设 scrollTop + dispatch scroll，
-   验证三倍列表渲染、初始中间份定位、过界循环取值、keepMiddle 归位。
+   验证五倍列表渲染、初始中间份定位、过界循环取值、keepMiddle 归位。
+   （列表份数 2026-09-30 第五轮由 3 → 5：甩动位移涨到 30 格/1200px，三份会被底部夹住）
    跑法：先起 dev server（4177）再 node tmp/timewheel-loop-check.mjs */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
@@ -48,8 +49,8 @@ try {
 
   const minBtns = await page.locator('.wheel').nth(1).locator('button').count()
   const hourBtns = await page.locator('.wheel').nth(0).locator('button').count()
-  t('T1a 分钟列三倍列表（180 项）', minBtns === 180)
-  t('T1b 时列三倍列表（72 项）', hourBtns === 72)
+  t('T1a 分钟列五倍列表（300 项）', minBtns === 300)
+  t('T1b 时列五倍列表（120 项）', hourBtns === 120)
 
   const minTop0 = await colTop(page, 1)
   const hourTop0 = await colTop(page, 0)

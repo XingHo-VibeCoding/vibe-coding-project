@@ -14,10 +14,14 @@ t('v=100 → 0 格（低于 FLING_MIN_V=150）', flingSteps(100) === 0)
 t('v=149 → 0 格（边界内）', flingSteps(149) === 0)
 t('v=150 → 至少 1 格（刚好到阈值）', flingSteps(150) >= 1)
 t('方向不影响格数（-1000 与 1000 同）', flingSteps(-1000) === flingSteps(1000))
-t('v=1000 → 3 格', flingSteps(1000) === 3, String(flingSteps(1000)))
-t('v=2000 → 6 格', flingSteps(2000) === 6, String(flingSteps(2000)))
-t('v=3000 → 封顶 8 格', flingSteps(3000) === 8, String(flingSteps(3000)))
-t('v=20000 → 仍封顶 8 格（上限铁律）', flingSteps(20000) === 8, String(flingSteps(20000)))
+t('v=1000 → 10 格', flingSteps(1000) === 10, String(flingSteps(1000)))
+t('v=2000 → 20 格', flingSteps(2000) === 20, String(flingSteps(2000)))
+t('v=3000 → 30 格（刚好触到上限）', flingSteps(3000) === 30, String(flingSteps(3000)))
+t('v=20000 → 仍封顶 30 格（上限铁律）', flingSteps(20000) === 30, String(flingSteps(20000)))
+/* 第五轮用户诉求：一次快甩要滑到「30 个数」。下面三条把诉求钉成可回归的断言。 */
+t('用户诉求：v=1300（中速快甩）→ 13 格', flingSteps(1300) === 13, String(flingSteps(1300)))
+t('用户诉求：v=3000 及以上 → 恰好 30 格', flingSteps(3000) === 30 && flingSteps(6000) === 30)
+t('轻甩 v=200 → 2 格（不至于碰一下就飞）', flingSteps(200) === 2, String(flingSteps(200)))
 
 console.log('\n=== flingSteps：单调不减 + 永不超过上限 ===')
 let mono = true
@@ -26,11 +30,11 @@ let prev = 0
 for (let v = 0; v <= 8000; v += 25) {
   const s = flingSteps(v)
   if (s < prev) mono = false
-  if (s > 8 || s < 0) capped = false
+  if (s > 30 || s < 0) capped = false
   prev = s
 }
 t('扫描 0..8000 步长 25：单调不减', mono)
-t('扫描 0..8000：恒在 [0,8] 内且非负', capped)
+t('扫描 0..8000：恒在 [0,30] 内且非负', capped)
 
 console.log('\n=== velocityFromSamples：估速度 ===')
 t('样本不足 2 个 → 0', velocityFromSamples([{ t: 0, y: 100 }]) === 0)
@@ -76,16 +80,27 @@ t('v=800 / 2格(80px) → 增益 3', Math.abs(gainOf(80, 800) - 3) <= 1e-9, Stri
 t('反方向与正方向时长相同', Math.abs(flingDuration(-120, -1000) - flingDuration(120, 1000)) <= 1e-12)
 t('同样位移下，速度越快时长越短', flingDuration(160, 3000) < flingDuration(160, 1000))
 t('时长下限 0.18s（极快甩动不闪一下到位）', flingDuration(320, 20000) === 0.18, String(flingDuration(320, 20000)))
-t('时长上限 0.5s（很慢的甩动不磨蹭）', flingDuration(40, 200) === 0.5, String(flingDuration(40, 200)))
+t('时长上限 1.6s（很慢的甩动不磨蹭）', flingDuration(40, 50) === 1.6, String(flingDuration(40, 50)))
+/* 第五轮新增：这条上限不是随手放大的。perStep 从 320 降到 100 之后，
+   恒等式 T = 3×ROW÷perStep 把「正常甩动」的时长从 0.375s 拉到 1.2s，
+   上限必须 ≥1.2s，否则会被硬压短、首帧速度突变（第四轮的顿挫复发）。
+   下面两条把这个「上限必须够大」钉住，防止以后单独改 perStep 忘了改 T_MAX。 */
+t('恒等式：perStep=100 → 正常甩动时长恒为 1.2s（与速度无关）',
+  Math.abs(flingDuration(10 * 40, 1000) - 1.2) <= 1e-9 &&
+  Math.abs(flingDuration(30 * 40, 3000) - 1.2) <= 1e-9)
+t('上限够大：最慢的真实甩动（v=150，滑 2 格/80px）不被压，恰为 1.6s',
+  Math.abs(flingDuration(80, 150) - 1.6) <= 1e-9, String(flingDuration(80, 150)))
+t('上限够大：最快甩动（30 格/1200px @ v=3000）仍是 1.2s，未被压',
+  Math.abs(flingDuration(1200, 3000) - 1.2) <= 1e-9, String(flingDuration(1200, 3000)))
 t('v=0 → 取下限（不拖时间）', flingDuration(200, 0) === 0.18)
 t('dist=0 → 取下限', flingDuration(0, 1000) === 0.18)
 t(
-  '扫描 v∈[0,12000] × dist∈{40,80,160,320}：时长恒在 [0.18, 0.5]',
+  '扫描 v∈[0,12000] × dist∈{40,80,160,320}：时长恒在 [0.18, 1.6]',
   (() => {
     for (let v = 0; v <= 12000; v += 50) {
       for (const d of [40, 80, 160, 320]) {
         const T = flingDuration(d, v)
-        if (!(T >= 0.18 - 1e-9 && T <= 0.5 + 1e-9)) return false
+        if (!(T >= 0.18 - 1e-9 && T <= 1.6 + 1e-9)) return false
       }
     }
     return true

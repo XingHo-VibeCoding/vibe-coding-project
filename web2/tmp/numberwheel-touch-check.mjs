@@ -25,7 +25,10 @@ function t(name, cond, extra) {
 
 const URL = process.env.NW_URL || 'http://127.0.0.1:4177/'
 const ROW = 40
-const MAX_FLING = 8 // 与 wheelPhysics.FLING_MAX_STEPS 对齐
+const MAX_FLING = 30 // 与 wheelPhysics.FLING_MAX_STEPS 对齐（第五轮 8 → 30）
+/* 甩动动画最长 1.6s（FLING_T_MAX）：取样前必须等它跑完。
+   旧值 900ms 是 T_MAX=0.5s 时代的余量，第五轮时长变成 ~1.2s 后会在动画中途取样 = 假绿。 */
+const SETTLE_MS = 1800
 const WEEKS_MIN = 1
 const WEEKS_MAX = 30
 const COUNT = WEEKS_MAX - WEEKS_MIN + 1 // 30
@@ -107,7 +110,9 @@ try {
   const sA = await swipe(12, 10, 30, true)
   const liveTop = await rawTop()
   await send('touchEnd', cy + sA.finger)
-  await page.waitForTimeout(600)
+  // 必须等松手后的甩动动画彻底结束再进下一段：下一段会直接写 scrollTop，
+  // 而组件的 rAF 动画若还在跑会把写入覆盖掉（T_MAX 已从 0.5s 涨到 1.6s，旧值会翻车）
+  await page.waitForTimeout(SETTLE_MS)
   const ratio = Math.abs(liveTop - a0) / sA.finger
   t('A1 拖动中跟手比 = 1.00（原生 + mandatory 版实测只有 ~0.8）', Math.abs(ratio - 1) <= 0.05, ratio.toFixed(2))
   const steps = sA.seq.map((p, i) => Math.round(p - (i === 0 ? a0 : sA.seq[i - 1])))
@@ -119,26 +124,37 @@ try {
   )
   t('A3 僵硬帧（手指动内容不动）≤1', steps.filter((s) => Math.abs(s) < 0.5).length <= 1, `${steps.filter((s) => Math.abs(s) < 0.5).length}/${steps.length}`)
 
-  console.log('\n=== B. 可控（固定手势：4 步 × 40px = 160px ≈ 4 格）===')
+  console.log('\n=== B. 可控（固定手势：4 步 × 40px = 160px ≈ 4 格；起点靠近最小值以留出空间）===')
   const rows = []
-  for (const [name, dt] of [['很慢', 60], ['慢', 30], ['中', 14], ['快', 8], ['很快', 4]]) {
-    await scrollTo(topOf(MID_WEEKS))
+  /* 起点从 MID_WEEKS(18 周) 挪到第 2 周（top=40）：第五轮甩动最大 30 格，从 18 周出发
+     无论甩多快都会被 MAX_TOP 夹住 → 各速度档全变成同一个数，断言失去区分度。
+     **方向必须跟着改**：本组件非循环，起点贴最小值时只能「手指上移」（值增大）才有 29 格空间；
+     用「下移」会立刻撞 0 被夹住（第一版就栽在这，六档全测成 1 格）。
+     「轻放」档是第五轮新增：验证速度低于 FLING_MIN_V=150 时不甩、只吸附到最近格。 */
+  for (const [name, dt] of [['轻放', 300], ['很慢', 60], ['慢', 30], ['中', 14], ['快', 8], ['很快', 4]]) {
+    await scrollTo(topOf(2))
     const b0 = await rawTop()
-    const s = await swipe(4, 40, dt)
-    await send('touchEnd', cy + 160)
-    await page.waitForTimeout(900)
+    const s = await swipe(4, -40, dt)
+    await send('touchEnd', cy - 160)
+    await page.waitForTimeout(SETTLE_MS)
     const items = Math.abs((await rawTop()) - b0) / ROW
     rows.push({ name, v: s.v, items })
     console.log(`   ${name}：手指末速 ${s.v}px/s → 总位移 ${items.toFixed(1)} 格（拖动 4 格）`)
   }
-  const speeds = rows.map((r) => r.v)
+  /* 速度是带符号的：第五轮起 B 段手势改成「手指上移」以避开非循环的下边界（见上），
+     末速因此变成负数。比较与排序一律取绝对值 —— 第一版忘了取，
+     四条断言全因符号反了而假失败（格数数字其实都正常）。 */
+  const speeds = rows.map((r) => Math.abs(r.v))
   t('B1 速度档确实拉开了（最快/最慢 ≥2×，说明测量有效）', speeds[speeds.length - 1] >= speeds[0] * 2, `${speeds[speeds.length - 1]}/${speeds[0]} = ${(speeds[speeds.length - 1] / speeds[0]).toFixed(1)}×`)
-  t('B2 按实测速度排序后，甩动格数单调不减', (() => {
-    const s = [...rows].sort((a, b) => a.v - b.v)
-    return s.every((r, i) => i === 0 || r.items >= s[i - 1].items - 0.5)
-  })(), rows.map((r) => `${r.name} ${r.items.toFixed(1)}`).join(' / '))
-  t('B3 慢拖档松手额外甩动很小（≤ 拖动 4 格 + 2 格）', rows[0].items <= 4 + 2, `${rows[0].items.toFixed(1)} 格（末速 ${rows[0].v}px/s）`)
+  /* 同 wheel-touch-gesture-check.mjs 的 B2：端到端做不到严格全序单调
+     （CDP + 定时器精度让 dt=8 与 dt=4 两档的实际帧间隔几乎相同，顺序被噪声打乱），
+     严格单调性由纯函数单测保证，这里只验证「最快档明显比最慢档滑得远」这个趋势。 */
+  const sortedRows = [...rows].sort((a, b) => Math.abs(a.v) - Math.abs(b.v))
+  t('B2 端到端趋势：最快档总位移 ≥ 最慢档 + 10 格', sortedRows[sortedRows.length - 1].items >= sortedRows[0].items + 10, sortedRows.map((r) => `${Math.abs(r.v)} ${r.items.toFixed(1)}`).join(' / '))
+  t('B3 轻放档（低于 FLING_MIN_V=150）不甩动，总位移 = 拖动 4 格', sortedRows[0].items <= 4 + 0.5, `${sortedRows[0].items.toFixed(1)} 格（末速 ${Math.abs(sortedRows[0].v)}px/s）`)
   t(`B4 快甩有上限（≤ 拖动格数 + ${MAX_FLING} 格）`, rows[rows.length - 1].items <= 4 + MAX_FLING + 1.5, `${rows[rows.length - 1].items.toFixed(1)} 格`)
+  const fastestRow = sortedRows[sortedRows.length - 1]
+  t('B5 快甩档甩动 ≥18 格（第五轮用户诉求「惯性大一点、能到 30 个数」；旧版封顶 8 格）', fastestRow.items - 4 >= 18, `${Math.abs(fastestRow.v)}px/s → 甩动 ${(fastestRow.items - 4).toFixed(1)} 格`)
 
   console.log('\n=== C. 首尾夹紧（非循环：越界必须被挡住）===')
   await scrollTo(0) // 值 = 1（最小）
@@ -174,9 +190,12 @@ try {
   await scrollTo(topOf(25))
   await swipe(3, 40, 30)
   await send('touchEnd', cy + 120)
-  await page.waitForTimeout(700)
+  await page.waitForTimeout(SETTLE_MS)
   const dTop = await rawTop()
-  t('D3 拖动后高亮值 = scrollTop 对应值（emit 同步）', (await hlVal()) === Math.round(dTop / ROW) + WEEKS_MIN, `top=${dTop} 高亮=${await hlVal()}`)
+  const dVal = await hlVal()
+  /* 位置与高亮都用「动画结束后的一次快照」比：旧版等 700ms（T_MAX 还是 0.5s 时代的余量），
+     动画没跑完时这两个值是两次异步读取、中间位置还在变 → 断言假失败。 */
+  t('D3 拖动后高亮值 = scrollTop 对应值（emit 同步）', dVal === Math.round(dTop / ROW) + WEEKS_MIN, `top=${dTop} 高亮=${dVal}`)
 
   await ctx.close()
 } catch (e) {
