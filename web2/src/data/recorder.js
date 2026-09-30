@@ -155,7 +155,7 @@ export async function stopRecording() {
    起录音时拉起、停录时撤下（顺带得到通知栏一条常驻通知）。
 
    出口约定（重要）：
-   - 没有原生桥（浏览器 / 概念版网页）时返回 { ok:false, unsupported:true }，绝不抛出
+   - 没有原生桥（浏览器 / 网页版）时返回 { ok:false, unsupported:true }，绝不抛出
    - 失败也只当「保活没生效」，不能影响录音本身——调用方对结果只做提示
    - stop 必须能在任何收尾路径上无条件调用（录音失败的 finally 里也要调） */
 function recSvc() {

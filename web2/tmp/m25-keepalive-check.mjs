@@ -170,7 +170,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.locator('text=后台录音').first().scrollIntoViewIfNeeded()
   t('F1 App 环境显示「后台录音」说明行', (await page.locator('text=后台录音').count()) > 0)
   t('F2 说明里含通知权限提示', (await page.locator('text=打开本应用的通知权限').count()) > 0)
-  t('F3 版本串已到 v1.20', (await page.locator('text=v1.20 概念版').count()) > 0)
+  t('F3 版本串已到 v1.22', (await page.locator('text=v1.22').count()) > 0)
   await ctx.close()
 }
 

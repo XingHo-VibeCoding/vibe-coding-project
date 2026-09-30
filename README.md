@@ -2,6 +2,8 @@
 
 一款大学生自用的日程管理工具：**课表 + 待办同屏**的轻量网页应用。纯前端、本地保存、无账号、无服务器。
 
+> **正式版代码位置（Day 15 起）**：正式版界面是 `web2/` 子目录下的 Vue 3 实现（`npm install && npm run build`，产物在 `web2/dist`），在线站点与手机 App 都由它构建；根目录的原生实现是 Day 1–14 的版本，已封存不再迭代。
+
 ## 功能（一期 MVP）
 
 - **学期设置**：学期名、第一周周一、总周数 → 自动换算「今天是第几周」
@@ -42,7 +44,34 @@ python -m http.server 8000
 
 ## 技术栈与目录结构
 
-原生 HTML/CSS/JavaScript，无框架、无构建工具、无 ES Module（保证双击 `index.html` 就能跑）。
+**正式版：`web2/`**（Day 15 起）—— Vue 3（`<script setup>`）+ Vite + Tailwind 4，有构建步骤。
+
+```
+web2/index.html              入口页面
+web2/src/main.js             启动入口（挂载 Vue）
+web2/src/App.vue             应用主体：视图 + 交互（单页，无路由）
+web2/src/style.css           全局样式（Tailwind 4 + 设计令牌）
+web2/src/components/         通用组件：TimeWheel / NumberWheel / MonthCalendar / PeriodsEditor / DropdownSelect
+web2/src/data/               数据与逻辑层（9 个模块）：
+  store.js                     数据唯一闸门（localStorage），负责增删改查
+  periods.js                   节次表：分段 / 段内重排 / 合并（纯函数）
+  recognizer.js                课表识别：图片 → 课程（走大模型）
+  ics.js                       导出层：.ics 生成与下载
+  recorder.js / transcriber.js 录音与语音转写（浏览器 / App 原生桥两条路径）
+  summarizer.js                录音总结
+  notify.js / mock.js          提醒 / 示例数据
+web2/serve.js                线上发布用静态服务（读 PORT，serve dist/）
+web2/dist/                   构建产物（npm run build 生成，不入库）
+```
+
+```bash
+cd web2
+npm install
+npm run build    # 产出 web2/dist
+npm run dev      # 本地开发（http://localhost:5180）
+```
+
+**根目录：Day 1–14 的实现，已封存不再迭代** —— 原生 HTML/CSS/JavaScript，无框架、无构建工具、无 ES Module（双击 `index.html` 就能跑）。
 
 ```
 index.html        入口页面
@@ -63,4 +92,7 @@ js/app.js         入口层：绑定事件，串起取数→校验→存数→�
 
 ## 状态
 
-一期 MVP（Day 7）已可运行，后续按五期路线迭代。详见设计方案。
+- **正式版（`web2/`）**：一期功能已全部实现并在线上运行 —— https://college-schedule-assistant.app.workbuddy.host/
+- **手机 App**：Capacitor 外壳工程 `vibe-coding-project-app`（独立目录）打包同一份 `web2/dist` 产物
+- **根目录原生版**：Day 1–14 的实现，已封存
+- 后续按五期路线迭代（课表识别 / 录音总结 / 打卡 / 练耳 / 复盘），**开发主线在 `web2/`**。详见设计方案。

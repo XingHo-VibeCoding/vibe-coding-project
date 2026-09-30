@@ -2481,7 +2481,7 @@ function gridDbl(e) {
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4" /></svg>
           </span>
           <span class="flex-1 text-sm font-medium">关于</span>
-          <span class="text-xs text-ink-dim/70">v1.22 概念版</span>
+          <span class="text-xs text-ink-dim/70">v1.22</span>
         </div>
       </section>
 
@@ -2974,7 +2974,7 @@ function gridDbl(e) {
             <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-primary-400 to-primary-600 text-2xl font-bold text-white shadow-lg shadow-primary-500/25">
               日
             </div>
-            <h1 class="text-xl font-bold">欢迎来到日程助手 · 概念版</h1>
+            <h1 class="text-xl font-bold">欢迎来到日程助手</h1>
             <p class="mt-1.5 text-sm text-ink-dim">把课表和 deadline 收进同一张时间轴</p>
           </div>
 
