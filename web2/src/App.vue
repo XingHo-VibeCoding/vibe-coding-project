@@ -264,9 +264,10 @@ const onboarding = ref(!localStorage.getItem(ONBOARD_KEY) && !localStorage.getIt
 /* 引导流程三步（用户反馈：节次表被跳过 + 识别要单独一页）：
    1 form 学期信息 + 节次表 → 2 rec 识别课表（页内回显「本次换算用的节次表」）→ 3 recConfirm 核对导入。
    choice 是第 0 步（三选一入口）。 */
-const onboardStep = ref('choice') // choice | form | rec | recConfirm
+const onboardStep = ref('choice') // choice | form | periods | aiCfg | rec | recConfirm
 const OB_STEP_LABELS = ['学期与节次', '识别课表', '核对导入']
-const onboardStepNo = computed(() => ({ choice: 0, form: 1, periods: 1, rec: 2, recConfirm: 3 }[onboardStep.value] || 0))
+/* aiCfg = 第 2 步内部的「先配好 AI」引导页（没配 Key 时落这里），进度条上仍算第 2 步 */
+const onboardStepNo = computed(() => ({ choice: 0, form: 1, periods: 1, aiCfg: 2, rec: 2, recConfirm: 3 }[onboardStep.value] || 0))
 function finishOnboarding() {
   localStorage.setItem(ONBOARD_KEY, '1')
   onboarding.value = false
@@ -792,6 +793,7 @@ function goObForm() {
   }
   obGlobal.value = { dur: 45, gap: 10 } // 二级页两个滚轮跟着回到默认
   obPageDir.value = 'obpage-fwd' // 从入口页进来，方向归位
+  obStepDir.value = 'obpage-fwd' // 步骤级滑动：入口 → 第 1 步算前进
   onboardStep.value = 'form'
 }
 /* 课程时间设置二级页的进/出：记录方向（决定滑动动画方向），「完成」按钮与返回键都走 backObForm */
@@ -802,6 +804,48 @@ function goObPeriods() {
 }
 function backObForm() {
   obPageDir.value = 'obpage-bak'
+  onboardStep.value = 'form'
+}
+
+/* ---------------- 引导页「先配好 AI」子页（第 2 步内部，没配 Key 时进） ----------------
+   2026-09-30 用户反馈：第一次用的人没有 API Key，而引导层是 fixed inset-0 盖住整个应用的，
+   原来那行红字让人「去我的页配」根本走不到 —— 死路。改成在引导流程内就地配：
+   检测点有三处（第 1 步「下一步：识别课表」、识别页点识别按钮、我的页识别入口），
+   缺 Key 一律滑到这一页；配好回识别页，不想配也能手动加课。
+   Key 与「课堂纪要」同一份（web2.llm）：provider 固定 deepseek（识别只有它有视觉），
+   模型沿用已选值、没选过就落 deepseek-flash，这样配完纪要那边也同时可用。 */
+const obStepDir = ref('obpage-fwd') // 步骤级滑动方向：fwd=前进 / bak=返回（与二级页的 obPageDir 分开）
+const obAiFrom = ref('rec') // 从哪进来的：'form'=第1步直接进来（配好算前进）/'rec'=识别页兜底拦截（配好算返回）
+const obAiErr = ref('')
+function gotoAiCfg(from) {
+  obAiFrom.value = from
+  obAiErr.value = ''
+  llmCfg.value = loadLlmConfig() // 输入框按本机实际配置显示（与「我的」页那份同源）
+  llmTest.value = { busy: false, ok: null, msg: '' } // 每次进来清掉上次的测试结果
+  obStepDir.value = 'obpage-fwd'
+  onboardStep.value = 'aiCfg'
+}
+function onObAiKey() {
+  saveLlmConfig({ provider: 'deepseek', key: llmCfg.value.key.trim(), model: llmCfg.value.model.trim() || 'deepseek-flash' })
+  llmCfg.value = loadLlmConfig()
+  obAiErr.value = ''
+}
+async function obAiTest() {
+  onObAiKey() // 先落盘再测：testConnection 读的是本机配置
+  await testLlm()
+}
+function obAiDone() {
+  if (!llmCfg.value.key.trim()) {
+    obAiErr.value = '还没填 Key。不想配就点下面的「先不配」，手动加课一样能建课表。'
+    return
+  }
+  onObAiKey()
+  obAiErr.value = ''
+  obStepDir.value = obAiFrom.value === 'form' ? 'obpage-fwd' : 'obpage-bak'
+  onboardStep.value = 'rec'
+}
+function obAiBack() {
+  obStepDir.value = 'obpage-bak'
   onboardStep.value = 'form'
 }
 /* 开学时间：弹层月历任意日期可点；内部归一到所选日期所在周的周一（「第几周」口径不变，
@@ -958,21 +1002,20 @@ const obSegView = computed(() => segmentView(obPeriods.value))
 /* 「我的」页识别入口（第三步）：复用识别页/核对页，但换算表换成当前学期的节次表，
    导入走 addCourse 增量 + 冲突提示（不动学期信息）。 */
 const recFromMine = ref(false)
-const mineRecErr = ref('')
 const minePeriods = computed(() => periodsOf({ semester: { periods: (semester.value && semester.value.periods) || [] } }))
 const recPeriods = computed(() => (recFromMine.value ? minePeriods.value : obPeriods.value))
 const recSegView = computed(() => segmentView(recPeriods.value))
 function mineRecStart() {
-  mineRecErr.value = ''
-  const missing = recognizerAvailable() // 与课堂纪要共用 Key，缺 Key 时给出去哪配的提示
-  if (missing) {
-    mineRecErr.value = missing
-    return
-  }
   recPreview.value = null
   obRecErr.value = ''
   recFromMine.value = true
   onboarding.value = true // 借用引导层渲染识别页/核对页（onboardStep 直落第 2 步）
+  /* 缺 Key：落在「先配好 AI」页（引导层里就能填，不必先绕去我的页）；配好回识别页，取消整层关掉 */
+  if (recognizerAvailable()) {
+    gotoAiCfg('rec')
+    return
+  }
+  obStepDir.value = 'obpage-fwd'
   onboardStep.value = 'rec'
 }
 function mineRecCancel() {
@@ -988,10 +1031,17 @@ function goObRec() {
     return
   }
   obRecErr.value = ''
+  obStepDir.value = 'obpage-fwd'
+  /* 第一次用的人没有 Key：不停在识别页，直接滑到「先配好 AI」页（这两步在进度条上都算第 2 步） */
+  if (recognizerAvailable()) {
+    gotoAiCfg('form')
+    return
+  }
   onboardStep.value = 'rec'
 }
 function recBackForm() {
   obRecErr.value = ''
+  obStepDir.value = 'obpage-bak'
   onboardStep.value = 'form'
 }
 /* 识别页的手动输入入口（用户要求）：不识别也能进核对页手动补课，
@@ -1002,13 +1052,14 @@ function obManualAdd() {
     title: '', weekday: 1, startSec: 1, endSec: 2, weekRule: 'every', location: '', teacher: '', selected: true,
   })
   obRecErr.value = ''
+  obStepDir.value = 'obpage-fwd'
   onboardStep.value = 'recConfirm'
 }
 function obRecClick() {
   obRecErr.value = ''
-  const missing = recognizerAvailable() // 与课堂纪要共用 Key，缺 Key 时给出去哪配的提示
-  if (missing) {
-    obRecErr.value = missing
+  /* 兜底：缺 Key 不再只甩一行红字，直接引导到配置页（能就地配完再回来识别） */
+  if (recognizerAvailable()) {
+    gotoAiCfg('rec')
     return
   }
   if (obRecFile.value) obRecFile.value.click()
@@ -1032,6 +1083,7 @@ async function onObRecFile(e) {
       notes: r.notes,
       warnings: r.warnings,
     }
+    obStepDir.value = 'obpage-fwd'
     onboardStep.value = 'recConfirm' // 识别成功落到第 3 步核对（返回第 2 步时结果仍在）
   } catch (err) {
     obRecErr.value = err && err.message ? err.message : '识别失败，换张图再试。'
@@ -1056,6 +1108,7 @@ function recRemove(i) {
   if (recPreview.value) recPreview.value.items.splice(i, 1)
 }
 function recBack() {
+  obStepDir.value = 'obpage-bak'
   onboardStep.value = 'rec' // 回第 2 步；识别结果保留（可继续核对或重新选图）
 }
 /* 导入：mine 模式 = 增量（学期信息不动，addCourse 逐条入库 + 冲突提示）；
@@ -1102,6 +1155,7 @@ function recImport() {
   }
   const r = createManualSemester({ ...obForm.value, periods: obForm.value.periods })
   if (!r.ok) {
+    obStepDir.value = 'obpage-bak'
     onboardStep.value = 'form' // 学期信息不合法：回表单，就地报错
     obErr.value = r.error
     return
@@ -2136,7 +2190,6 @@ function gridDbl(e) {
             开始识别
           </button>
         </div>
-        <p v-if="mineRecErr" data-mine-rec-err class="mt-2 text-xs text-red-500">{{ mineRecErr }}</p>
       </section>
 
       <!-- 课堂录音（二期 M2）：App 平台可用；浏览器环境点按给就地提示，不做假录音 -->
@@ -3040,7 +3093,13 @@ function gridDbl(e) {
             </template>
           </div>
 
-          <template v-if="onboardStep === 'choice'">
+          <!-- 步骤级切换动画（2026-09-30 用户反馈「三个选项点下去秒跳、没有动画」）：
+               复用第 1 步二级页那套 obpage 滑动（style.css 已定义），方向由 obStepDir 决定。
+               每个步骤必须是单个根元素 Transition 才认（原来是并列的 <template>，所以没动画）；
+               relative 让离场页（CSS 里 position:absolute）以自身卡片高度为基准，
+               overflow-hidden 把 ±26px 平移关在框内，不撑出横向滚动条。 -->
+          <Transition :name="obStepDir">
+          <div v-if="onboardStep === 'choice'" key="choice" class="relative overflow-hidden">
             <button
               class="w-full rounded-2xl border border-line bg-card p-4 text-left shadow-sm transition active:scale-[0.98]"
               @click="finishOnboarding"
@@ -3063,10 +3122,94 @@ function gridDbl(e) {
             <p class="mt-1 text-xs text-ink-dim">三步走：先填学期与节次表 → 再拍课表截图识别（也可以跳过）→ 核对后入库</p>
           </button>
           <p v-if="obImportMsg" class="mt-2 px-1 text-xs text-red-500">{{ obImportMsg }}</p>
-          </template>
+          </div>
+
+          <!-- 第 2 步的引导子页：没配 AI Key 时落这里（第一次用的人都没有 Key）。
+               原来只在识别页甩一行红字让人「去我的页配」，而引导层是 fixed 全屏、把整个应用
+               盖住了 → 那条路根本走不到，是死路。现在三处检测点（第 1 步「下一步：识别课表」、
+               识别页的识别按钮、我的页识别入口）缺 Key 一律落到这一页，就地配完再回识别页。 -->
+          <div v-else-if="onboardStep === 'aiCfg'" key="aiCfg" class="relative overflow-hidden">
+            <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
+              <p class="text-sm font-semibold">识别课表要先配好 AI</p>
+              <p class="mt-1 text-xs leading-relaxed text-ink-dim">
+                拍课表识别是把图片交给 DeepSeek 的图片识别能力，读成「星期 × 第几节 × 课程名」。所以要有一个 API Key —— 它和「课堂纪要」共用同一个，配一次两处都能用。
+              </p>
+              <label class="mt-3 block">
+                <span class="mb-1 block text-[11px] text-ink-dim/80">DeepSeek API Key（只存在这台设备，不会上传）</span>
+                <input
+                  v-model="llmCfg.key"
+                  data-ob-ai-key
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="sk-…"
+                  enterkeyhint="done"
+                  class="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim/40 focus:border-primary-400"
+                  @input="onObAiKey"
+                />
+              </label>
+              <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim/60">
+                去 platform.deepseek.com 注册后，在「API Keys」里新建一个，复制粘贴到上面即可；识别一张课表通常只要几分钱。
+              </p>
+              <button
+                type="button"
+                data-ob-ai-test
+                class="mt-2.5 flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-card py-2.5 text-sm font-medium text-ink transition active:scale-[0.98]"
+                :class="llmTest.busy ? 'opacity-60' : ''"
+                @click="obAiTest"
+              >
+                <span v-if="llmTest.busy" class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-400 border-t-transparent"></span>
+                {{ llmTest.busy ? '正在测试…' : '测试连接' }}
+              </button>
+              <p
+                v-if="llmTest.msg"
+                data-ob-ai-test-msg
+                class="mt-1.5 px-1 text-[11px] leading-relaxed"
+                :class="llmTest.ok ? 'text-primary-500' : 'text-red-400'"
+              >{{ llmTest.msg }}</p>
+
+              <button
+                type="button"
+                data-ob-ai-save
+                class="mt-3 w-full rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+                @click="obAiDone"
+              >
+                保存，去识别课表
+              </button>
+              <p v-if="obAiErr" data-ob-ai-err class="mt-2 px-1 text-xs text-red-500">{{ obAiErr }}</p>
+
+              <!-- 退路：不想配 Key 也能直接手动建课表（与识别结果走同一套核对/入库链路） -->
+              <button
+                type="button"
+                data-ob-ai-manual
+                class="mt-2.5 w-full rounded-xl border border-dashed border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+                @click="obManualAdd"
+              >
+                ＋ 先不配，手动加课
+              </button>
+              <button
+                v-if="!recFromMine"
+                type="button"
+                data-ob-ai-back
+                class="mt-3 w-full rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+                @click="obAiBack"
+              >
+                ← 返回上一步
+              </button>
+              <button
+                v-else
+                type="button"
+                data-mine-rec-cancel
+                class="mt-3 w-full rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+                @click="mineRecCancel"
+              >
+                取消识别
+              </button>
+            </div>
+          </div>
 
           <!-- 第 2 步：识别课表（用户反馈：先在第 1 步设好节次，这一页只负责选图识别） -->
-          <template v-else-if="onboardStep === 'rec'">
+          <div v-else-if="onboardStep === 'rec'" key="rec" class="relative overflow-hidden">
             <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
               <p class="text-sm font-semibold">拍课表识别</p>
               <p class="mt-1 text-xs text-ink-dim">截图里能看清「星期 × 第几节 × 课程名」就够。图上写的时间是学校自己的作息（课表截图上常是期末考时间），识别只取第几节，时间按下面这张表换算。</p>
@@ -3149,10 +3292,10 @@ function gridDbl(e) {
                 取消识别
               </button>
             </div>
-          </template>
+          </div>
 
           <!-- 第 3 步：课表识别确认页 —— 逐条核对/修改后与手填学期一起入库 -->
-          <template v-else-if="onboardStep === 'recConfirm'">
+          <div v-else-if="onboardStep === 'recConfirm'" key="recConfirm" class="relative overflow-hidden">
             <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
               <p class="text-sm font-semibold">共 {{ recPreview.items.length }} 门课，核对后导入</p>
               <p class="mt-1 text-xs text-ink-dim">卡片里的课程名、星期、节次、周次、地点都能直接改；不要的课点垃圾桶删掉</p>
@@ -3248,11 +3391,11 @@ function gridDbl(e) {
                 </button>
               </div>
             </div>
-          </template>
+          </div>
 
           <!-- 第 1 步：开学时间 / 本学期周数 / 课程时间设置（Day 14 用户测试反馈：
                原页文字、按钮、功能太多；重构为三项，节次编辑收进二级页） -->
-          <template v-else-if="onboardStep === 'form' || onboardStep === 'periods'">
+          <div v-else-if="onboardStep === 'form' || onboardStep === 'periods'" key="form" class="relative overflow-hidden">
             <div class="relative overflow-hidden rounded-2xl border border-line bg-card p-4 shadow-sm">
               <Transition :name="obPageDir">
               <div v-if="onboardStep === 'form'" key="ob-form">
@@ -3399,7 +3542,8 @@ function gridDbl(e) {
               </div>
               </Transition>
             </div>
-          </template>
+          </div>
+          </Transition>
 
                     <p class="mt-6 text-center text-[11px] text-ink-dim/70">这个选择只记一次，之后随时可以在「我的」页切换示例或导入</p>
           <input ref="onboardFile" type="file" accept=".json,application/json" class="hidden" @change="onOnboardFile" />

@@ -1,5 +1,6 @@
 /* 课表识别全流程验证（引导页入口）：
-   ① 无 Key → 就地提示去哪配（不弹文件选择）
+   ① 无 Key → 落到「先配好 AI」引导页（2026-09-30 改：原来只甩一行红字，
+      而引导层盖住整个应用、那句话里的「去我的页配」走不到 → 改成引导页内就地配，详见 tmp/ob-ai-cfg-check.mjs）
    ② 有 Key + 返回非法 JSON → 就地报错，留在表单
    ③ 有 Key + 正常 → 确认页：条数/警告/时间预览/编辑/勾选/删除 → 导入 → 学期+课程落盘、进周视图
    假 fetch：只拦 api.deepseek.com，其他请求（vite 资源）放行。 */
@@ -64,15 +65,14 @@ async function gotoForm(page) {
 }
 
 try {
-  /* ---- ① 无 Key ---- */
+  /* ---- ① 无 Key：点「下一步：识别课表」直接落到「先配好 AI」引导页 ---- */
   let page = await newPage({ llm: false })
-  await gotoForm(page)
-  const recBtn = page.locator('[data-ob-rec]')
-  t('1a. 表单里有「拍课表识别」入口', await recBtn.isVisible())
-  await recBtn.click()
-  await page.waitForTimeout(300)
-  t('1b. 无 Key → 就地提示（含课堂纪要路径）', await page.locator('text=还没配置 DeepSeek API Key').isVisible())
-  t('1c. 失败后仍留在识别页（没跳确认页）', (await page.locator('[data-ob-step]').getAttribute('data-ob-step')) === '2')
+  await gotoForm(page) // 内部会点 [data-ob-goto-rec]；无 Key 时落的是配置引导页，不是识别页
+  t('1a. 无 Key → 落到配置引导页（不是识别页）', await page.locator('[data-ob-ai-key]').isVisible())
+  const aiText = (await page.locator('[data-ob-step]').innerText()).replace(/\s+/g, ' ')
+  t('1b. 说明写清与「课堂纪要」共用同一个 Key', aiText.includes('课堂纪要') && aiText.includes('共用'))
+  t('1c. 仍算第 2 步，且没跳去确认页', (await page.locator('[data-ob-step]').getAttribute('data-ob-step')) === '2')
+  t('1d. 引导页给了手动加课的退路', await page.locator('[data-ob-ai-manual]').isVisible())
   await page.context().close()
 
   /* ---- ② 有 Key + AI 返回非法 JSON ---- */

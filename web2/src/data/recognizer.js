@@ -180,7 +180,7 @@ export async function recognizeScheduleImage(dataUrls, opts = {}) {
   if (!urls.length) throw new Error('没有可识别的图片。')
   const c = loadLlmConfig()
   if (c.provider !== 'deepseek' || !c.key) {
-    throw new Error('还没配置 DeepSeek API Key（我的 → 设置 → 课堂纪要），课表识别与纪要共用一个 Key。')
+    throw new Error('还没配置 DeepSeek API Key（课表识别与课堂纪要共用同一个 Key）。')
   }
   // 视觉能力只有 deepseek-flash 有（官方 vision 文档）。纪要配置的模型可能是纯文字型
   // （如 deepseek-v4-pro）——给它发图不报错、图片被静默忽略，模型会凭空编课表。识别固定用 flash。
@@ -225,11 +225,12 @@ export async function recognizeScheduleImage(dataUrls, opts = {}) {
   return parseScheduleJson(text)
 }
 
-/* 可用性检查：与纪要共用配置，文案区分场景。 */
+/* 可用性检查：与纪要共用配置。**文案里不再写「去我的页配」**——引导页那层是全屏的，
+   第一次用的人按这句话根本走不到；调用方缺 Key 时应把用户引到引导流程内的配置页。 */
 export function recognizerAvailable() {
   const c = loadLlmConfig()
   if (c.provider !== 'deepseek' || !c.key) {
-    return '还没配置 DeepSeek API Key（我的 → 设置 → 课堂纪要），课表识别与纪要共用一个 Key。'
+    return '还没配置 DeepSeek API Key（课表识别与课堂纪要共用同一个 Key）。'
   }
   return null
 }
