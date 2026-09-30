@@ -137,8 +137,10 @@ function attachTouch(colRef, count, setVal) {
         }
         el._dragging = true
       }
-      // 1:1 直写：手指走多少，内容走多少，全程不吸附
-      el.scrollTop = normalizeTop(startTop - dy, span)
+      // 1:1 直写：手指走多少，内容走多少，全程不吸附。
+      // 拖动阶段不做 normalizeTop，否则跨越份边界时会瞬移回中间份 → 用户看到闪烁。
+      // 松手 / 兜底时才把位置拉回中间份（内容重复且相位一致，视觉上才是无缝）。
+      el.scrollTop = startTop - dy
       samples.push({ t: Date.now(), y: t.clientY })
       if (samples.length > 16) samples.shift()
       syncVal() // 高亮实时跟手

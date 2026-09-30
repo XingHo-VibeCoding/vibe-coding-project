@@ -103,7 +103,7 @@ try {
   console.log('\n=== B. 可控（固定手势：4 步 × 40px = 160px 手指位移 ≈ 4 格）===')
   const dragItems = 4
   const rows = []
-  for (const [name, dt] of [['很慢', 60], ['慢', 30], ['中', 14], ['快', 6], ['很快', 2]]) {
+  for (const [name, dt] of [['很慢', 60], ['慢', 30], ['中', 14], ['快', 8], ['很快', 4]]) {
     await reset()
     const b0 = await rawTop()
     const s = await swipe(4, 40, dt)

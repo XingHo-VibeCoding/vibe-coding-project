@@ -2501,7 +2501,7 @@ function gridDbl(e) {
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4" /></svg>
           </span>
           <span class="flex-1 text-sm font-medium">关于</span>
-          <span class="text-xs text-ink-dim/70">v1.24</span>
+          <span class="text-xs text-ink-dim/70">v1.25</span>
         </div>
       </section>
 
@@ -3157,18 +3157,18 @@ function gridDbl(e) {
                         v-model="it.title"
                         maxlength="30"
                         placeholder="课程名"
-                        class="w-full rounded-lg border border-line bg-card px-2.5 py-1.5 text-sm font-semibold outline-none focus:border-primary-400"
+                        class="w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-sm font-semibold outline-none focus:border-primary-400"
                       />
                       <div class="mt-2 grid grid-cols-2 gap-2">
                         <label class="flex items-center gap-1.5 text-[11px] text-ink-dim">
                           星期
-                          <select v-model.number="it.weekday" class="min-w-0 flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
+                          <select v-model.number="it.weekday" class="min-w-[3rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
                             <option v-for="(w, wi) in WEEKDAY_LABELS" :key="wi" :value="wi + 1">{{ w }}</option>
                           </select>
                         </label>
                         <label class="flex items-center gap-1.5 text-[11px] text-ink-dim">
                           周次
-                          <select v-model="it.weekRule" class="min-w-0 flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
+                          <select v-model="it.weekRule" class="min-w-[3rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
                             <option value="every">每周</option>
                             <option value="odd">单周</option>
                             <option value="even">双周</option>
@@ -3176,13 +3176,13 @@ function gridDbl(e) {
                         </label>
                         <label class="flex items-center gap-1.5 text-[11px] text-ink-dim">
                           从第
-                          <select v-model.number="it.startSec" class="min-w-0 flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
+                          <select v-model.number="it.startSec" class="min-w-[3rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
                             <option v-for="n in recSecOptions()" :key="n" :value="n">{{ n }} 节</option>
                           </select>
                         </label>
                         <label class="flex items-center gap-1.5 text-[11px] text-ink-dim">
                           到第
-                          <select v-model.number="it.endSec" class="min-w-0 flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
+                          <select v-model.number="it.endSec" class="min-w-[3rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
                             <option v-for="n in recSecOptions()" :key="n" :value="n">{{ n }} 节</option>
                           </select>
                         </label>
@@ -3190,9 +3190,9 @@ function gridDbl(e) {
                       <p class="mt-1.5 text-[11px]" :class="recTimeRange(it) ? 'text-ink-dim' : 'text-red-400'">
                         {{ recTimeRange(it) ? '上课时间 ' + recTimeRange(it) : '节次超出当前节次表，导入时会跳过这门课' }}
                       </p>
-                      <div class="mt-2 grid grid-cols-2 gap-2">
-                        <input v-model="it.location" maxlength="30" placeholder="地点（可留空）" class="min-w-0 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
-                        <input v-model="it.teacher" maxlength="20" placeholder="教师（可留空）" class="min-w-0 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
+                      <div class="mt-2 space-y-2">
+                        <input v-model="it.location" maxlength="30" placeholder="地点（可留空）" class="min-w-0 w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
+                        <input v-model="it.teacher" maxlength="20" placeholder="教师（可留空）" class="min-w-0 w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
                       </div>
                     </div>
                     <button
