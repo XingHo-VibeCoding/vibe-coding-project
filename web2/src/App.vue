@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf } from './data/store.js'
 import { normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt } from './data/periods.js'
+import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange } from './data/weekGrid.js'
 import { recorderAvailable, ensureMicPermission, startRecording as recStart, stopRecording as recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning } from './data/recorder.js'
 import { transcriberAvailable, modelState, ensureModel, transcribeLecture } from './data/transcriber.js'
 import { loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable, testConnection, DEEPSEEK_MODELS } from './data/summarizer.js'
@@ -75,7 +76,9 @@ onMounted(() => {
   reconcileKeepAlive() // M2.5：清掉上次异常退出残留的保活通知
   initNotify() // M5：通知渠道/权限 + 首次排程 + action 监听（异步，不阻塞首屏）
   initBackButton() // Android 返回键分级处理（App 内生效；浏览器无桥不注册）
+  window.addEventListener('resize', onWinResize) // 周课表高度按视口重算（一屏看完的保证）
 })
+onBeforeUnmount(() => window.removeEventListener('resize', onWinResize))
 
 /* ---------------- Android 返回键分级处理（@capacitor/app，官方插件自动注册进桥） ----------------
    从上到下找第一件「有的事」做，都没有才退出：picker → 确认层 → 表单/详情 → 回今日页 → exitApp。
@@ -1107,13 +1110,152 @@ function recTimeRange(it) {
 function recRemove(i) {
   if (recPreview.value) recPreview.value.items.splice(i, 1)
 }
+
+/* ---------------- 核对页的整周预览网格 ----------------
+   与正式课表共用 data/weekGrid.js 的落格算法，所以「预览里看到的样子」
+   就是导入后课表的样子。用户选定的布局：网格在上、逐条卡片在下。 */
+const recGrid = computed(() => {
+  const items = previewItems(recPreview.value ? recPreview.value.items : [], recPeriods.value)
+  const groups = findCellOverlaps(items)
+  const hot = new Set()
+  for (const g of groups) for (const x of g.items) hot.add(x)
+  return { items, groups, hot }
+})
+/* 列：默认周一~周五；识别结果里有周末课就补到那天（与正式课表同一个规矩） */
+const recCols = computed(() => {
+  let last = 5
+  for (const it of recGrid.value.items) {
+    if (it.wd >= 6 && it.wd <= 7) last = Math.max(last, it.wd)
+  }
+  return Array.from({ length: last }, (_, i) => i + 1)
+})
+const recRows = computed(() => buildGridRows(recPeriods.value))
+const recRowIdx = computed(() => rowIndexMap(recRows.value))
+const recColsStyle = computed(() => ({
+  gridTemplateColumns: `${GRID_AXIS_W}px repeat(${recCols.value.length}, minmax(0, 1fr))`,
+}))
+/* 行高固定：预览表要的是「一眼看排布」，不必挤进一屏（整页本来就能滚） */
+const recGridStyle = computed(() => ({
+  ...recColsStyle.value,
+  gridTemplateRows: recRows.value.map((r) => (r.type === 'gap' ? '18px' : '26px')).join(' '),
+}))
+/* 同一格落了两门课 → 顶部点名（识别时同一门课常被认成两条，重叠摆出来比藏起来好） */
+const recOverlapNote = computed(() => {
+  const gs = recGrid.value.groups
+  if (!gs.length) return ''
+  const ps = recPeriods.value
+  const parts = gs.slice(0, 2).map((g) => {
+    const a = ps[g.from] ? ps[g.from].no : '?'
+    const b = ps[g.to] ? ps[g.to].no : a
+    return `${WDN[g.wd - 1]}第 ${a}${b === a ? '' : '-' + b} 节有 ${g.items.length} 门课重叠`
+  })
+  return parts.join('；') + (gs.length > 2 ? `，共 ${gs.length} 处` : '') + '，确认下是不是重复识别'
+})
+/* 识别结果里存的是 title，配色函数认的是 name —— 这里转一手 */
+function palOf(title) {
+  return pal({ name: String(title || '未命名') })
+}
+/* 这条是否与别人重叠（下方卡片也标一下，跟网格呼应） */
+function recItemHot(it) {
+  if (!it) return false
+  const g = recGrid.value.items.find((x) => x.c === it)
+  return !!g && recGrid.value.hot.has(g)
+}
+/* 按下格子时的高亮（抬手才弹层）：没这个反馈，新人看不出空格子能点 */
+const recPressCell = ref('')
+function recCellDown(wd, idx) {
+  recPressCell.value = wd + '-' + idx
+}
+function recCellUp() {
+  recPressCell.value = ''
+}
+
+/* 点格子：空格=加课、已有课=改课，同一个底部弹层两态。
+   「位置与节次」默认折叠 —— 默认只问课名与地点，星期节次已由点中的格子定好了。 */
+const recCell = ref(null)
+const recCellErr = ref('')
+function openRecAdd(wd, idx) {
+  recCell.value = { index: null, weekday: wd, startIdx: idx, endIdx: idx, title: '', location: '', more: false }
+  recCellErr.value = ''
+}
+function openRecEdit(it) {
+  const i = recPreview.value ? recPreview.value.items.indexOf(it.c) : -1
+  if (i < 0) return
+  const [from, to] = secRowRange(it.c.startSec, it.c.endSec, recPeriods.value)
+  recCell.value = {
+    index: i,
+    weekday: Number(it.c.weekday),
+    startIdx: from,
+    endIdx: to,
+    title: it.c.title || '',
+    location: it.c.location || '',
+    more: false,
+  }
+  recCellErr.value = ''
+}
+const recCellWhere = computed(() => {
+  const f = recCell.value
+  if (!f) return ''
+  const ps = recPeriods.value
+  const a = ps[Math.min(f.startIdx, f.endIdx)]
+  const b = ps[Math.max(f.startIdx, f.endIdx)]
+  if (!a || !b) return `${WDN[f.weekday - 1]} · 节次超出当前节次表`
+  return `${WDN[f.weekday - 1]} · ${a.no === b.no ? `第 ${a.no} 节` : `第 ${a.no}-${b.no} 节`}`
+})
+const recCellWhen = computed(() => {
+  const f = recCell.value
+  if (!f) return ''
+  const ps = recPeriods.value
+  const a = ps[Math.min(f.startIdx, f.endIdx)]
+  const b = ps[Math.max(f.startIdx, f.endIdx)]
+  if (!a || !b) return ''
+  return `${a.start}–${b.end}`
+})
+function submitRecCell() {
+  const f = recCell.value
+  if (!f || !recPreview.value) return
+  const title = String(f.title || '').trim()
+  if (!title) {
+    recCellErr.value = '先填个课程名'
+    return
+  }
+  const ps = recPeriods.value
+  const a = ps[Math.min(f.startIdx, f.endIdx)]
+  const b = ps[Math.max(f.startIdx, f.endIdx)]
+  if (!a || !b) {
+    recCellErr.value = '节次超出当前节次表，换个节次再存'
+    return
+  }
+  const patch = {
+    weekday: Number(f.weekday),
+    startSec: a.no,
+    endSec: b.no,
+    title,
+    location: String(f.location || '').trim(),
+  }
+  if (f.index === null) {
+    recPreview.value.items.push({ ...patch, weekRule: 'every', teacher: '', selected: true })
+  } else {
+    Object.assign(recPreview.value.items[f.index], patch)
+  }
+  recCell.value = null
+  recCellErr.value = ''
+}
+function delRecCell() {
+  const f = recCell.value
+  if (!f || f.index === null) return
+  recRemove(f.index)
+  recCell.value = null
+}
 function recBack() {
+  recCell.value = null // 离页顺手关掉格子弹层，别让它悬在下一次进页时冒出来
   obStepDir.value = 'obpage-bak'
   onboardStep.value = 'rec' // 回第 2 步；识别结果保留（可继续核对或重新选图）
 }
 /* 导入：mine 模式 = 增量（学期信息不动，addCourse 逐条入库 + 冲突提示）；
    引导模式 = 先建学期再逐条入库（与 obSubmit 同一入口） */
 function recImport() {
+  recCell.value = null
   if (!recPreview.value) return
   const items = recPreview.value.items.filter((x) => x.selected)
   if (!items.length) {
@@ -1431,12 +1573,16 @@ const currentCourse = computed(() => {
 const dateText = `${today.getMonth() + 1} 月 ${today.getDate()} 日`
 const weekDay = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][today.getDay()]
 
-/* ---------------- 周视图 ---------------- */
-const DAY_START = 8 * 60     // 08:00
-const DAY_END = 22 * 60      // 22:00
-const PX_PER_MIN = 0.85      // 每分钟高度
-const COL_W = 72             // 一天的列宽
-const AXIS_W = 38            // 左侧时间轴宽
+/* ---------------- 周视图：节次网格 ---------------- */
+/* 范式：行 = 节次（等高）、列 = 星期、课程 = 格子 —— 不再需要上下左右滑动。
+   旧的时间轴画法（y()/courseBox()/PX_PER_MIN/COL_W/AXIS_W）已废弃：纵轴按真实分钟
+   线性映射，整点线固定 51px 一条、节次线却是 46.75px 一条，两套刻度间距本来就不等
+   （0.85px/分钟算出的 45 分钟 = 38.25px 还要做半像素模糊）—— 人眼看着必然歪。
+   这不是精度问题，是画法选错了。 */
+const DAY_START = 8 * 60 // 08:00（仍是添加课程表单的合法时间下界）
+const DAY_END = 22 * 60  // 22:00（上界）
+/* GRID_AXIS_W（左侧栏宽）来自 data/weekGrid.js —— 识别核对页的预览表共用同一份列宽，
+   两处各写一个数迟早会画出两种网格 */
 
 const weekOffset = ref(0)
 const weekNo = computed(() => semester.value.week + weekOffset.value)
@@ -1474,16 +1620,44 @@ const weekVisible = computed(() => {
   return list
 })
 
-function y(min) {
-  return (min - DAY_START) * PX_PER_MIN
-}
+/* ---- 网格坐标：节次行 / 星期列 / 课程落格 ---- */
 
-function courseBox(c) {
-  return {
-    top: y(minOf(c.start)) + 2,
-    height: Math.max((minOf(c.end) - minOf(c.start)) * PX_PER_MIN - 5, 26),
+/* 本周显示的列：默认周一至周五；周末有课（或今天就是周末）才补到那一天。
+   每列宽一点课名才不至于截断 —— 周六日真有了课再自动补上，比固定挤 7 列好读。 */
+const weekCols = computed(() => {
+  let last = 5
+  for (const c of weekVisible.value) {
+    const wd = Number(c.weekday)
+    if (wd >= 6 && wd <= 7) last = Math.max(last, wd)
   }
-}
+  if (weekOffset.value === 0 && todayIdx >= 5) last = Math.max(last, todayIdx + 1)
+  return weekDays.value.filter((d) => d.wd <= last)
+})
+
+/* 网格行 / 落格坐标全部来自 data/weekGrid.js —— 识别核对页的预览表与正式课表共用同一套
+   算法，两处各写一遍迟早会漂移（旧时间轴画法的教训）。这里只留组件要的 computed。 */
+const gridRows = computed(() => buildGridRows(periods.value))
+const gridRowOfIdx = computed(() => rowIndexMap(gridRows.value))
+
+/* 落格后的课程卡：落格算法在 data/weekGrid.js（与核对页预览表同一套） */
+const gridCourses = computed(() => courseItems(weekVisible.value, periods.value))
+
+/* 网格高度：一屏塞下、永不纵向滚动。行高交给 CSS 的 1fr 均分，这里只算容器总高。
+   顶部（头部 + 周次条 + 表头）与底部导航占位先扣掉，再夹到 [330, 620]：
+   小屏不至于把行挤成一条线，大屏也不至于拉得空荡。 */
+const winH = ref(typeof window !== 'undefined' ? window.innerHeight : 800)
+const gridH = computed(() => Math.max(330, Math.min(620, winH.value - 336)))
+function onWinResize() { winH.value = window.innerHeight }
+
+/* 表头与主体共用同一份列定义（两处分开写就会对不上，这是网格的基本要求） */
+const gridColsStyle = computed(() => ({
+  gridTemplateColumns: `${GRID_AXIS_W}px repeat(${weekCols.value.length}, minmax(0, 1fr))`,
+}))
+const gridBodyStyle = computed(() => ({
+  ...gridColsStyle.value,
+  gridTemplateRows: `repeat(${gridRows.value.length}, minmax(0, 1fr))`,
+  height: gridH.value + 'px',
+}))
 
 /* 课程配色：按课程名哈希取色，同一门课永远同色。
    深色模式下改为「同色系半透明底 + 原色文字」，避免大块高亮糊在暗底上 */
@@ -1510,12 +1684,6 @@ function pal(c) {
   return { bg: hexA(p.bar, 0.16), bar: p.bar, text: p.bar }
 }
 
-const hours = computed(() => {
-  const arr = []
-  for (let h = DAY_START / 60; h < DAY_END / 60; h++) arr.push(h)
-  return arr
-})
-
 /* 节次时间轴：periods 为空回落默认节次表（口径同主项目） */
 const periods = computed(() => periodsOf({ semester: semester.value }))
 /* 课程落在哪些节：起止都与节次边界精确对齐才显示「第X–Y节」，否则 null */
@@ -1526,12 +1694,6 @@ function periodSpan(c) {
   if (s < 0 || e < 0 || s > e) return null
   return s === e ? `第${periods.value[s].no}节` : `第${periods.value[s].no}-${periods.value[e].no}节`
 }
-
-/* 当天「现在」红线 */
-const nowTop = computed(() => {
-  if (nowTime.value < DAY_START || nowTime.value > DAY_END) return null
-  return y(nowTime.value)
-})
 
 /* ---------------- 打磨：课程状态 / 详情弹层 / 待办徽标 ---------------- */
 /* 今日课程三态：past 已结束（淡化）/ now 进行中（高亮+进度）/ future 未开始 */
@@ -1668,17 +1830,23 @@ function onDelCourse() {
   removeCourseFromDetail()
 }
 
-/* 手势：触屏长按 550ms / 鼠标双击；点在课卡上不触发，拖动超 8px（滚动）取消 */
+/* 手势：触屏长按 550ms / 鼠标双击；点在课卡上不触发，拖动超 8px（滚动）取消。
+   网格化后不再做「像素 → 时间」换算 —— 那套换算正是旧画法对不齐的根源。
+   改成直接问「手指落在哪个格子上」：位置由 DOM 说了算，永远不会错一格。 */
 let lpTimer = null
 let lpFrom = null
 function fireAdd(p) {
-  const wd = Math.min(7, Math.max(1, Math.floor((p.x - p.rect.left) / COL_W) + 1))
-  const min = DAY_START + (p.y - p.rect.top) / PX_PER_MIN
-  openAdd(wd, min)
+  const el = document.elementFromPoint(p.x, p.y)
+  const cell = el && el.closest ? el.closest('[data-cell]') : null
+  if (!cell) return
+  const [wd, idx] = cell.dataset.cell.split('-').map(Number)
+  const per = periods.value[idx]
+  if (!per) return
+  openAdd(wd, minOf(per.start))
 }
 function gridDown(e) {
   if (e.target.closest('article')) return
-  lpFrom = { x: e.clientX, y: e.clientY, rect: e.currentTarget.getBoundingClientRect() }
+  lpFrom = { x: e.clientX, y: e.clientY }
   clearTimeout(lpTimer)
   lpTimer = setTimeout(() => {
     lpTimer = null
@@ -1697,7 +1865,7 @@ function gridUp() {
 }
 function gridDbl(e) {
   if (e.target.closest('article')) return
-  fireAdd({ x: e.clientX, y: e.clientY, rect: e.currentTarget.getBoundingClientRect() })
+  fireAdd({ x: e.clientX, y: e.clientY })
 }
 </script>
 
@@ -2021,131 +2189,92 @@ function gridDbl(e) {
         </button>
       </section>
 
-      <!-- 周网格：横向滚动，7 列 + 时间轴 -->
-      <section class="mt-3 overflow-x-auto">
-        <div :style="{ width: AXIS_W + 7 * COL_W + 'px' }">
-          <!-- 表头：星期 + 日期 -->
-          <div class="flex">
-            <div :style="{ width: AXIS_W + 'px' }" class="shrink-0"></div>
-            <div
-              v-for="d in weekDays"
-              :key="d.wd"
-              :style="{ width: COL_W + 'px' }"
-              class="shrink-0 pb-2 text-center"
-            >
-              <p class="text-[11px]" :class="d.isToday ? 'font-semibold text-primary-600' : 'text-ink-dim'">周{{ d.label }}</p>
-              <p
-                class="mx-auto mt-0.5 flex h-7 w-7 items-center justify-center rounded-full text-[13px] font-semibold"
-                :class="d.isToday ? 'bg-primary-500 text-white shadow-md shadow-primary-500/30' : 'text-ink'"
-              >
-                {{ d.date }}
-              </p>
-            </div>
-          </div>
-
-          <!-- 网格主体 -->
-          <div class="flex">
-            <!-- 时间轴：右侧小时刻度 + 左侧节次徽标 -->
-            <div :style="{ width: AXIS_W + 'px', height: (DAY_END - DAY_START) * PX_PER_MIN + 'px' }" class="relative shrink-0">
-              <span
-                v-for="h in hours"
-                :key="h"
-                class="absolute right-1.5 -translate-y-1/2 text-[10px] text-ink-dim/70"
-                :style="{ top: y(h * 60) + 'px' }"
-              >
-                {{ String(h).padStart(2, '0') }}
-              </span>
-              <span
-                v-for="p in periods"
-                :key="'p' + p.no"
-                class="absolute left-0.5 flex h-3.5 w-3.5 -translate-y-1/2 items-center justify-center rounded-[4px] bg-primary-500/10 text-[8px] font-semibold text-primary-600/90"
-                :style="{ top: y(minOf(p.start)) + 'px' }"
-              >
-                {{ p.no }}
-              </span>
-            </div>
-
-            <!-- 七列 -->
-            <div
-              data-grid
-              :style="{ width: 7 * COL_W + 'px', height: (DAY_END - DAY_START) * PX_PER_MIN + 'px' }"
-              class="relative select-none"
-              @pointerdown="gridDown"
-              @pointermove="gridMove"
-              @pointerup="gridUp"
-              @pointercancel="gridUp"
-              @dblclick="gridDbl"
-            >
-              <!-- 小时虚线 -->
-              <div
-                v-for="h in hours"
-                :key="h"
-                class="absolute inset-x-0 border-t border-dashed border-line"
-                :style="{ top: y(h * 60) + 'px' }"
-              ></div>
-
-              <!-- 节次起始线：节与节的边界，比小时线略实 -->
-              <div
-                v-for="p in periods"
-                :key="'pl' + p.no"
-                class="pointer-events-none absolute inset-x-0 border-t border-dotted border-ink/[0.09]"
-                :style="{ top: y(minOf(p.start)) + 'px' }"
-              ></div>
-
-              <!-- 当天列底色 -->
-              <div
-                v-for="d in weekDays"
-                v-show="d.isToday"
-                :key="'bg' + d.wd"
-                class="absolute inset-y-0 rounded-2xl bg-primary-500/10"
-                :style="{ left: (d.wd - 1) * COL_W + 2 + 'px', width: COL_W - 4 + 'px' }"
-              ></div>
-
-              <!-- 课程卡 -->
-              <article
-                v-for="c in weekVisible"
-                :key="c.id"
-                class="absolute cursor-pointer overflow-hidden rounded-xl px-1.5 py-1 shadow-sm ring-1 ring-line transition active:scale-[0.97]"
-                @click="openDetail(c)"
-                :style="{
-                  left: (c.weekday - 1) * COL_W + 4 + 'px',
-                  width: COL_W - 8 + 'px',
-                  top: courseBox(c).top + 'px',
-                  height: courseBox(c).height + 'px',
-                  background: pal(c).bg,
-                }"
-              >
-                <div class="flex h-full flex-col">
-                  <p class="truncate text-[11px] leading-tight font-semibold" :style="{ color: pal(c).text }">
-                    {{ c.name }}
-                  </p>
-                  <p class="mt-0.5 truncate text-[10px] leading-tight text-ink-dim">{{ c.place }}</p>
-                  <p class="mt-auto truncate text-[9px] leading-tight text-ink-dim/70">
-                    {{ periodSpan(c) || (c.start + '–' + c.end) }}
-                  </p>
-                </div>
-                <!-- 左侧色条 -->
-                <div
-                  class="absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-full"
-                  :style="{ background: pal(c).bar }"
-                ></div>
-              </article>
-
-              <!-- 现在红线 -->
-              <div
-                v-if="nowTop !== null"
-                class="pointer-events-none absolute z-10"
-                :style="{ left: todayIdx * COL_W + 'px', width: COL_W + 'px', top: nowTop + 'px' }"
-              >
-                <div class="relative h-[2px] rounded-full bg-red-400/90">
-                  <span class="absolute -top-[3px] left-0 h-2 w-2 rounded-full bg-red-400"></span>
-                </div>
-              </div>
-            </div>
+      <!-- 节次网格：行 = 节次、列 = 星期、课程 = 格子 —— 一屏看完，不用上下左右滑。
+           课程卡与格子共用同一套坐标系，所以不存在「平行线对不齐」这回事。 -->
+      <section class="mt-3 overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
+        <!-- 表头：星期 + 日期 -->
+        <div class="grid border-b border-line" :style="gridColsStyle">
+          <div class="py-1.5"></div>
+          <div
+            v-for="d in weekCols"
+            :key="d.wd"
+            class="border-l border-line/50 py-1.5 text-center"
+          >
+            <p class="text-[11px] leading-tight" :class="d.isToday ? 'font-semibold text-primary-600' : 'text-ink-dim'">周{{ d.label }}</p>
+            <p class="mt-0.5 text-[12px] leading-tight font-semibold" :class="d.isToday ? 'text-primary-600' : 'text-ink'">
+              {{ d.date }}
+            </p>
           </div>
         </div>
+
+        <!-- 网格主体 -->
+        <div
+          data-grid
+          class="relative grid select-none"
+          :style="gridBodyStyle"
+          @pointerdown="gridDown"
+          @pointermove="gridMove"
+          @pointerup="gridUp"
+          @pointercancel="gridUp"
+          @dblclick="gridDbl"
+        >
+          <template v-for="(r, ri) in gridRows" :key="ri">
+            <!-- 分隔行：上午/下午/晚上之间的午休、晚休（补回网格里看不见的时间差） -->
+            <div
+              v-if="r.type === 'gap'"
+              data-gap
+              class="flex items-center gap-1.5 bg-ink/[0.04] px-1 text-[9px] font-medium text-ink-dim/80"
+              :style="{ gridColumn: '1 / -1', gridRow: ri + 1 }"
+            >
+              <span class="h-px flex-1 bg-line/70"></span>
+              <span class="shrink-0">{{ r.label }}</span>
+              <span class="h-px flex-1 bg-line/70"></span>
+            </div>
+
+            <!-- 节次行：左侧「第N节 / 08:00」+ 每天的格子 -->
+            <template v-else>
+              <div
+                :data-axis="r.p.no"
+                class="flex flex-col items-center justify-center overflow-hidden bg-ink/[0.02] leading-none"
+                :style="{ gridColumn: 1, gridRow: ri + 1 }"
+              >
+                <span class="text-[10px] font-semibold text-primary-600/90">第{{ r.p.no }}节</span>
+                <span class="mt-0.5 text-[9px] text-ink-dim/80">{{ r.p.start }}</span>
+              </div>
+              <div
+                v-for="d in weekCols"
+                :key="d.wd"
+                :data-cell="d.wd + '-' + r.idx"
+                :data-today="d.isToday ? '1' : null"
+                class="border-t border-l border-line/50"
+                :class="d.isToday ? 'bg-primary-500/[0.06]' : ''"
+                :style="{ gridColumn: d.wd + 1, gridRow: ri + 1 }"
+              ></div>
+            </template>
+          </template>
+
+          <!-- 课程卡：跨行表达连堂，与格线天然对齐 -->
+          <article
+            v-for="it in gridCourses"
+            :key="it.c.id"
+            class="relative m-[1px] cursor-pointer overflow-hidden rounded-[6px] px-1 py-0.5 shadow-sm ring-1 ring-line/70 transition active:scale-[0.97]"
+            :class="courseStatus(it.c) === 'now' ? 'ring-2 ring-primary-500' : (courseStatus(it.c) === 'past' ? 'opacity-55' : '')"
+            :style="{ ...gridStyleOf(it, gridRowOfIdx), background: pal(it.c).bg }"
+            @click="openDetail(it.c)"
+          >
+            <span class="absolute inset-y-0.5 left-0 w-[3px] rounded-full" :style="{ background: pal(it.c).bar }"></span>
+            <div class="pl-1.5">
+              <p class="truncate text-[10px] leading-[1.15] font-semibold" :style="{ color: pal(it.c).text }">{{ it.c.name }}</p>
+              <p v-if="it.c.place" class="truncate text-[9px] leading-tight text-ink-dim">{{ it.c.place }}</p>
+            </div>
+            <!-- 只在与节次边界不齐时标真实时间（识别导入的课常见），对齐的不啰嗦 -->
+            <span
+              v-if="!isAligned(it.c, periods)"
+              class="absolute right-0.5 bottom-0 text-[8px] leading-none text-ink-dim/80"
+            >{{ it.c.start }}</span>
+          </article>
+        </div>
       </section>
-      <p class="mt-3 px-1 text-center text-[11px] text-ink-dim/70">← 左右滑动查看周六周日 →</p>
     </main>
 
     <!-- ===== 我的 ===== -->
@@ -2651,6 +2780,7 @@ function gridDbl(e) {
     <Transition name="slide">
       <div
         v-if="detail"
+        data-sheet-detail
         class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
       >
         <!-- 顶部小把手（暗示可下滑关闭） -->
@@ -2708,6 +2838,105 @@ function gridDbl(e) {
       </div>
     </Transition>
 
+    <!-- 核对页预览的格子弹层：点空格=加课、点课块=改课（同一个面板两态）。
+         位置由点中的格子定好，默认只问课名与地点；「位置与节次」要用时才展开 -->
+    <Transition name="fade">
+      <div v-if="recCell" class="fixed inset-0 z-50 bg-black/40" @click="recCell = null"></div>
+    </Transition>
+    <Transition name="slide">
+      <div
+        v-if="recCell"
+        data-sheet-cell
+        class="fixed inset-x-0 bottom-0 z-[60] mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
+      >
+        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
+        <p class="text-base font-bold" data-cell-where>{{ recCellWhere }}</p>
+        <p class="mt-0.5 text-xs text-ink-dim">{{ recCell.index === null ? '这一格还没有课，填个课名就加上' : '改完记得保存' }}</p>
+        <div class="mt-4 space-y-2.5">
+          <input
+            v-model="recCell.title"
+            data-cell-title
+            maxlength="30"
+            placeholder="课程名称（必填）"
+            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+          />
+          <input
+            v-model="recCell.location"
+            data-cell-place
+            maxlength="30"
+            placeholder="地点（选填）"
+            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+          />
+          <button
+            type="button"
+            data-cell-more
+            class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-left transition active:scale-[0.99]"
+            @click="recCell.more = !recCell.more"
+          >
+            <span class="text-xs text-ink-dim">位置与节次</span>
+            <span class="flex items-center gap-1.5 text-xs font-medium text-ink">
+              {{ recCellWhen }}
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-ink-dim transition-transform" :class="recCell.more ? 'rotate-90' : ''" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+            </span>
+          </button>
+          <div v-if="recCell.more" data-cell-more-body class="space-y-2.5 rounded-xl border border-line bg-canvas p-3">
+            <div class="flex gap-1.5">
+              <button
+                v-for="(w, wi) in WDN"
+                :key="wi"
+                class="flex-1 rounded-lg py-1.5 text-[11px] font-medium transition active:scale-95"
+                :class="recCell.weekday === wi + 1 ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
+                @click="recCell.weekday = wi + 1"
+              >
+                {{ w }}
+              </button>
+            </div>
+            <div class="flex gap-2">
+              <label class="flex flex-1 items-center gap-1.5 text-[11px] text-ink-dim">
+                从第
+                <select v-model.number="recCell.startIdx" data-cell-from class="min-w-[3rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
+                  <option v-for="(p, i) in recPeriods" :key="i" :value="i">{{ p.no }} 节</option>
+                </select>
+              </label>
+              <label class="flex flex-1 items-center gap-1.5 text-[11px] text-ink-dim">
+                到第
+                <select v-model.number="recCell.endIdx" data-cell-to class="min-w-[3rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
+                  <option v-for="(p, i) in recPeriods" :key="i" :value="i">{{ p.no }} 节</option>
+                </select>
+              </label>
+            </div>
+            <p class="text-[11px]" :class="recCellWhen ? 'text-ink-dim' : 'text-red-400'">
+              {{ recCellWhen ? '上课时间 ' + recCellWhen : '节次超出当前节次表' }}
+            </p>
+          </div>
+        </div>
+        <p v-if="recCellErr" data-cell-err class="mt-2.5 text-xs text-red-400">{{ recCellErr }}</p>
+        <div class="mt-4 flex gap-2.5">
+          <button
+            v-if="recCell.index !== null"
+            data-cell-del
+            class="rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-red-400 transition active:scale-[0.98]"
+            @click="delRecCell"
+          >
+            删除
+          </button>
+          <button
+            class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+            @click="recCell = null"
+          >
+            取消
+          </button>
+          <button
+            data-cell-save
+            class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+            @click="submitRecCell"
+          >
+            {{ recCell.index === null ? '添加' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 添加课程面板：长按/双击周网格空白处唤起 -->
     <Transition name="fade">
       <div v-if="addForm" class="fixed inset-0 z-20 bg-black/40" @click="addForm = null"></div>
@@ -2715,6 +2944,7 @@ function gridDbl(e) {
     <Transition name="slide">
       <div
         v-if="addForm"
+        data-sheet-add
         class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
       >
         <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
@@ -3298,14 +3528,85 @@ function gridDbl(e) {
           <div v-else-if="onboardStep === 'recConfirm'" key="recConfirm" class="relative overflow-hidden">
             <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
               <p class="text-sm font-semibold">共 {{ recPreview.items.length }} 门课，核对后导入</p>
-              <p class="mt-1 text-xs text-ink-dim">卡片里的课程名、星期、节次、周次、地点都能直接改；不要的课点垃圾桶删掉</p>
+              <p class="mt-1 text-xs text-ink-dim">上半是整周排布，点空格子加课、点课块改课；下半逐条改细节</p>
 
               <div v-if="recPreview.warnings.length" class="mt-2.5 rounded-xl bg-amber-500/10 px-3 py-2 text-[11px] text-amber-600">
                 <span v-for="(w, i) in recPreview.warnings" :key="i" class="block">{{ w }}</span>
               </div>
 
-              <div class="mt-3 space-y-2">
-                <div v-for="(it, i) in recPreview.items" :key="i" data-rec-item class="rounded-xl border border-line bg-canvas p-3">
+              <!-- 整周预览：与正式课表同一套网格（行=节次、列=星期）。
+                   点空格子加课、点课块改课；同一格两门课在格子里标红 -->
+              <div class="mt-3 rounded-2xl border border-line bg-canvas p-2.5">
+                <div class="grid" :style="recColsStyle">
+                  <span></span>
+                  <span v-for="wd in recCols" :key="wd" class="pb-1 text-center text-[11px] text-ink-dim">{{ WDN[wd - 1] }}</span>
+                </div>
+                <div class="grid select-none" data-rec-grid :style="recGridStyle">
+                  <template v-for="(r, ri) in recRows" :key="ri">
+                    <div
+                      v-if="r.type === 'gap'"
+                      data-gap
+                      class="flex items-center gap-1.5 bg-ink/[0.04] px-1 text-[9px] font-medium text-ink-dim/80"
+                      :style="{ gridColumn: '1 / -1', gridRow: ri + 1 }"
+                    >
+                      <span class="h-px flex-1 bg-line/70"></span>
+                      <span class="shrink-0">{{ r.label }}</span>
+                      <span class="h-px flex-1 bg-line/70"></span>
+                    </div>
+                    <template v-else>
+                      <div
+                        :data-raxis="r.p.no"
+                        class="flex flex-col items-center justify-center overflow-hidden bg-ink/[0.02] leading-none"
+                        :style="{ gridColumn: 1, gridRow: ri + 1 }"
+                      >
+                        <span class="text-[10px] font-semibold text-primary-600/90">{{ r.p.no }}</span>
+                        <span class="mt-0.5 text-[8px] text-ink-dim/80">{{ r.p.start }}</span>
+                      </div>
+                      <div
+                        v-for="wd in recCols"
+                        :key="wd"
+                        :data-rcell="wd + '-' + r.idx"
+                        class="border-t border-l border-line/50 transition-colors"
+                        :class="recPressCell === wd + '-' + r.idx ? 'border-primary-400 bg-primary-500/10' : ''"
+                        :style="{ gridColumn: wd + 1, gridRow: ri + 1 }"
+                        @pointerdown="recCellDown(wd, r.idx)"
+                        @pointerup="recCellUp"
+                        @pointercancel="recCellUp"
+                        @pointerleave="recCellUp"
+                        @click="openRecAdd(wd, r.idx)"
+                      ></div>
+                    </template>
+                  </template>
+
+                  <article
+                    v-for="it in recGrid.items"
+                    :key="it.wd + '-' + it.from + '-' + it.level"
+                    data-rcourse
+                    class="relative m-[1px] cursor-pointer overflow-hidden rounded-[5px] px-1 py-0.5 shadow-sm ring-1 transition active:scale-[0.97]"
+                    :class="[
+                      recGrid.hot.has(it) ? 'bg-red-500/15 ring-2 ring-red-400' : 'ring-line/70',
+                      it.c.selected ? '' : 'opacity-35',
+                    ]"
+                    :style="{ ...gridStyleOf(it, recRowIdx), background: recGrid.hot.has(it) ? '' : palOf(it.c.title).bg }"
+                    @click.stop="openRecEdit(it)"
+                  >
+                    <span
+                      class="block truncate text-[10px] leading-tight font-semibold"
+                      :class="recGrid.hot.has(it) ? 'text-red-500' : ''"
+                      :style="{ color: recGrid.hot.has(it) ? '' : palOf(it.c.title).text }"
+                    >{{ it.c.title || '未命名' }}</span>
+                  </article>
+                </div>
+                <p
+                  v-if="recOverlapNote"
+                  data-rec-conflict
+                  class="mt-2 rounded-xl bg-red-500/10 px-3 py-1.5 text-[11px] leading-snug text-red-500"
+                >{{ recOverlapNote }}</p>
+              </div>
+
+              <p class="mt-3 text-xs font-medium text-ink-dim">逐条核对 · {{ recPreview.items.length }} 门</p>
+              <div class="mt-2 space-y-2">
+                <div v-for="(it, i) in recPreview.items" :key="i" data-rec-item class="rounded-xl border bg-canvas p-3" :class="recItemHot(it) ? 'border-red-400' : 'border-line'">
                   <div class="flex items-start gap-2.5">
                     <button
                       type="button"
@@ -3358,6 +3659,7 @@ function gridDbl(e) {
                         <input v-model="it.location" maxlength="30" placeholder="地点（可留空）" class="min-w-0 w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
                         <input v-model="it.teacher" maxlength="20" placeholder="教师（可留空）" class="min-w-0 w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
                       </div>
+                      <p v-if="recItemHot(it)" data-item-conflict class="mt-1.5 text-[11px] leading-snug text-red-500">与同一格的另一门课重叠：留一门，或者下面改成别的节次</p>
                     </div>
                     <button
                       type="button"
