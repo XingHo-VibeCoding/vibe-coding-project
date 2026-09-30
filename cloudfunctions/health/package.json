@@ -1,0 +1,6 @@
+{
+  "name": "health",
+  "version": "1.0.0",
+  "description": "Day 15 最小云函数：GET /api/health 返回 { ok: true }",
+  "main": "index.js"
+}
