@@ -117,6 +117,37 @@ vibe-coding-project/
 > - `ai.js` 不碰 DOM、不碰 localStorage；候选形状与 schedules 表（type='course'）完全对齐，未改任何数据结构与存储键。
 > - **重导去重**（Day 9 实测反馈）：AI 导入时同名同星期且 `manual_edited:false` 的已有课程**原地更新**（`Rules.aiDuplicateOf`，id 不变），手动建的 / 手动改过的一律不碰——这正是 `manual_edited` 字段预留的语义。
 
+### 2.3 正式版结构与开发主线（Day 15 起）
+
+一期在根目录的 vanilla 实现上完成验证后，**正式版界面**切换为 `web2/` 子目录下的 Vue 3 实现（原独立仓库 `vibe-coding-project-web2`，Day 15 并入本仓库）。根目录结构（见上一节）为 Day 1–14 的一期实现，**自 Day 14 起封存、不再迭代**；数据模型与业务规则口径不变（`store.js` 仍是数据唯一闸门，纯逻辑与渲染分离）。
+
+```
+vibe-coding-project/
+├─ web2/                          # 正式版（Vue 3 + Vite + Tailwind 4），Day 15 起开发主线
+│  ├─ index.html                  # 页面骨架（Vite 入口）
+│  ├─ vite.config.js              # 构建配置（产物输出 dist/）
+│  ├─ serve.js                    # 线上静态服务入口（单端口，读 PORT）
+│  ├─ package.json                # 依赖与脚本（dev / build / preview）
+│  ├─ src/
+│  │  ├─ App.vue                  # 唯一页面：视图切换 + 引导流程 + 弹层
+│  │  ├─ main.js                  # 挂载入口
+│  │  ├─ style.css                # 全局样式与设计令牌
+│  │  ├─ components/              # TimeWheel / MonthCalendar / NumberWheel / PeriodsEditor / DropdownSelect
+│  │  └─ data/                    # 数据与纯逻辑：store / periods / recognizer / summarizer / recorder / transcriber / notify / ics / mock
+│  ├─ docs/                       # 测试与决策记录（如 Day 14 真人测试）
+│  └─ tmp/                        # 检查脚本（截图不入库，见 web2/.gitignore）
+├─ index.html  css/  js/          # 一期 vanilla 实现（已封存）
+└─ AGENTS.md  PRD.md  TECH_DESIGN.md  research.md  大学生日程助手-设计方案.md
+```
+
+**构建**：`cd web2 && npm install && npm run build` → 产物 `web2/dist/`（`node_modules/` 与 `dist/` 均不入库）。
+
+**发布与打包**：
+- 线上：静态托管 `web2/dist`（当前入口 `https://college-schedule-assistant.app.workbuddy.host/`）
+- Android：同一份 `web2/dist` 打进 Capacitor 外壳（App 工程 `scripts/` 链路）
+
+**存储键**：vanilla 用 `sched.v1.*`，web2 用 `web2.*`（`web2.data` 主表 / `web2.added` 自加课 / `web2.todos` / `web2.courseOv` / `web2.events`）。键名不同，**导出 JSON 结构一致**——已实测「web2 导出 → vanilla `store.js` / `ics.js` 读入」互通。
+
 ---
 
 ## 三、数据对象及字段
@@ -353,7 +384,9 @@ flowchart TD
 
 ## 八、部署
 
-### 8.1 选定平台：GitHub Pages
+> **2026-09-30 更新**：一期实际发布采用 WorkBuddy 静态托管（正式版线上入口见 2.3 节），本节 8.1 的 GitHub Pages 是 Day 5 的原始选型、**未启用**；8.2 的子路径约定仍有效（将来若改为子路径部署需遵守）。
+
+### 8.1 选定平台：GitHub Pages（原始选型，未启用）
 
 理由：仓库已在 `XingHo-VibeCoding/vibe-coding-project`，零成本、零配置、无需额外注册。
 
