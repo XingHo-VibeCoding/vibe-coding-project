@@ -16,7 +16,10 @@ function t(name, cond, extra) {
   console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra ? '  → ' + extra : ''))
 }
 
-const URL = 'http://127.0.0.1:4177/'
+// URL 可用环境变量 TW_URL 覆盖：线上发布后直接对着线上跑同一套断言
+// （发布是在沙箱里重新构建的，产物文件名 hash 与本地 dist 不同，没法靠文件名/hash 比对，
+//   行为断言才是「线上跑的确实是这份代码」的硬证据）
+const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 const ROW = 40
 const SPAN = 60 * ROW
 const MAX_FLING = 8 // 与 src/data/wheelPhysics.js 的 FLING_MAX_STEPS 对齐
