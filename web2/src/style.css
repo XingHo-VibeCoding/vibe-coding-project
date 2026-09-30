@@ -342,3 +342,22 @@ html[data-accent='mint'] {
     --content3: 0.6499 0.0109 212.5342;
     --content4: 0.7627 0.0106 238.5611;
 }
+
+/* 引导页：课程时间设置二级页 进/出 方向性滑动（2026-09-30 用户反馈「秒跳、没有动画、生硬」）
+   form → periods 用 obpage-fwd（新页从右进、旧页向左出）；periods → form 用 obpage-bak（反向）。
+   不用 mode="out-in"：leave 页 absolute 脱离文档流，新旧两页交叉滑动（原生推入观感），
+   高度由进入页立刻撑住，不会出现 out-in 那种中间塌一下。 */
+.obpage-fwd-enter-active,
+.obpage-bak-enter-active {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.obpage-fwd-leave-active,
+.obpage-bak-leave-active {
+    position: absolute;
+    inset-inline: 0;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.obpage-fwd-enter-from { opacity: 0; transform: translateX(26px); }
+.obpage-fwd-leave-to   { opacity: 0; transform: translateX(-26px); }
+.obpage-bak-enter-from { opacity: 0; transform: translateX(-26px); }
+.obpage-bak-leave-to   { opacity: 0; transform: translateX(26px); }

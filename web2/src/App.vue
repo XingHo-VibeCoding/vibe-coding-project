@@ -85,6 +85,7 @@ function closeTopmostLayer() {
   if (delLecId.value) { delLecId.value = null; return true }
   if (semForm.value) { semForm.value = null; return true }
   if (onboarding.value && recFromMine.value) { mineRecCancel(); return true } // mine 识别流程当弹层对待；纯引导页不拦（v1.16 口径）
+  if (onboarding.value && !recFromMine.value && onboardStep.value === 'periods') { backObForm(); return true } // 课程时间设置二级页：返回先回上一级，不直接退（2026-09-30 用户反馈）
   if (detail.value) { detail.value = null; return true }
   if (addForm.value) { addForm.value = null; return true }
   if (todoForm.value) { todoForm.value = null; return true }
@@ -776,8 +777,27 @@ function goObForm() {
   obErr.value = ''
   obRecErr.value = ''
   recPreview.value = null // 重新走一遍 = 干净开始（识别结果不跨轮残留）
-  obForm.value = { name: defaultTermName(), first_monday: '', total_weeks: 18, periods: DEFAULT_PERIODS.map((p) => ({ ...p })) }
+  /* 2026-09-30 用户反馈「分了 4 个时间段」：根因是派生分段（相邻间隔 >15 分钟自动裂开），
+     手动把某节改晚后上午被拆成两段。初始就固化显式 seg（上午5/下午5/晚上3），
+     segmentView 走显式分支 → 固定三块，改时间/时长/加节都不裂（tmp/seg4-repro-check.mjs 实证） */
+  obForm.value = {
+    name: defaultTermName(),
+    first_monday: '',
+    total_weeks: 18,
+    periods: DEFAULT_PERIODS.map((p, i) => ({ ...p, seg: i < 5 ? 1 : i < 10 ? 2 : 3 })),
+  }
   obGlobal.value = { dur: 45, gap: 10 } // 二级页两个滚轮跟着回到默认
+  obPageDir.value = 'obpage-fwd' // 从入口页进来，方向归位
+  onboardStep.value = 'form'
+}
+/* 课程时间设置二级页的进/出：记录方向（决定滑动动画方向），「完成」按钮与返回键都走 backObForm */
+const obPageDir = ref('obpage-fwd')
+function goObPeriods() {
+  obPageDir.value = 'obpage-fwd'
+  onboardStep.value = 'periods'
+}
+function backObForm() {
+  obPageDir.value = 'obpage-bak'
   onboardStep.value = 'form'
 }
 /* 开学时间：弹层月历任意日期可点；内部归一到所选日期所在周的周一（「第几周」口径不变，
@@ -2481,7 +2501,7 @@ function gridDbl(e) {
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4" /></svg>
           </span>
           <span class="flex-1 text-sm font-medium">关于</span>
-          <span class="text-xs text-ink-dim/70">v1.22</span>
+          <span class="text-xs text-ink-dim/70">v1.23</span>
         </div>
       </section>
 
@@ -3212,8 +3232,9 @@ function gridDbl(e) {
           <!-- 第 1 步：开学时间 / 本学期周数 / 课程时间设置（Day 14 用户测试反馈：
                原页文字、按钮、功能太多；重构为三项，节次编辑收进二级页） -->
           <template v-else-if="onboardStep === 'form' || onboardStep === 'periods'">
-            <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
-              <template v-if="onboardStep === 'form'">
+            <div class="relative overflow-hidden rounded-2xl border border-line bg-card p-4 shadow-sm">
+              <Transition :name="obPageDir">
+              <div v-if="onboardStep === 'form'" key="ob-form">
                 <!-- ① 开学时间：弹层月历任意日期可点，内部归一到所在周周一 -->
                 <button
                   type="button"
@@ -3247,7 +3268,7 @@ function gridDbl(e) {
                   type="button"
                   data-ob-time
                   class="mt-2.5 flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.99]"
-                  @click="onboardStep = 'periods'"
+                  @click="goObPeriods"
                 >
                   <span class="min-w-0">
                     <span class="block text-sm font-semibold">课程时间设置</span>
@@ -3279,13 +3300,13 @@ function gridDbl(e) {
                 >
                   先跳过识别，自己加课
                 </button>
-              </template>
+              </div>
 
               <!-- ③ 的二级页：单节时长 / 课间（滚轮） + 上午/下午/晚上三块 -->
-              <template v-else>
+              <div v-else key="ob-periods">
                 <div class="flex items-center justify-between">
                   <p class="text-sm font-semibold">课程时间设置</p>
-                  <button type="button" data-ob-time-back class="rounded-lg px-2 py-1 text-xs font-medium text-primary-600 transition active:bg-primary-50" @click="onboardStep = 'form'">完成</button>
+                  <button type="button" data-ob-time-back class="rounded-lg px-2 py-1 text-xs font-medium text-primary-600 transition active:bg-primary-50" @click="backObForm">完成</button>
                 </div>
                 <p class="mt-1 text-[11px] text-ink-dim">改时长或课间，三块时间自动重排；开学时间在上一页</p>
 
@@ -3348,7 +3369,8 @@ function gridDbl(e) {
                 </div>
 
                 <p v-if="obErr" class="mt-2.5 text-xs text-red-400" data-ob-err>{{ obErr }}</p>
-              </template>
+              </div>
+              </Transition>
             </div>
           </template>
 

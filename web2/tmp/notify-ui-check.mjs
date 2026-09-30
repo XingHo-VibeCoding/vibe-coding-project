@@ -74,7 +74,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.click('nav button >> nth=2') // 我的
   await page.waitForTimeout(400)
   t('A7 设置区出现「课前提醒」且开关为开', (await page.locator('button[aria-label="课前提醒开关"]').count()) === 1)
-  t('A8 版本串到 v1.22', (await page.locator('text=v1.22').count()) > 0)
+  t('A8 版本串到 v1.23', (await page.locator('text=v1.23').count()) > 0)
 
   /* ---------- B：关开关 → 清空已排 ---------- */
   await page.click('button[aria-label="课前提醒开关"]')

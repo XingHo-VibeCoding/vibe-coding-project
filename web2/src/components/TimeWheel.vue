@@ -1,5 +1,8 @@
 <script setup>
 // 时间滚轮面板：时/分两列 scroll-snap，滚动或点选；对齐主项目「自建时间面板」口径
+// 2026-09-30 用户反馈：改为**循环滚轮**——从 0 滚到 59 之后无缝衔接 0，不会「到底」。
+// 做法：列表重复 3 份（REPEAT=3），滚动越过中间份边界 ±半份时把 scrollTop 平移恰好一份。
+// 平移一份 = 内容完全重复、对 ROW 相位相同（吸附点一一对应），所以视觉绝对无缝。
 import { ref, computed, onMounted, nextTick } from 'vue'
 
 const props = defineProps({
@@ -8,6 +11,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const ROW = 40 // 每项高度，需与模板样式一致
+const REPEAT = 3 // 循环份数：活动窗口维持在中间一份 ±半份余量
 const init = props.modelValue || '08:00'
 const [initH, initM] = init.split(':').map(Number)
 
@@ -16,38 +20,52 @@ const minCol = ref(null)
 const hour = ref(initH)
 const min = ref(initM)
 
-const hours = Array.from({ length: 24 }, (_, i) => i)
-const minutes = Array.from({ length: 60 }, (_, i) => i)
+// 三份重复列表；渲染索引用 i（0..3N-1），显示值 = i % N，故 :key 必须用索引
+const hours = Array.from({ length: 24 * REPEAT }, (_, i) => i % 24)
+const minutes = Array.from({ length: 60 * REPEAT }, (_, i) => i % 60)
 const pad = (n) => String(n).padStart(2, '0')
 
 const display = computed(() => `${pad(hour.value)}:${pad(min.value)}`)
 
+/* 循环归位：scrollTop 一旦跑出「中间一份 ±半份」余量，就平移恰好一份拉回。
+   余量（半份）内的滚动完全不动 → 小幅惯性不被打断；只有快冲出边界才拉一次，
+   拉完视觉位置不变（内容重复），惯性即使被截停用户也无感。 */
+function keepMiddle(el, count) {
+  const span = count * ROW
+  const st = el.scrollTop
+  if (st < span * 0.5) el.scrollTop = st + span
+  else if (st >= span * 2.5) el.scrollTop = st - span
+}
 function snap(colRef, count, setVal) {
   const el = colRef.value
   if (!el) return
-  const idx = Math.min(count - 1, Math.max(0, Math.round(el.scrollTop / ROW)))
-  setVal(idx)
+  keepMiddle(el, count)
+  const idx = Math.min(count * REPEAT - 1, Math.max(0, Math.round(el.scrollTop / ROW)))
+  setVal(idx % count)
 }
 function onScrollHour() {
+  if (hourCol.value) keepMiddle(hourCol.value, 24)
   clearTimeout(hourCol.value?._t)
   hourCol.value._t = setTimeout(() => snap(hourCol, 24, (i) => (hour.value = i)), 140)
 }
 function onScrollMin() {
+  if (minCol.value) keepMiddle(minCol.value, 60)
   clearTimeout(minCol.value?._t)
   minCol.value._t = setTimeout(() => snap(minCol, 60, (i) => (min.value = i)), 140)
 }
-function pickAt(colRef, i, setVal) {
+/* 点选：i 是三份中的实际渲染索引，scrollTop = i*ROW 恰是吸附点（相位对，不会回吸） */
+function pickAt(colRef, i, count, setVal) {
   const el = colRef.value
   if (el) el.scrollTop = i * ROW // 瞬移到吸附点：落点正好对齐，系统不会再吸回去（主项目同款，smooth 反而慢吞吞）
-  setVal(i)
+  setVal(i % count)
 }
 /* 点选入口必须在 script 里包一层：模板中 ref 会自动解包成数字/元素，
    直接在模板里写 min.value = i 会变成给数字赋值而报错 */
 function pickHour(i) {
-  pickAt(hourCol, i, (v) => (hour.value = v))
+  pickAt(hourCol, i, 24, (v) => (hour.value = v))
 }
 function pickMin(i) {
-  pickAt(minCol, i, (v) => (min.value = v))
+  pickAt(minCol, i, 60, (v) => (min.value = v))
 }
 
 /* ---------- 鼠标滚轮接管（主项目 app.js 同款口径） ---------- */
@@ -62,7 +80,8 @@ function wheelPixels(e) {
 /* 一格滚轮 = 走一格。为什么得自己接管：浏览器转一格 ~100px 而一项只有 40px，
    再叠加 scroll-snap 强制吸附，一滚就跳 2~3 格还一顿一顿（用户实测反馈）。
    preventDefault 后按「累计到 WHEEL_UNIT 才走一格」来推；触屏不归这里管：
-   手指是原生滚动 + 吸附，手感本来就是对的。 */
+   手指是原生滚动 + 吸附，手感本来就是对的。
+   循环后没有顶/底：keepMiddle 把 scrollTop 维持在中间份附近，±1 永远不出界。 */
 function attachWheel(colRef, count, setVal) {
   const el = colRef.value
   if (!el) return
@@ -72,7 +91,7 @@ function attachWheel(colRef, count, setVal) {
     const dir = px > 0 ? 1 : -1
     const idx = Math.round(el.scrollTop / ROW)
     const next = idx + dir
-    if (next < 0 || next > count - 1) return // 已经到顶/到底：不吞这一下，让外层还能滚
+    if (next < 0 || next > count * REPEAT - 1) return // 理论上到不了（keepMiddle 兜底）；真到了不吞，让外层还能滚
     e.preventDefault() // 关键的一步：不拦就还是系统那 ~100px
     let acc = el._acc || 0
     if (acc && (acc > 0) !== (px > 0)) acc = 0 // 换方向就重新攒
@@ -80,15 +99,16 @@ function attachWheel(colRef, count, setVal) {
     if (Math.abs(acc) < WHEEL_UNIT) { el._acc = acc; return }
     el._acc = 0 // 走一格就清零：一格滚轮 = 一格
     el.scrollTop = next * ROW
-    setVal(next)
+    setVal(next % count)
   }, { passive: false })
 }
 onMounted(async () => {
   await nextTick()
   // 双 rAF：等弹层 Transition 期间布局真正稳定再定位，防止 scrollTo 被 clamp 到 0
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-  hourCol.value?.scrollTo({ top: initH * ROW })
-  minCol.value?.scrollTo({ top: initM * ROW })
+  // 初始定位到「中间一份」的对应值，上下各留一整份余量
+  hourCol.value?.scrollTo({ top: (24 + initH) * ROW })
+  minCol.value?.scrollTo({ top: (60 + initM) * ROW })
   attachWheel(hourCol, 24, (v) => (hour.value = v))
   attachWheel(minCol, 60, (v) => (min.value = v))
 })
@@ -114,12 +134,12 @@ defineExpose({ display })
         >
           <div class="h-20 shrink-0"></div>
           <button
-            v-for="h in hours"
-            :key="h"
+            v-for="(h, i) in hours"
+            :key="i"
             type="button"
             class="flex h-10 w-full shrink-0 cursor-pointer items-center justify-center tabular-nums"
             :class="h === hour ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim/60'"
-            @click="pickHour(h)"
+            @click="pickHour(i)"
           >
             {{ pad(h) }}
           </button>
@@ -132,12 +152,12 @@ defineExpose({ display })
         >
           <div class="h-20 shrink-0"></div>
           <button
-            v-for="m in minutes"
-            :key="m"
+            v-for="(m, i) in minutes"
+            :key="i"
             type="button"
             class="flex h-10 w-full shrink-0 cursor-pointer items-center justify-center tabular-nums"
             :class="m === min ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim/60'"
-            @click="pickMin(m)"
+            @click="pickMin(i)"
           >
             {{ pad(m) }}
           </button>
