@@ -27,7 +27,7 @@ try {
   const obInput = page.locator('input[type="file"]').nth(1) // 引导层的 file input（DOM 顺序在主模板之后）
 
   // 1. 上传坏文件 → 引导页不关 + 就地红字报错
-  await obInput.setInputFiles('D:/Document/Project/vibe-coding-project-web2/tmp/bad-import.txt')
+  await obInput.setInputFiles('D:/Document/Project/vibe-coding-project/web2/tmp/bad-import.txt')
   await page.waitForTimeout(500)
   t('1. 坏文件后引导页仍在（不被放行）', await onboarding.isVisible())
   const errMsg = page.locator('text=导入失败')
@@ -40,7 +40,7 @@ try {
   t('4. 未误记 onboarded 标记', onboardAfterBad === null)
 
   // 2. 同一引导页里改传合法导出 → 引导页关闭 + 数据落盘
-  await obInput.setInputFiles('D:/Document/Project/vibe-coding-project-web2/tmp/valid-export.json')
+  await obInput.setInputFiles('D:/Document/Project/vibe-coding-project/web2/tmp/valid-export.json')
   await page.waitForTimeout(700)
   t('5. 合法文件后引导页关闭', !(await onboarding.isVisible().catch(() => false)))
   const dataOk = await page.evaluate(() => localStorage.getItem('web2.data'))

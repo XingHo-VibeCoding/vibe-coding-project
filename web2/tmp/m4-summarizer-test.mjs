@@ -9,8 +9,8 @@ const store = {
 }
 global.localStorage = store
 
-const { loadLectures, addLecture, updateLecture, setLectureSummary } = await import('file:///D:/Document/Project/vibe-coding-project-web2/src/data/store.js')
-const { parseSummaryJson, summarizeTranscript, loadLlmConfig, saveLlmConfig, summarizerAvailable } = await import('file:///D:/Document/Project/vibe-coding-project-web2/src/data/summarizer.js')
+const { loadLectures, addLecture, updateLecture, setLectureSummary } = await import('file:///D:/Document/Project/vibe-coding-project/web2/src/data/store.js')
+const { parseSummaryJson, summarizeTranscript, loadLlmConfig, saveLlmConfig, summarizerAvailable } = await import('file:///D:/Document/Project/vibe-coding-project/web2/src/data/summarizer.js')
 
 let pass = 0, fail = 0
 const t = (name, ok) => { console.log((ok ? 'PASS' : 'FAIL') + ' | ' + name); ok ? pass++ : fail++ }
@@ -96,7 +96,7 @@ saveLlmConfig({ provider: 'cloud', key: '', model: '' })
 try { await summarizeTranscript('一段足够长的文字稿，长度超过三十个字，cloud 插槽应该明确报未开通。'); t('22. cloud 插槽报未开通', false) } catch (e) { t('22. cloud 插槽报未开通', /还没开通/.test(e.message)) }
 
 // ===== M4-2b：testConnection 连通性检测 + 模型白名单回落 =====
-const { testConnection, DEEPSEEK_MODELS } = await import('file:///D:/Document/Project/vibe-coding-project-web2/src/data/summarizer.js')
+const { testConnection, DEEPSEEK_MODELS } = await import('file:///D:/Document/Project/vibe-coding-project/web2/src/data/summarizer.js')
 t('23. DEEPSEEK_MODELS 为现役两档（flash/v4-pro）', DEEPSEEK_MODELS.length === 2 && DEEPSEEK_MODELS.some((m) => m.id === 'deepseek-flash') && DEEPSEEK_MODELS.some((m) => m.id === 'deepseek-v4-pro'))
 
 saveLlmConfig({ provider: '', key: '', model: '' })

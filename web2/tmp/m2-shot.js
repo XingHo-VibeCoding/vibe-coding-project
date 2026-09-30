@@ -3,7 +3,7 @@ import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/worksp
 
 const URL = 'http://127.0.0.1:4187/'
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
-const OUT = 'D:/Document/Project/vibe-coding-project-web2/tmp/'
+const OUT = 'D:/Document/Project/vibe-coding-project/web2/tmp/'
 
 const FAKE_CAP = `
   window.Capacitor = { isNativePlatform: () => true, convertFileSrc: (p) => p,

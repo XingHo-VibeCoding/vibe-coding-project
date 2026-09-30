@@ -12,7 +12,7 @@ function t(name, cond) {
 }
 
 const URL = 'http://127.0.0.1:4177/'
-const IMG = 'D:/Document/Project/vibe-coding-project-web2/tmp/rec-sample.jpg'
+const IMG = 'D:/Document/Project/vibe-coding-project/web2/tmp/rec-sample.jpg'
 const LLM_CFG = JSON.stringify({ provider: 'deepseek', key: 'sk-test', model: 'deepseek-flash' })
 
 /* 一门课，落在第 1–2 节：时间完全由本地节次表换算 */

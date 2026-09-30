@@ -12,7 +12,7 @@ function t(name, cond) {
 }
 
 const URL = 'http://127.0.0.1:4177/'
-const IMG = 'D:/Document/Project/vibe-coding-project-web2/tmp/rec-sample.jpg'
+const IMG = 'D:/Document/Project/vibe-coding-project/web2/tmp/rec-sample.jpg'
 const LLM_CFG = JSON.stringify({ provider: 'deepseek', key: 'sk-test', model: 'deepseek-flash' })
 
 /* 假 AI 结果：3 门课，其中「体育」节次 14–15 超出默认 13 节 → 应标红并跳过；
