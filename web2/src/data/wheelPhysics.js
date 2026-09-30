@@ -17,6 +17,29 @@ export const FLING_V_PER_STEP = 320 // px/s：速度每多这么多，多滑 1 �
 export const FLING_MAX_STEPS = 8 // 一次快甩最多滑几格（上限就是「可控」本身）
 export const VELOCITY_WINDOW = 90 // ms：只用最近这段时间的采样估速度（用全部历史会低估）
 
+/* 甩动时长必须由「松手速度」反推，这样动画首帧速度 = 手指末速，松手处才不会有速度突变。
+   2026-09-30 第四轮（用户反馈「高速滑动不够丝滑」）：
+   旧实现是固定时长（150 + 格数×26ms），快甩时动画首速只有约 2700px/s，而手指末速常有 4000px/s+
+   → 松手瞬间内容「先慢半拍再急停」，这就是顿挫感。
+   easeOutCubic 的首帧速度增益恒为 3（= 3×平均速度），所以：
+       时长 = 位移 × 3 ÷ 松手速度
+   真机实测（tmp/diag-v127.mjs）：修前 拖动末速 1320px/s → 动画首帧 1967px/s（+49%，窜一下）；
+   修后两者基本相等 = 速度连续 = 丝滑。 */
+export const FLING_T_MIN = 0.18 // s：时长下限，极快甩动时不至于「闪一下就到位」
+export const FLING_T_MAX = 0.5 // s：时长上限，很慢的甩动也不磨蹭
+export const EASE_HEAD_GAIN = 3 // easeOutCubic 的首帧速度增益
+
+/* 按「位移 + 松手速度」算动画时长（秒）。速度匹配见上方注释。 */
+export function flingDuration(dist, v, opts = {}) {
+  const a = Math.abs(Number(v) || 0)
+  const d = Math.abs(Number(dist) || 0)
+  const min = opts.min ?? FLING_T_MIN
+  const max = opts.max ?? FLING_T_MAX
+  if (!a || !d) return min
+  const t = (d * (opts.gain ?? EASE_HEAD_GAIN)) / a
+  return Math.min(max, Math.max(min, t))
+}
+
 /* 松手速度 → 滑几格（非负；方向由调用方按速度正负决定）。 */
 export function flingSteps(v, opts = {}) {
   const minV = opts.minV ?? FLING_MIN_V

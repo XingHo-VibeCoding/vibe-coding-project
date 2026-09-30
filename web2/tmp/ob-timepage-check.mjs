@@ -57,6 +57,29 @@ try {
   const names2 = await page.locator('[data-ob-seg] p.text-xs.font-semibold').allInnerTexts()
   t('3c. 块名仍是 上午/下午/晚上', names2[0]?.includes('上午') && names2[1]?.includes('下午') && names2[2]?.includes('晚上'))
 
+  /* ③b 结束时间也要能点（用户反馈「点 8:00 能点、8:45 点不了」）。
+     起因：这一行里开始时间是 button、结束时间只是 span，压根没有点击处理。 */
+  const endTag = await page.locator('[data-ob-period-row="3"]').evaluate((el) => {
+    const n = Array.from(el.querySelectorAll('*')).find((x) => x.children.length === 0 && x.textContent.trim() === '11:05')
+    return n ? n.tagName : 'none'
+  })
+  t('3d. 结束时间是可点元素（button，此前是 span → 点了没反应）', endTag === 'BUTTON')
+  await page.locator('[data-ob-period-row="3"] button').nth(1).click() // 第 2 个 button = 结束时间
+  await page.waitForTimeout(700)
+  const endPickerOpen = (await page.locator('.wheel').count()) > 0
+  t('3e. 点结束时间能打开时间面板', endPickerOpen)
+  if (endPickerOpen) {
+    await page.locator('.wheel').nth(0).locator('button:text-is("11")').first().click() // 时 = 11
+    await page.waitForTimeout(200)
+    await page.locator('.wheel').nth(1).locator('button:text-is("10")').first().click() // 分 = 10
+    await page.waitForTimeout(200)
+    await page.locator('button:has-text("确定")').click()
+    await page.waitForTimeout(400)
+    const row3b = (await page.locator('[data-ob-period-row="3"]').innerText()).replace(/\s+/g, ' ')
+    console.log('   改后第3节（含结束）：', row3b.trim())
+    t('3f. 结束时间改到 11:10 生效，开始时间不受影响', row3b.includes('11:10') && row3b.includes('10:20'))
+  }
+
   // ④ 「完成」返回：抓退出动画类 + 回到 form 页
   const bakAnim = page.waitForSelector('.obpage-bak-enter-active', { timeout: 1200 }).then(() => true).catch(() => false)
   await page.locator('[data-ob-time-back]').click()

@@ -11,8 +11,11 @@
 // 2026-09-30 第三轮（用户反馈「从 58 滚到 2，松手一瞬间转一整圈」）：
 //   · 松手时先「同步瞬移归位到中间份」再算吸附目标，否则跨份后目标会被映射到另一份，
 //     缓动横跨整整一份 = 空转一圈（详细原因写在 finish 里；回归测试见 tmp/wheel-touch-gesture-check.mjs D 段）
+// 2026-09-30 第四轮（用户反馈「高速滑动时不够丝滑」）：
+//   · 甩动时长不再固定，改由「位移 ÷ 松手速度」反推，让动画首帧速度 = 手指末速：
+//     固定时长会让快甩时首速低于手指速度，松手处突然变慢 = 顿挫（诊断见 tmp/diag-v127.mjs）
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { flingSteps, velocityFromSamples, normalizeTop, easeOutCubic } from '../data/wheelPhysics.js'
+import { flingSteps, flingDuration, velocityFromSamples, normalizeTop, easeOutCubic } from '../data/wheelPhysics.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' }, // 'HH:mm' 或 ''
@@ -21,9 +24,7 @@ const emit = defineEmits(['update:modelValue'])
 
 const ROW = 40 // 每项高度，需与模板样式一致
 const REPEAT = 3 // 循环份数：活动窗口维持在中间一份
-const ANIM_SNAP_MS = 150 // 松手只吸附（没甩起来）的时长
-const ANIM_FLING_BASE = 150 // 甩动动画基础时长
-const ANIM_FLING_PER_STEP = 26 // 每多滑一格补的时长
+const ANIM_SNAP_MS = 150 // 松手只吸附（没甩起来）的时长；甩动时长由松手速度反推，见 wheelPhysics.flingDuration
 const AXIS_LOCK_PX = 8 // 手指移动超过它才判方向（避免轻微抖动被当成横向手势）
 
 const init = props.modelValue || '08:00'
@@ -169,7 +170,9 @@ function attachTouch(colRef, count, setVal) {
     el.scrollTop = normalizeTop(el.scrollTop, span)
     const snapped = Math.round(el.scrollTop / ROW) * ROW
     const target = snapped + steps * ROW
-    const dur = steps ? ANIM_FLING_BASE + Math.abs(steps) * ANIM_FLING_PER_STEP : ANIM_SNAP_MS
+    /* 时长不是拍脑袋定的：由「位移 + 松手速度」反推，让动画首帧速度恰好等于手指末速。
+       固定时长会让快甩时首速低于手指速度 → 松手处突然变慢（顿挫）。见 wheelPhysics.flingDuration */
+    const dur = steps ? flingDuration(steps * ROW, v) * 1000 : ANIM_SNAP_MS
     animTo(el, target, dur, () => {
       el.scrollTop = normalizeTop(el.scrollTop, span)
       syncVal()

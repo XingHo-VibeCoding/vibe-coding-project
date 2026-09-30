@@ -887,6 +887,23 @@ function obPickPeriodStart(idx) {
     },
   })
 }
+/* 点改某节结束时间：只动这一节（与「我的」页 PeriodsEditor 同口径，改的不是开始时间所以不顺移整段）。
+   段结构不重算——引导页没有「并入上一段」入口，自动裂段会合不回去，这里保持用户看到的段不动。 */
+function obPickPeriodEnd(idx) {
+  const p = obForm.value.periods[idx]
+  openTimeField({
+    value: p.end,
+    onDone: (v) => {
+      if (v === p.end) return
+      if (minOf(v) <= minOf(p.start)) {
+        obErr.value = `第 ${p.no} 节的结束时间要晚于开始时间`
+        return
+      }
+      obErr.value = ''
+      obForm.value.periods = obForm.value.periods.map((x, i) => (i === idx ? { ...x, end: v } : { ...x }))
+    },
+  })
+}
 /* 段尾加一节（复用分段纯函数，越段拒绝） */
 function obAddPeriod(seg) {
   const r = addPeriodToSegment(obForm.value.periods, seg, obGlobal.value)
@@ -2501,7 +2518,7 @@ function gridDbl(e) {
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4" /></svg>
           </span>
           <span class="flex-1 text-sm font-medium">关于</span>
-          <span class="text-xs text-ink-dim/70">v1.26</span>
+          <span class="text-xs text-ink-dim/70">v1.27</span>
         </div>
       </section>
 
@@ -3347,7 +3364,13 @@ function gridDbl(e) {
                         {{ obForm.periods[g.from + i - 1].start }}
                       </button>
                       <span class="shrink-0 text-[11px] text-ink-dim">–</span>
-                      <span class="min-w-0 flex-1 text-center text-xs tabular-nums">{{ obForm.periods[g.from + i - 1].end }}</span>
+                      <button
+                        type="button"
+                        class="min-w-0 flex-1 rounded-md border border-line bg-card px-2 py-1 text-center text-xs tabular-nums transition active:scale-[0.98]"
+                        @click="obPickPeriodEnd(g.from + i - 1)"
+                      >
+                        {{ obForm.periods[g.from + i - 1].end }}
+                      </button>
                       <button
                         type="button"
                         class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-red-300 transition active:scale-90"

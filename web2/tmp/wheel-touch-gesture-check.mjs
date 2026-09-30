@@ -254,6 +254,72 @@ try {
     `视觉 ${d4Visual.toFixed(1)} 格，拖动 ${d4Moved} 格，落点 ${await val()}`
   )
 
+  console.log('\n=== E. 松手处速度连续（动画时长由松手速度反推）===')
+  /* 「高速滑动不够丝滑」的量化口径：松手瞬间内容速度若突变，用户就会觉得窜/顿。
+     时长公式 dist×3÷v 与「动画首帧速度 = 手指末速」是等价的（easeOutCubic 首帧增益恒为 3），
+     而「时长」比「单帧速度」稳得多（headless 的 rAF 单帧只有十几 ms、噪声大，第一版就栽在这）。
+     修前用固定时长（150 + 格数×26ms）：中速甩动实得 ~228ms，而速度反推要求 ~390ms → 差 70%。
+     注意：touchend 里有一次「整数份瞬移」（视觉不可见），读 scrollTop 必须按份取模（delta），
+     否则会读到 2400px 级的假跳变。 */
+  await reset()
+  await page.evaluate(() => {
+    const el = document.querySelectorAll('.wheel')[1]
+    window.__ts = []
+    window.__tsMark = -1
+    window.__recTs = true
+    // 分界：拖动阶段与动画阶段的速度方向相同，必须只取 touchend 之后的帧。
+    // 组件在 mount 时就注册了 touchend，这里后注册 → 回调在 finish() 之后跑，正好标记边界。
+    el.addEventListener('touchend', () => { window.__tsMark = window.__ts.length }, { passive: true, once: true })
+    if (!window.__tsLoop) {
+      window.__tsLoop = true
+      const loop = () => {
+        if (window.__recTs) window.__ts.push([performance.now(), el.scrollTop])
+        requestAnimationFrame(loop)
+      }
+      requestAnimationFrame(loop)
+    }
+  })
+  await swipe(4, 40, 30) // 中速：速度反推 ~390ms，而固定时长版只给 150+3×26 = 228ms，差异足够大
+  await send('touchEnd', cy + 160)
+  await page.waitForTimeout(900)
+  const tsE = await page.evaluate(() => {
+    window.__recTs = false
+    return { list: window.__ts, mark: window.__tsMark }
+  })
+  const from = tsE.mark > 1 ? tsE.mark : 1
+  const dragPts = tsE.list.slice(0, from)
+  /* 复刻组件的速度估算（velocityFromSamples：90ms 窗口、用最后两帧兜底）。
+     拖动是 1:1 跟手，所以 top 的变化就等价于 clientY 的变化（方向相反取正）。 */
+  const dragV = (() => {
+    if (dragPts.length < 2) return 0
+    const last = dragPts[dragPts.length - 1]
+    let first = dragPts[dragPts.length - 2]
+    for (let i = dragPts.length - 2; i >= 0; i--) {
+      if (last[0] - dragPts[i][0] <= 90) first = dragPts[i]
+      else break
+    }
+    const dt = last[0] - first[0]
+    return dt > 0 ? (delta(first[1], last[1]) / dt) * 1000 : 0
+  })()
+  const eSteps = Math.min(MAX_FLING, Math.max(1, Math.round(Math.abs(dragV) / 320)))
+  const eDist = eSteps * ROW
+  const eExpectMs = Math.min(0.5, Math.max(0.18, (eDist * 3) / Math.abs(dragV || 1))) * 1000
+  // 实测动画时长：从 touchend 那帧到「最后一个还在动的帧」
+  let lastMoveT = tsE.list[from] ? tsE.list[from][0] : 0
+  for (let i = from + 1; i < tsE.list.length; i++) {
+    if (Math.abs(delta(tsE.list[i - 1][1], tsE.list[i][1])) >= 0.5) lastMoveT = tsE.list[i][0]
+  }
+  const eMeasMs = lastMoveT - (tsE.list[from - 1] ? tsE.list[from - 1][0] : lastMoveT)
+  const eErr = eExpectMs ? Math.abs(eMeasMs - eExpectMs) / eExpectMs : 1
+  console.log(
+    `   拖动末速 ${Math.round(dragV)}px/s → 滑 ${eSteps} 格(${eDist}px) → 速度反推时长 ${Math.round(eExpectMs)}ms，实测 ${Math.round(eMeasMs)}ms`
+  )
+  t(
+    'E1 动画时长 = 位移×3÷松手速度（±30%；固定时长版在中速档会短 40% 以上）',
+    eErr <= 0.3,
+    `实测 ${Math.round(eMeasMs)}ms vs 反推 ${Math.round(eExpectMs)}ms → 偏差 ${(eErr * 100).toFixed(0)}%`,
+  )
+
   await ctx.close()
 } catch (e) {
   console.log('ERROR:', e.message)

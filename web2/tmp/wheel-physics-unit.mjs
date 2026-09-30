@@ -1,6 +1,6 @@
 /* wheelPhysics 纯函数单测（node 直接跑，不起浏览器）
    跑法：node tmp/wheel-physics-unit.mjs */
-import { flingSteps, velocityFromSamples, normalizeTop, easeOutCubic } from '../src/data/wheelPhysics.js'
+import { flingSteps, flingDuration, velocityFromSamples, normalizeTop, easeOutCubic } from '../src/data/wheelPhysics.js'
 
 const results = []
 function t(name, cond, extra) {
@@ -64,6 +64,33 @@ t('ease(0)=0', easeOutCubic(0) === 0)
 t('ease(1)=1', easeOutCubic(1) === 1)
 t('单调递增', [0, 0.15, 0.3, 0.5, 0.75, 0.9, 1].every((p, i, a) => i === 0 || easeOutCubic(p) > easeOutCubic(a[i - 1])))
 t('前段快于线性（先快后慢）', easeOutCubic(0.3) > 0.3)
+
+console.log('\n=== flingDuration：时长由松手速度反推（松手处速度连续 = 丝滑）===')
+/* 核心性质：easeOutCubic 的首帧速度增益恒为 3，所以 duration × v ÷ dist 必须恒等于 3。
+   含义 = 「动画刚开始那一下的速度」恰好等于手指松开那一刻的速度；
+   修前用固定时长（150 + 格数×26ms），快甩时这个比值能到 5+ → 松手内容窜一下再急停（顿挫）。 */
+const gainOf = (dist, v) => (flingDuration(dist, v) * v) / dist
+t('v=1000 / 3格(120px) → 首帧速度增益 3', Math.abs(gainOf(120, 1000) - 3) <= 1e-9, String(gainOf(120, 1000)))
+t('v=2000 / 6格(240px) → 增益 3', Math.abs(gainOf(240, 2000) - 3) <= 1e-9, String(gainOf(240, 2000)))
+t('v=800 / 2格(80px) → 增益 3', Math.abs(gainOf(80, 800) - 3) <= 1e-9, String(gainOf(80, 800)))
+t('反方向与正方向时长相同', Math.abs(flingDuration(-120, -1000) - flingDuration(120, 1000)) <= 1e-12)
+t('同样位移下，速度越快时长越短', flingDuration(160, 3000) < flingDuration(160, 1000))
+t('时长下限 0.18s（极快甩动不闪一下到位）', flingDuration(320, 20000) === 0.18, String(flingDuration(320, 20000)))
+t('时长上限 0.5s（很慢的甩动不磨蹭）', flingDuration(40, 200) === 0.5, String(flingDuration(40, 200)))
+t('v=0 → 取下限（不拖时间）', flingDuration(200, 0) === 0.18)
+t('dist=0 → 取下限', flingDuration(0, 1000) === 0.18)
+t(
+  '扫描 v∈[0,12000] × dist∈{40,80,160,320}：时长恒在 [0.18, 0.5]',
+  (() => {
+    for (let v = 0; v <= 12000; v += 50) {
+      for (const d of [40, 80, 160, 320]) {
+        const T = flingDuration(d, v)
+        if (!(T >= 0.18 - 1e-9 && T <= 0.5 + 1e-9)) return false
+      }
+    }
+    return true
+  })()
+)
 
 console.log('\n=== 老版本对照：为什么慢滑会拖沓 ===')
 // 老版本跟手度实测 0.56：手指 72px 只挪 40px（吸附在拖动中回吸）
