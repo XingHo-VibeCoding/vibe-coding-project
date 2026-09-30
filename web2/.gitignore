@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.vite/
+tmp/online-check.*
+# 截图是过程产物，不进仓库（Day 15 起生效，历史截图不追溯）
+tmp/*.png

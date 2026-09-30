@@ -1,0 +1,23 @@
+{
+  "name": "schedule-web2",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@kungal/ui-core": "^2.47.0",
+    "@kungal/ui-tokens": "^2.47.0",
+    "@kungal/ui-vue": "^2.47.0",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.1"
+  }
+}

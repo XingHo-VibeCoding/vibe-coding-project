@@ -1,0 +1,952 @@
+// web2 数据层：示例数据（mock）或主项目导出 JSON（app:'sched'），单一出口。
+// 字段口径完全对齐主项目 store.js / Rules.js：
+//   课程: type 'course' + weekday(1-7) + start_time(HH:mm) + duration(分钟) + week_rule(every/odd/even)
+//   独立日程: type 'event' + date(YYYY-MM-DD)
+//   待办: title + due_date(YYYY-MM-DD) + done
+//   学期: name + first_monday + total_weeks，当前周次 = floor(距 first_monday 天数/7)+1
+import { semester as mockSemester, weekCourses as mockWeekCourses, todos as mockTodos } from './mock.js'
+
+export const DATA_KEY = 'web2.data'
+/* 用户在 web2 里手动加的课程（叠加在 mock / 导入数据之上，不影响主项目） */
+export const ADDED_KEY = 'web2.added'
+
+function loadAdded() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(ADDED_KEY) || '[]')
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+/* 加一门课：补 id 和 added 标记后落盘 */
+export function addCourse(c) {
+  const arr = loadAdded()
+  arr.push({ ...c, id: 'a' + Date.now(), type: 'course', added: true })
+  localStorage.setItem(ADDED_KEY, JSON.stringify(arr))
+}
+
+/* 删一门手动加的课（只能删自己加的，mock / 导入数据不受影响） */
+export function removeCourse(id) {
+  localStorage.setItem(ADDED_KEY, JSON.stringify(loadAdded().filter((c) => c.id !== id)))
+}
+
+/* 编辑一门手动加的课：合并字段，保留原 id */
+export function updateCourse(id, patch) {
+  const arr = loadAdded()
+  const i = arr.findIndex((x) => x.id === id)
+  if (i === -1) return
+  arr[i] = { ...arr[i], ...patch }
+  localStorage.setItem(ADDED_KEY, JSON.stringify(arr))
+}
+
+function pad(n) {
+  return String(n).padStart(2, '0')
+}
+function dateStr(d) {
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+}
+export function minOf(t) {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+function fmtMin(min) {
+  return pad(Math.floor(min / 60)) + ':' + pad(min % 60)
+}
+
+/* 周次规则（移植自主项目 Rules.matchWeek） */
+export function matchWeek(c, weekNo) {
+  if (!(weekNo > 0)) return false
+  const r = c.week_rule || 'every'
+  if (r === 'every') return true
+  if (r === 'odd') return weekNo % 2 === 1
+  if (r === 'even') return weekNo % 2 === 0
+  return false
+}
+
+/* 当前周次（移植自主项目 Rules.currentWeekNo） */
+export function currentWeekNo(firstMonday, today = new Date()) {
+  const start = new Date(firstMonday + 'T00:00:00')
+  const target = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const diffDays = Math.round((target - start) / 86400000)
+  if (diffDays < 0) return 0 // 还没开学
+  return Math.floor(diffDays / 7) + 1
+}
+
+/* 待办截止显示：今天 / 明天 / M.D */
+function dueLabel(ds) {
+  const d = new Date(ds + 'T00:00:00')
+  const today0 = new Date()
+  const diff = Math.round((d - new Date(today0.getFullYear(), today0.getMonth(), today0.getDate())) / 86400000)
+  if (diff === 0) return '今天'
+  if (diff === 1) return '明天'
+  if (diff < 0) return '已过期'
+  return (d.getMonth() + 1) + '.' + d.getDate()
+}
+
+/* ---------- 示例数据 ---------- */
+function buildMock() {
+  return {
+    source: 'mock',
+    semester: {
+      name: mockSemester.name,
+      totalWeeks: mockSemester.totalWeeks,
+      firstMonday: null,
+      week: mockSemester.week,
+    },
+    courses: applyCourseOverlay([...mockWeekCourses.map((c) => ({
+      ...c,
+      type: 'course',
+      week_rule: 'every',
+      place: [c.location, c.teacher].filter(Boolean).join(' · '),
+    })), ...loadAdded()]),
+    events: allEvents([]),
+    todos: applyTodoOverlay(mockTodos),
+  }
+}
+
+/* ---------- 主项目导出 JSON → web2 结构 ---------- */
+function buildFromExport(data) {
+  if (!data || data.app !== 'sched') throw new Error('不是主项目导出的文件（缺少 app:"sched" 标识）。')
+  const sem = data.semester
+  if (!sem || !sem.first_monday || !(Number(sem.total_weeks) >= 1)) {
+    throw new Error('文件里缺少学期信息（first_monday / total_weeks）。')
+  }
+  const schedules = Array.isArray(data.schedules) ? data.schedules : []
+
+  const courses = schedules
+    .filter((s) => s && s.type === 'course' && (!s.semester_id || s.semester_id === sem.id))
+    .map((s) => ({
+      id: s.id,
+      type: 'course',
+      weekday: Number(s.weekday),
+      name: s.title,
+      place: String(s.location || '').trim(),
+      tag: { every: '每周', odd: '单周', even: '双周' }[s.week_rule] || '',
+      start: s.start_time,
+      end: fmtMin(minOf(s.start_time) + Number(s.duration)),
+      week_rule: s.week_rule,
+    }))
+
+  const events = schedules
+    .filter((s) => s && s.type === 'event')
+    .map((s) => ({
+      id: s.id,
+      type: 'event',
+      weekday: null,
+      name: s.title,
+      place: String(s.location || '').trim(),
+      tag: '日程',
+      date: s.date,
+      start: s.start_time,
+      end: fmtMin(minOf(s.start_time) + Number(s.duration)),
+    }))
+
+  const todos = (Array.isArray(data.todos) ? data.todos : []).map((t) => ({
+    id: t.id,
+    title: t.title,
+    done: !!t.done,
+    due: dueLabel(t.due_date),
+    due_date: t.due_date,
+  }))
+
+  return {
+    source: 'import',
+    semester: {
+      name: sem.name,
+      totalWeeks: Number(sem.total_weeks),
+      firstMonday: sem.first_monday,
+      week: currentWeekNo(sem.first_monday),
+      periods: Array.isArray(sem.periods) ? sem.periods : [],
+    },
+    courses: [...courses, ...loadAdded()],
+    events: allEvents(events),
+    todos,
+  }
+}
+
+/* ---------- 对外 API ---------- */
+export function loadDataset() {
+  try {
+    const raw = localStorage.getItem(DATA_KEY)
+    if (raw) return buildFromExport(JSON.parse(raw))
+  } catch (e) {
+    console.warn('已存数据解析失败，回落示例数据：', e)
+  }
+  return buildMock()
+}
+
+/* 解析导入文本；成功则落盘并返回数据集，失败抛错（消息可直接显示）。
+   落盘存「原始导出文本」——loadDataset 会再走一次 buildFromExport，存转换后结构会二次解析失败 */
+export function importFromText(text) {
+  const doc = JSON.parse(text) // JSON 语法错也会抛，统一 catch
+  const data = buildFromExport(doc)
+  localStorage.setItem(DATA_KEY, String(text))
+  seedLecturesFromDoc(doc)
+  seedHabitsFromDoc(doc)
+  return data
+}
+
+export function clearImport() {
+  localStorage.removeItem(DATA_KEY)
+  return buildMock()
+}
+
+/* ---------- 待办增删改（增删改按源分支：导入态改原始导出文本，示例态用覆盖层） ---------- */
+export const TODOS_KEY = 'web2.todos'
+/* 覆盖层结构：{ added: 主项目形状的待办数组, edited: {id: {title?,done?,due_date?}}, deleted: [id] } */
+function loadTodoOverlay() {
+  try {
+    const ov = JSON.parse(localStorage.getItem(TODOS_KEY) || '')
+    return {
+      added: Array.isArray(ov.added) ? ov.added : [],
+      edited: ov.edited && typeof ov.edited === 'object' ? ov.edited : {},
+      deleted: Array.isArray(ov.deleted) ? ov.deleted : [],
+    }
+  } catch {
+    return { added: [], edited: {}, deleted: [] }
+  }
+}
+function saveTodoOverlay(ov) {
+  localStorage.setItem(TODOS_KEY, JSON.stringify(ov))
+}
+
+/* 生成一条符合主项目 normalizeTodo 形状的待办（保证回写文件能过 importAll） */
+function fullTodo(title, due_date) {
+  return {
+    id: 'todo_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    title: String(title).trim(),
+    note: '',
+    due_date: String(due_date),
+    done: false,
+    done_at: null,
+    source: 'manual',
+    created_at: new Date().toISOString(),
+  }
+}
+
+/* 改写导入文本里的待办数组；id 用 String 比较以兼容 mock 的数字 id */
+function mutateImportedTodos(fn) {
+  const raw = localStorage.getItem(DATA_KEY)
+  if (!raw) return false
+  try {
+    const data = JSON.parse(raw)
+    if (!data || data.app !== 'sched' || !Array.isArray(data.todos)) return false
+    fn(data.todos)
+    localStorage.setItem(DATA_KEY, JSON.stringify(data))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* 新增待办（title / due_date(YYYY-MM-DD) 必填，口径同主项目 validateTodo） */
+export function addTodo(input) {
+  const full = fullTodo(input.title, input.due_date)
+  if (localStorage.getItem(DATA_KEY)) {
+    mutateImportedTodos((arr) => arr.push(full))
+  } else {
+    const ov = loadTodoOverlay()
+    ov.added.push(full)
+    saveTodoOverlay(ov)
+  }
+  return full
+}
+
+/* 修改待办：patch = { title?, done?, due_date? }（mock 待办没有 due_date 时补一个） */
+export function patchTodo(id, patch) {
+  const clean = {}
+  if (patch.title !== undefined) clean.title = String(patch.title).trim()
+  if (patch.due_date !== undefined) clean.due_date = String(patch.due_date)
+  if (patch.done !== undefined) {
+    clean.done = !!patch.done
+    clean.done_at = clean.done ? new Date().toISOString() : null
+  }
+  if (localStorage.getItem(DATA_KEY)) {
+    mutateImportedTodos((arr) => {
+      const t = arr.find((x) => x && String(x.id) === String(id))
+      if (t) Object.assign(t, clean)
+    })
+  } else {
+    const ov = loadTodoOverlay()
+    ov.edited[id] = { ...(ov.edited[id] || {}), ...clean }
+    saveTodoOverlay(ov)
+  }
+}
+
+/* 删除待办 */
+export function removeTodoById(id) {
+  if (localStorage.getItem(DATA_KEY)) {
+    mutateImportedTodos((arr) => {
+      const i = arr.findIndex((x) => x && String(x.id) === String(id))
+      if (i !== -1) arr.splice(i, 1)
+    })
+  } else {
+    const ov = loadTodoOverlay()
+    ov.deleted.push(String(id))
+    saveTodoOverlay(ov)
+  }
+}
+
+/* 示例待办 + 用户覆盖层 → 今日视图用的轻量形状 {id,title,done,due,due_date?} */
+function applyTodoOverlay(base) {
+  const ov = loadTodoOverlay()
+  const del = new Set(ov.deleted.map(String))
+  const arr = base
+    .filter((t) => !del.has(String(t.id)))
+    .map((t) => {
+      const p = ov.edited[t.id]
+      if (!p) return { ...t }
+      const out = { ...t, title: p.title !== undefined ? p.title : t.title, done: p.done !== undefined ? p.done : t.done }
+      if (p.due_date !== undefined) {
+        out.due_date = p.due_date // 原始值也要带回，编辑表单才能回填（只更新 due 显示会让日期栏永远为空）
+        out.due = dueLabel(p.due_date)
+      }
+      return out
+    })
+  for (const t of ov.added) {
+    if (del.has(String(t.id))) continue // 新增的也可能被删
+    const p = ov.edited[t.id] || {} // 新增的也可能再被编辑，patch 要合并进去
+    const m = { ...t, ...p }
+    arr.push({ id: m.id, title: m.title, done: m.done, due: dueLabel(m.due_date), due_date: m.due_date })
+  }
+  return arr
+}
+
+/* ---------- 非自加课程的编辑/删除（双源分支，口径同待办） ----------
+   导入态：直接改落盘的原始导出文本 schedules（编辑/删除会随回写文件带回主项目）
+   示例态：mock 课程用覆盖层（ADDED_KEY 里的自加课本来就能直接改，不走这里） */
+export const COURSE_OV_KEY = 'web2.courseOv'
+
+function loadCourseOverlay() {
+  try {
+    const ov = JSON.parse(localStorage.getItem(COURSE_OV_KEY) || '')
+    return {
+      edited: ov.edited && typeof ov.edited === 'object' ? ov.edited : {},
+      deleted: Array.isArray(ov.deleted) ? ov.deleted : [],
+    }
+  } catch {
+    return { edited: {}, deleted: [] }
+  }
+}
+function saveCourseOverlay(ov) {
+  localStorage.setItem(COURSE_OV_KEY, JSON.stringify(ov))
+}
+
+/* 示例课表 + 用户覆盖层（edited 存显示形状补丁，deleted 按 String(id) 记） */
+function applyCourseOverlay(courses) {
+  const ov = loadCourseOverlay()
+  const del = new Set(ov.deleted.map(String))
+  return courses
+    .filter((c) => !del.has(String(c.id)))
+    .map((c) => (ov.edited[c.id] ? { ...c, ...ov.edited[c.id] } : c))
+}
+
+/* 修改非自加课程（导入态）。patch 为显示形状 {weekday?,name?,place?,start?,end?,week_rule?}，
+   翻译回原始字段 title/start_time/duration/location/weekday/week_rule；其余字段原样保留 */
+export function updateImportedCourse(id, patch) {
+  const raw = localStorage.getItem(DATA_KEY)
+  if (!raw) return false
+  try {
+    const data = JSON.parse(raw)
+    if (!data || data.app !== 'sched' || !Array.isArray(data.schedules)) return false
+    const s = data.schedules.find((x) => x && String(x.id) === String(id))
+    if (!s) return false
+    if (patch.weekday !== undefined) s.weekday = Number(patch.weekday)
+    if (patch.name !== undefined) s.title = String(patch.name).trim()
+    if (patch.place !== undefined) s.location = String(patch.place).trim()
+    if (patch.start !== undefined) s.start_time = String(patch.start)
+    if (patch.end !== undefined) s.duration = Math.max(5, minOf(String(patch.end)) - minOf(s.start_time))
+    if (patch.week_rule !== undefined) s.week_rule = String(patch.week_rule)
+    s.manual_edited = true
+    s.updated_at = new Date().toISOString()
+    localStorage.setItem(DATA_KEY, JSON.stringify(data))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* 删除非自加课程（导入态） */
+export function removeImportedCourse(id) {
+  const raw = localStorage.getItem(DATA_KEY)
+  if (!raw) return false
+  try {
+    const data = JSON.parse(raw)
+    if (!data || data.app !== 'sched' || !Array.isArray(data.schedules)) return false
+    const i = data.schedules.findIndex((x) => x && String(x.id) === String(id))
+    if (i === -1) return false
+    data.schedules.splice(i, 1)
+    localStorage.setItem(DATA_KEY, JSON.stringify(data))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* 修改/删除非自加课程（示例态，mock 课程覆盖层） */
+export function patchMockCourse(id, patch) {
+  const ov = loadCourseOverlay()
+  ov.edited[id] = { ...(ov.edited[id] || {}), ...patch }
+  saveCourseOverlay(ov)
+}
+export function removeMockCourse(id) {
+  const ov = loadCourseOverlay()
+  ov.deleted.push(String(id))
+  saveCourseOverlay(ov)
+}
+
+/* ---------- 冲突检测（移植主项目 Rules.findConflicts，PRD F4：提示但不强制阻止） ----------
+   显示形状入参：target/list 元素 = { id?, type:'course', weekday, start, end, week_rule } */
+export function weekRulesIntersect(a, b) {
+  if (!a || a === 'every' || !b || b === 'every') return true
+  return a === b
+}
+export function findConflicts(target, list) {
+  const out = []
+  if (!target || !Array.isArray(list)) return out
+  const tS = minOf(target.start)
+  const tE = minOf(target.end)
+  if (tS < 0) return out
+  for (const o of list) {
+    if (!o || o.type !== 'course') continue
+    if (target.id != null && String(o.id) === String(target.id)) continue // 编辑自己不算
+    if (Number(o.weekday) !== Number(target.weekday)) continue // 不同天
+    if (!weekRulesIntersect(target.week_rule, o.week_rule)) continue // 单双周错开
+    const oS = minOf(o.start)
+    const oE = minOf(o.end)
+    if (tS < oE && oS < tE) out.push(o) // 区间重叠
+  }
+  return out
+}
+
+/* ---------- 独立日程（event）添加：双源分支，口径同待办 ---------- */
+export const EVENTS_KEY = 'web2.events'
+function loadEventOverlay() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(EVENTS_KEY) || '')
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+/* 生成一条符合主项目 normalizeSchedule 形状的 event（保证回写文件能过 importAll） */
+function fullEvent(input) {
+  const now = new Date().toISOString()
+  return {
+    id: 'evt_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    type: 'event',
+    title: String(input.title).trim(),
+    note: '',
+    location: String(input.location || '').trim(),
+    weekday: null,
+    start_time: String(input.start_time),
+    duration: Number(input.duration),
+    week_rule: null,
+    date: String(input.date),
+    color: '',
+    semester_id: null,
+    manual_edited: true,
+    created_at: now,
+    updated_at: now,
+  }
+}
+/* 主项目 event 原始形状 → web2 显示形状 */
+function evDisplay(e) {
+  return {
+    id: e.id,
+    type: 'event',
+    name: e.title,
+    place: String(e.location || '').trim(),
+    tag: '日程',
+    date: e.date,
+    start: e.start_time,
+    end: fmtMin(minOf(e.start_time) + Number(e.duration)),
+  }
+}
+function allEvents(rawEvents) {
+  return [...(rawEvents || []), ...loadEventOverlay().map(evDisplay)]
+}
+
+/* 新增独立日程（title / date / start_time / duration 必填，口径同主项目 validateSchedule） */
+export function addEvent(input) {
+  const full = fullEvent(input)
+  if (localStorage.getItem(DATA_KEY)) {
+    const raw = localStorage.getItem(DATA_KEY)
+    const data = JSON.parse(raw)
+    if (!data || data.app !== 'sched' || !Array.isArray(data.schedules)) {
+      throw new Error('导入数据异常，无法添加日程。')
+    }
+    data.schedules.push(full)
+    localStorage.setItem(DATA_KEY, JSON.stringify(data))
+  } else {
+    const arr = loadEventOverlay()
+    arr.push(full)
+    localStorage.setItem(EVENTS_KEY, JSON.stringify(arr))
+  }
+  return full
+}
+
+/* ---------- 待办勾选回写主项目格式 ----------
+   DATA_KEY 里存的是主项目原始导出文本，勾选待办 = 在原文上改 done 再存回。
+   好处：导出文件永远是「主项目原格式 + 最新勾选状态」，导回主项目即可闭环。 */
+
+/* 同步一条待办的完成状态进落盘的导出文本；返回是否成功（id 不存在/无导入态 = false）
+   （现由 patchTodo 承担，此函数已删——导出统一走 exportImportedText） */
+
+/* 取当前导入的原始文本（主项目格式，含最新勾选状态）；无导入态返回 null。
+   导出时把 lectures 合并进去（见下方 lectures 一节）——主项目 importAll 只读
+   已知字段，多余字段会被安全忽略，schema_version 不变不触发版本拒收。 */
+export function exportImportedText() {
+  const raw = localStorage.getItem(DATA_KEY)
+  if (!raw) return null
+  let doc
+  try {
+    doc = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  doc.lectures = loadLectures()
+  doc.habits = loadHabits()
+  return JSON.stringify(doc, null, 2)
+}
+
+/* ---------- 课堂录音场次（二期 M2 新增）----------
+   口径：主项目「大学生日程助手-设计方案.md」lectures 表——课堂录音场次，
+   状态机 recording（录音中）→ transcribing（转写中）→ summarized（已总结）。
+   存储：独立键 web2.lectures 作为单一活源（录音是设备本地的生命记录，
+   不挂进课程备份的「改写回写文本」链）；导出时由 exportImportedText 合并进
+   JSON 的 lectures 字段随文件走，主项目 importAll 读到会安全忽略（已实证）。
+   schema_version 不升：新增独立字段不影响旧数据读写（口径同主项目 §9.3）。 */
+export const LECTURES_KEY = 'web2.lectures'
+/* 状态机只许前进：recording（录音中/已录完待转写）→ transcribing（转写进行中）
+   → transcribed（文字稿就绪，M4 的 LLM 总结从这态起步）→ summarized（已总结）。
+   transcribed 是 M3 新增的中间态：转写完成 ≠ 已总结，混用会丢「待总结」信息。 */
+const LECTURE_STATUS = ['recording', 'transcribing', 'transcribed', 'summarized']
+
+/* 单条场次整形：字段白名单 + 类型收敛，坏数据直接剔除，绝不抛错 */
+function sanitizeLecture(l) {
+  if (!l || typeof l !== 'object') return null
+  const status = LECTURE_STATUS.indexOf(l.status) !== -1 ? l.status : null
+  if (!status) return null
+  const out = {
+    id: String(l.id || ''),
+    schedule_id: l.schedule_id == null ? null : String(l.schedule_id),
+    title: String(l.title || '').trim() || '未命名录音',
+    status,
+    started_at: String(l.started_at || ''),
+    ended_at: l.ended_at == null ? null : String(l.ended_at),
+    duration_ms: Number(l.duration_ms) >= 0 ? Math.floor(Number(l.duration_ms)) : 0,
+    clip_count: Number(l.clip_count) >= 0 ? Math.floor(Number(l.clip_count)) : 0,
+    clips: Array.isArray(l.clips)
+      ? l.clips
+          .map((c) => ({
+            index: Number(c && c.index) >= 0 ? Math.floor(Number(c.index)) : 0,
+            path: c && c.path != null ? String(c.path) : null, // App 平台：文件路径
+            mime: c && c.mime ? String(c.mime) : '',
+            duration_ms: c && Number(c.duration_ms) >= 0 ? Math.floor(Number(c.duration_ms)) : 0,
+            recorded_at: c && c.recorded_at ? String(c.recorded_at) : '',
+          }))
+          .sort((a, b) => a.index - b.index)
+      : [],
+    created_at: String(l.created_at || ''),
+    updated_at: String(l.updated_at || ''),
+    transcript: l.transcript == null ? null : String(l.transcript), // M3：本地转写文字稿
+    summary: l.summary == null ? null : sanitizeSummary(l.summary), // M4：LLM 课堂纪要
+  }
+  if (!out.id || !out.started_at) return null
+  return out
+}
+
+/* 课堂纪要整形（M4）：LLM 返回的 JSON 过白名单，坏字段剔除，绝不抛错。
+   口径：overview 一句话总览；key_points 要点；terms 概念术语；homework 作业/待办；
+   questions 存疑点（转写可能有错，LLM 不确定的放这，不硬编）。 */
+function sanitizeSummary(s) {
+  if (!s || typeof s !== 'object') return null
+  const arr = (v) => (Array.isArray(v) ? v.map((x) => String(x || '').trim()).filter(Boolean) : [])
+  const terms = Array.isArray(s.terms)
+    ? s.terms
+        .map((t) => (t && typeof t === 'object' ? { term: String(t.term || '').trim(), note: String(t.note || '').trim() } : null))
+        .filter((t) => t && t.term)
+    : []
+  return {
+    overview: String(s.overview || '').trim(),
+    key_points: arr(s.key_points),
+    terms,
+    homework: arr(s.homework),
+    questions: arr(s.questions),
+    created_at: String(s.created_at || ''),
+  }
+}
+
+/* 写入课堂纪要（M4）：只有 transcribed / summarized 状态可写（没转写完没有原料）；
+   写入后状态推进到 summarized（不可逆站，见 updateLecture 状态机注释）。
+   返回 { ok:true, lecture } 或 { ok:false, error }。 */
+export function setLectureSummary(id, summary) {
+  const list = loadLectures()
+  const lec = list.find((x) => String(x.id) === String(id))
+  if (!lec) return { ok: false, error: '录音场次不存在。' }
+  if (lec.status !== 'transcribed' && lec.status !== 'summarized') {
+    return { ok: false, error: '要先完成转写才能生成纪要。' }
+  }
+  const clean = sanitizeSummary(summary)
+  if (!clean || !clean.overview) return { ok: false, error: '纪要内容无效（缺总览）。' }
+  lec.summary = clean
+  lec.status = 'summarized'
+  lec.updated_at = new Date().toISOString()
+  saveLectures(list)
+  return { ok: true, lecture: lec }
+}
+
+export function loadLectures() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(LECTURES_KEY) || '')
+    if (!Array.isArray(arr)) return []
+    return arr.map(sanitizeLecture).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+function saveLectures(list) {
+  localStorage.setItem(LECTURES_KEY, JSON.stringify(list))
+}
+
+/* 导入种子：文件里带 lectures 数组才整体接管（显式迁移，语义同 schedules/todos
+   的整体替换）；文件不带（旧备份/主项目当前版本导出）绝不动本地记录——
+   导入旧备份不该删掉手机上已有的录音场次。 */
+function seedLecturesFromDoc(doc) {
+  if (doc && Array.isArray(doc.lectures)) {
+    saveLectures(doc.lectures.map(sanitizeLecture).filter(Boolean))
+  }
+}
+
+function newLectureId() {
+  return 'lec_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+}
+
+/* 新开一场录音：status 固定 recording，started_at 即此刻 */
+export function addLecture(input = {}) {
+  const now = new Date().toISOString()
+  const lec = sanitizeLecture({
+    id: newLectureId(),
+    schedule_id: input.schedule_id != null ? input.schedule_id : null,
+    title: input.title,
+    status: 'recording',
+    started_at: now,
+    ended_at: null,
+    duration_ms: 0,
+    clip_count: 0,
+    clips: [],
+    created_at: now,
+    updated_at: now,
+  })
+  const list = loadLectures()
+  list.push(lec)
+  saveLectures(list)
+  return lec
+}
+
+/* 更新场次：返回 { ok:true, lecture } 或 { ok:false, error }。
+   状态机只许沿 recording → transcribing → transcribed → summarized 前进，不许倒退。 */
+export function updateLecture(id, patch) {
+  const list = loadLectures()
+  const lec = list.find((x) => String(x.id) === String(id))
+  if (!lec) return { ok: false, error: '录音场次不存在。' }
+  const clean = {}
+  if (patch.title !== undefined) {
+    clean.title = String(patch.title).trim()
+    if (!clean.title) return { ok: false, error: '标题不能为空。' }
+  }
+  if (patch.schedule_id !== undefined) clean.schedule_id = patch.schedule_id == null ? null : String(patch.schedule_id)
+  if (patch.status !== undefined) {
+    const from = LECTURE_STATUS.indexOf(lec.status)
+    const to = LECTURE_STATUS.indexOf(patch.status)
+    if (to === -1) return { ok: false, error: '未知的录音状态。' }
+    // 唯一允许的回退：transcribing → recording（转写失败回「待转写」可重试，
+    // 语义成立因为 recording 覆盖「录音中/已录完」两态，ended_at 决定显示）。
+    // transcribed / summarized 不可逆——总结成果不许被悄悄作废。
+    const rollbackOk = lec.status === 'transcribing' && patch.status === 'recording'
+    if (to < from && !rollbackOk) return { ok: false, error: '录音状态不许倒退（' + lec.status + ' → ' + patch.status + '）。' }
+    clean.status = patch.status
+  }
+  if (patch.ended_at !== undefined) clean.ended_at = patch.ended_at == null ? null : String(patch.ended_at)
+  if (patch.transcript !== undefined) clean.transcript = patch.transcript == null ? null : String(patch.transcript)
+  if (patch.duration_ms !== undefined) clean.duration_ms = Math.max(0, Math.floor(Number(patch.duration_ms) || 0))
+  if (patch.clips !== undefined) {
+    if (!Array.isArray(patch.clips)) return { ok: false, error: 'clips 必须是数组。' }
+    const clips = patch.clips
+      .map((c) => ({ index: Math.floor(Number(c && c.index) || 0), path: c && c.path != null ? String(c.path) : null, mime: c && c.mime ? String(c.mime) : '', duration_ms: Math.floor(Number(c && c.duration_ms) || 0), recorded_at: c && c.recorded_at ? String(c.recorded_at) : '' }))
+      .sort((a, b) => a.index - b.index)
+    clean.clips = clips
+    clean.clip_count = clips.length
+  }
+  Object.assign(lec, clean, { updated_at: new Date().toISOString() })
+  saveLectures(list)
+  return { ok: true, lecture: lec }
+}
+
+export function removeLecture(id) {
+  const list = loadLectures()
+  const i = list.findIndex((x) => String(x.id) === String(id))
+  if (i === -1) return false
+  list.splice(i, 1)
+  saveLectures(list)
+  return true
+}
+
+/* ---------- 每日打卡习惯（五期第 3 期 MVP）----------
+   口径：习惯 = { id, name, created_at, records: {"YYYY-MM-DD": true} }。
+   records 按日期稀疏记录（只存打过的卡），天然支持连续天数/周热力统计；
+   值恒为 true——「没打卡」= 键不存在，不做 false 存量（取消 = 删键）。
+   存储：独立键 web2.habits 作为单一活源（同 lectures 理由：打卡是设备本地
+   的生命记录）；导出时合并进 JSON 的 habits 字段随文件走，主项目 importAll
+   读到未知字段安全忽略。schema_version 不升（口径同 lectures）。 */
+export const HABITS_KEY = 'web2.habits'
+
+/* 单条习惯整形：name 必须非空，records 只收「YYYY-MM-DD」形键，坏数据剔除 */
+function sanitizeHabit(h) {
+  if (!h || typeof h !== 'object') return null
+  const name = String(h.name || '').trim()
+  if (!name) return null
+  const records = {}
+  if (h.records && typeof h.records === 'object') {
+    for (const k of Object.keys(h.records)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && h.records[k]) records[k] = true
+    }
+  }
+  return {
+    id: String(h.id || ''),
+    name,
+    records,
+    created_at: String(h.created_at || ''),
+  }
+}
+
+export function loadHabits() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(HABITS_KEY) || '')
+    if (!Array.isArray(arr)) return []
+    return arr.map(sanitizeHabit).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+function saveHabits(list) {
+  localStorage.setItem(HABITS_KEY, JSON.stringify(list))
+}
+
+/* 导入种子：文件带 habits 数组才整体接管（显式迁移）；不带绝不动本地——
+   导入旧备份不该删掉已有的打卡记录（语义同 seedLecturesFromDoc） */
+function seedHabitsFromDoc(doc) {
+  if (doc && Array.isArray(doc.habits)) {
+    saveHabits(doc.habits.map(sanitizeHabit).filter(Boolean))
+  }
+}
+
+function newHabitId() {
+  return 'hab_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+}
+
+export function addHabit(name) {
+  const now = new Date().toISOString()
+  const habit = sanitizeHabit({ id: newHabitId(), name, records: {}, created_at: now })
+  const list = loadHabits()
+  list.push(habit)
+  saveHabits(list)
+  return habit
+}
+
+export function removeHabit(id) {
+  const list = loadHabits()
+  const i = list.findIndex((x) => x.id === id)
+  if (i === -1) return false
+  list.splice(i, 1)
+  saveHabits(list)
+  return true
+}
+
+/* 打卡/取消：今天（dateKey 形如 2026-09-27，默认今天）已打卡则删键取消，否则置 true。
+   返回该习惯打卡后的最新状态（true=已打）。 */
+export function toggleHabitRecord(id, dateKey) {
+  const key = dateKey || todayKeyOf()
+  const list = loadHabits()
+  const h = list.find((x) => x.id === id)
+  if (!h) return null
+  let done
+  if (h.records[key]) {
+    delete h.records[key]
+    done = false
+  } else {
+    h.records[key] = true
+    done = true
+  }
+  saveHabits(list)
+  return done
+}
+
+/* 本地日期键（不用 toISOString：那是 UTC，晚上 8 点后会把「今天」算成明天） */
+export function todayKeyOf(now) {
+  const d = now || new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+}
+
+/* 连续打卡天数（含今天或昨天起算：今天还没打时，从昨天往回数不断链） */
+export function streakOf(habit, todayKey) {
+  const today = todayKey || todayKeyOf()
+  let cursor = new Date(today + 'T00:00:00')
+  const day = (d) => todayKeyOf(d)
+  if (!habit.records[day(cursor)]) {
+    cursor.setDate(cursor.getDate() - 1)
+    if (!habit.records[day(cursor)]) return 0
+  }
+  let n = 0
+  while (habit.records[day(cursor)]) {
+    n++
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return n
+}
+
+/* ---------- 节次时间轴 ----------
+   semester.periods 为空（真实导出常见）则回落默认节次表（13 节），口径见 defaultPeriods
+   defaultPeriods()：[{ no, start, end }, ...] */
+
+function defaultPeriods() {
+  /* 默认作息（用户拍板）：上午 5 节 + 下午 5 节 + 晚上 3 节，每节 45 分、小课间统一 10 分；
+     午休（12:25–14:00）和晚休（18:25–19:00）是段间大空档，各校差异大，交给自己在节次表里改。
+     相邻间隔 > 15 分钟自动分段，所以默认正好 3 段。 */
+  return [
+    { no: 1, start: '08:00', end: '08:45' },
+    { no: 2, start: '08:55', end: '09:40' },
+    { no: 3, start: '09:50', end: '10:35' },
+    { no: 4, start: '10:45', end: '11:30' },
+    { no: 5, start: '11:40', end: '12:25' },
+    { no: 6, start: '14:00', end: '14:45' },
+    { no: 7, start: '14:55', end: '15:40' },
+    { no: 8, start: '15:50', end: '16:35' },
+    { no: 9, start: '16:45', end: '17:30' },
+    { no: 10, start: '17:40', end: '18:25' },
+    { no: 11, start: '19:00', end: '19:45' },
+    { no: 12, start: '19:55', end: '20:40' },
+    { no: 13, start: '20:50', end: '21:35' },
+  ]
+}
+
+export function periodsOf(ds) {
+  const p = ds && ds.semester && ds.semester.periods
+  if (Array.isArray(p) && p.length) return p
+  return defaultPeriods()
+}
+
+/* ---------- 学期信息校验（纯函数）----------
+   引导页「下一步：识别课表」要能在不建数据的前提下拦住信息不全的人，
+   所以把规则抽成纯函数；错误文案与 createManualSemester / updateImportedSemester 共用，
+   避免同一套规则在两处漂移。返回 '' 表示通过。 */
+export function semesterInputError({ name, first_monday, total_weeks }) {
+  const bad = []
+  if (!String(name || '').trim()) bad.push('学期名')
+  const fm = String(first_monday || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fm)) bad.push('第一周周一日期')
+  else if (new Date(fm + 'T00:00:00').getDay() !== 1) bad.push('第一周周一（选的那天不是周一）')
+  const tw = Number(total_weeks)
+  if (!(tw >= 1 && tw <= 30)) bad.push('总周数（1–30）')
+  return bad.length ? '请检查：' + bad.join('、') : ''
+}
+
+/* ---------- 手动创建学期（差距⑦增补：引导页「直接填学期信息」） ----------
+   生成一份主项目格式的空学期存入 DATA_KEY（同导入态），
+   之后加课程/待办走导入态既有链路，回写文件也能被主项目 importAll 原样吃进。 */
+export function createManualSemester({ name, first_monday, total_weeks, periods }) {
+  const badErr = semesterInputError({ name, first_monday, total_weeks })
+  if (badErr) return { ok: false, error: badErr }
+  const n = String(name || '').trim()
+  const fm = String(first_monday || '').trim()
+  const tw = Number(total_weeks)
+
+  /* periods 可选：传了必须合法（口径同 updateImportedSemester / 主项目 validatePeriods）；空数组 = 不设置节次 */
+  let ps = []
+  if (Array.isArray(periods)) {
+    if (periods.length > 15) return { ok: false, error: '节次数最多 15 节。' }
+    const seen = {}
+    for (const p of periods) {
+      const no = Number(p && p.no)
+      if (!(no >= 1 && no <= 15) || seen[no]) return { ok: false, error: '节次序号必须是 1–15 且不重复。' }
+      seen[no] = true
+      if (!/^\d{2}:\d{2}$/.test(String(p.start)) || !/^\d{2}:\d{2}$/.test(String(p.end)))
+        return { ok: false, error: '第 ' + no + ' 节的时间格式应为 HH:mm。' }
+      if (minOf(p.start) >= minOf(p.end)) return { ok: false, error: '第 ' + no + ' 节的结束时间必须晚于开始时间。' }
+    }
+    ps = periods.map((p) => {
+      const o = { no: Number(p.no), start: String(p.start), end: String(p.end) }
+      const sg = Number(p && p.seg)
+      /* 分段标记：纯编辑辅助（哪个时段算一段），主项目 normalizePeriods 会忽略它；
+         丢了只是回落「按间隔自动分段」，不算数据损失 */
+      if (Number.isInteger(sg) && sg >= 1) o.seg = sg
+      return o
+    })
+  }
+
+  const now = new Date().toISOString()
+  const doc = {
+    app: 'sched',
+    schema_version: 1,
+    exported_at: now,
+    semester: { id: 'sem_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: n, first_monday: fm, total_weeks: tw, periods: ps, created_at: now },
+    schedules: [],
+    todos: [],
+  }
+  localStorage.setItem(DATA_KEY, JSON.stringify(doc))
+  return { ok: true, data: buildFromExport(doc) }
+}
+
+/* ---------- 学期信息/节次表编辑（差距②增补） ----------
+   仅导入态/手动创建态可用（DATA_KEY 存在）；mock 是代码数据，改不了。
+   校验口径同主项目 validateSemester / validatePeriods。 */
+export function updateImportedSemester({ name, first_monday, total_weeks, periods }) {
+  const raw = localStorage.getItem(DATA_KEY)
+  if (!raw) return { ok: false, error: '当前是示例数据，学期信息不能编辑。' }
+  let doc
+  try {
+    doc = JSON.parse(raw)
+  } catch {
+    return { ok: false, error: '已存数据解析失败。' }
+  }
+
+  const badErr = semesterInputError({ name, first_monday, total_weeks })
+  if (badErr) return { ok: false, error: badErr }
+  const n = String(name || '').trim()
+  const fm = String(first_monday || '').trim()
+  const tw = Number(total_weeks)
+
+  if (periods !== undefined && periods !== null) {
+    if (!Array.isArray(periods)) return { ok: false, error: '节次表格式不正确。' }
+    if (periods.length > 15) return { ok: false, error: '节次数最多 15 节。' }
+    const seen = {}
+    for (const p of periods) {
+      const no = Number(p && p.no)
+      if (!(no >= 1 && no <= 15) || seen[no]) return { ok: false, error: '节次序号必须是 1–15 且不重复。' }
+      seen[no] = true
+      if (!/^\d{2}:\d{2}$/.test(String(p.start)) || !/^\d{2}:\d{2}$/.test(String(p.end)))
+        return { ok: false, error: '第 ' + no + ' 节的时间格式应为 HH:mm。' }
+      if (minOf(p.start) >= minOf(p.end)) return { ok: false, error: '第 ' + no + ' 节的结束时间必须晚于开始时间。' }
+    }
+    doc.semester.periods = periods.map((p) => {
+      const o = { no: Number(p.no), start: String(p.start), end: String(p.end) }
+      const sg = Number(p && p.seg) // 分段标记，口径同 createManualSemester
+      if (Number.isInteger(sg) && sg >= 1) o.seg = sg
+      return o
+    })
+  }
+
+  doc.semester.name = n
+  doc.semester.first_monday = fm
+  doc.semester.total_weeks = tw
+  localStorage.setItem(DATA_KEY, JSON.stringify(doc))
+  return { ok: true, data: buildFromExport(doc) }
+}
+
+/* 节次重排（改时长/课间、段内平移、加删一节）已改为分段式：纯函数在 data/periods.js。
+   旧口径（整张表共用一个课间参数）会把午休一起改掉，已弃用。 */

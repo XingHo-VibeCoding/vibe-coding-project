@@ -1,0 +1,12 @@
+{
+  "app": "sched",
+  "schema_version": 1,
+  "exported_at": "2026-09-28T14:00:00.000Z",
+  "semester": { "id": "sem1", "name": "测试学期", "first_monday": "2026-09-07", "total_weeks": 16, "periods": [] },
+  "schedules": [
+    { "id": "c1", "type": "course", "semester_id": "sem1", "title": "高等数学", "location": "教1-101", "weekday": 1, "start_time": "08:00", "duration": 90, "week_rule": "every" }
+  ],
+  "todos": [
+    { "id": "t1", "title": "交作业", "done": false, "due_date": null }
+  ]
+}

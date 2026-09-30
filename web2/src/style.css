@@ -1,0 +1,344 @@
+@import "tailwindcss";
+@import "@kungal/ui-tokens/css";
+@import "@kungal/ui-vue/style.css";
+
+/* Tailwind v4 默认不扫 node_modules，必须显式声明 KunUI 组件源码 */
+@source "../node_modules/@kungal/ui-vue";
+@source "../node_modules/@kungal/ui-core";
+
+@theme {
+  /* 主色沿用主项目的蓝白体系，但整条色阶为 Tailwind 准备好 */
+  --color-primary-50: #eef4fe;
+  --color-primary-100: #d9e6fd;
+  --color-primary-200: #b3cdfa;
+  --color-primary-300: #84aef6;
+  --color-primary-400: #5c92f1;
+  --color-primary-500: #2f6feb;
+  --color-primary-600: #1f57cc;
+  --color-primary-700: #1a44a3;
+
+  --color-canvas: #f5f7fa;
+  --color-card: #ffffff;
+  --color-line: rgba(0, 0, 0, 0.05);
+  --color-ink: #1c2333;
+  --color-ink-dim: #6b7486;
+}
+
+/* 暗色模式：只覆盖 token 变量，全站自动换装 */
+.dark {
+  --color-canvas: #0c111d;
+  --color-card: #161d2c;
+  --color-line: rgba(255, 255, 255, 0.09);
+  --color-ink: #e8ecf5;
+  --color-ink-dim: #94a0b8;
+
+  /* 主色阶暗色微调： chip 底、强调文字提亮；hero 渐变的 500/700 不动 */
+  --color-primary-50: #1a2740;
+  --color-primary-100: #22345c;
+  --color-primary-200: #2c4478;
+  --color-primary-600: #9dbdfa;
+}
+
+/* ---------- 配色皮肤（html[data-accent]，与 .dark 自由组合） ---------- */
+
+/* 薰衣草紫 */
+html[data-accent='lavender'] {
+  --color-primary-50: #f3f0fd;
+  --color-primary-100: #e6dffb;
+  --color-primary-200: #cfc2f6;
+  --color-primary-300: #ab97ee;
+  --color-primary-400: #8f74e7;
+  --color-primary-500: #7c5ce0;
+  --color-primary-600: #6244c2;
+  --color-primary-700: #4c3399;
+  --color-canvas: #f7f5fc;
+}
+.dark[data-accent='lavender'] {
+  --color-primary-50: #241d40;
+  --color-primary-100: #2f2657;
+  --color-primary-200: #3d2f6e;
+  --color-primary-600: #b7a5f5;
+  --color-canvas: #0e0c17;
+  --color-card: #191530;
+}
+
+/* 樱花粉 */
+html[data-accent='pink'] {
+  --color-primary-50: #fdeef4;
+  --color-primary-100: #fadbe8;
+  --color-primary-200: #f5b9d3;
+  --color-primary-300: #f08fb8;
+  --color-primary-400: #ee7cab;
+  --color-primary-500: #ec6ba8;
+  --color-primary-600: #c94a86;
+  --color-primary-700: #a33868;
+  --color-canvas: #fcf5f8;
+}
+.dark[data-accent='pink'] {
+  --color-primary-50: #3c2130;
+  --color-primary-100: #53283f;
+  --color-primary-200: #6e2f4c;
+  --color-primary-600: #f5a8c9;
+  --color-canvas: #170d12;
+  --color-card: #241620;
+}
+
+/* 薄荷绿 */
+html[data-accent='mint'] {
+  --color-primary-50: #e7f8f1;
+  --color-primary-100: #cfefe3;
+  --color-primary-200: #a4ddc9;
+  --color-primary-300: #6fc9ab;
+  --color-primary-400: #4dbb9a;
+  --color-primary-500: #2fb58a;
+  --color-primary-600: #1e9270;
+  --color-primary-700: #177257;
+  --color-canvas: #f3faf7;
+}
+.dark[data-accent='mint'] {
+  --color-primary-50: #143229;
+  --color-primary-100: #194738;
+  --color-primary-200: #1f5c48;
+  --color-primary-600: #8fd9c0;
+  --color-canvas: #0b1411;
+  --color-card: #13211c;
+}
+
+/* 全局：手机 app 质感基线 */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  @apply bg-canvas text-ink antialiased;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  overscroll-behavior-y: none;
+}
+
+/* 主题切换时颜色平滑过渡。
+   必须放进 @layer base：无 layer 规则会压过 @layer utilities 里的
+   transition-transform 等 Tailwind 动画类（Day 11 二轮踩坑：平移/滑块全被这条劫持成瞬跳）。 */
+@layer base {
+  body,
+  body * {
+    transition-property: background-color, border-color, color;
+    transition-duration: 0.2s;
+  }
+}
+
+/* 详情弹层过渡：遮罩淡入淡出 + 面板底部滑入 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0.35, 1);
+}
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateY(100%);
+}
+
+/* 自建下拉面板动效（DropdownSelect.vue）：从触发器方向淡入 + 轻缩放；
+   朝上弹时换入场方向（.ddpop-up 由组件按位置加） */
+.ddpop-enter-active,
+.ddpop-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.ddpop-enter-from,
+.ddpop-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+}
+.ddpop-up.ddpop-enter-from,
+.ddpop-up.ddpop-leave-to {
+  transform: translateY(6px) scale(0.97);
+}
+
+/* 底部导航动效（Day 11 二轮）：滑块/内容平移用 CSS transition（可打断），
+   图标 bounce 改用 Web Animations API 重触发，无需 keyframes。 */
+
+/* ===== KunUI 主色对齐（kun-theme-gen.js 生成，勿手改）===== */
+
+:root {
+    --primary-accent: 0.5726 0.1989 261.8367;
+    --primary-on: 1 0 0;
+    --primary-50: 0.972 0.0132 261.8367;
+    --primary-100: 0.945 0.0263 261.8367;
+    --primary-200: 0.892 0.0525 261.8367;
+    --primary-300: 0.82 0.0901 261.8367;
+    --primary-400: 0.715 0.1487 261.8367;
+    --primary-500: 0.62 0.1989 261.8367;
+    --primary-600: 0.52 0.1907 261.8367;
+    --primary-700: 0.44 0.1613 261.8367;
+    --primary-800: 0.36 0.132 261.8367;
+    --primary-900: 0.28 0.1027 261.8367;
+    --primary-950: 0.215 0.0788 261.8367;
+    --background: 0.9755 0.0045 258.3245;
+    --foreground: 0.2571 0.032 265.9742;
+    --content1: 1 0 89.8756;
+    --content2: 0.9755 0.0045 258.3245;
+    --content3: 0.8994 0.0064 255.4779;
+    --content4: 0.8322 0.009 264.5153;
+}
+
+.dark {
+    --primary-accent: 0.5726 0.1989 261.8367;
+    --primary-on: 1 0 0;
+    --primary-50: 0.215 0.0788 261.8367;
+    --primary-100: 0.28 0.1027 261.8367;
+    --primary-200: 0.36 0.132 261.8367;
+    --primary-300: 0.44 0.1613 261.8367;
+    --primary-400: 0.52 0.1907 261.8367;
+    --primary-500: 0.62 0.1989 261.8367;
+    --primary-600: 0.715 0.1487 261.8367;
+    --primary-700: 0.82 0.0901 261.8367;
+    --primary-800: 0.892 0.0525 261.8367;
+    --primary-900: 0.945 0.0263 261.8367;
+    --primary-950: 0.972 0.0132 261.8367;
+    --background: 0.179 0.02 266.4726;
+    --foreground: 0.9427 0.0129 266.6981;
+    --content1: 0.2315 0.01 264.837;
+    --content2: 0.507 0.02 268.8729;
+    --content3: 0.6498 0.0188 267.7057;
+    --content4: 0.763 0.0166 266.2461;
+}
+
+html[data-accent='lavender'] {
+    --primary-accent: 0.576 0.1921 290.2148;
+    --primary-on: 1 0 0;
+    --primary-50: 0.972 0.0128 290.2148;
+    --primary-100: 0.945 0.0254 290.2148;
+    --primary-200: 0.892 0.0507 290.2148;
+    --primary-300: 0.82 0.087 290.2148;
+    --primary-400: 0.715 0.1436 290.2148;
+    --primary-500: 0.62 0.1921 290.2148;
+    --primary-600: 0.52 0.1841 290.2148;
+    --primary-700: 0.44 0.1558 290.2148;
+    --primary-800: 0.36 0.1275 290.2148;
+    --primary-900: 0.28 0.0991 290.2148;
+    --primary-950: 0.215 0.0761 290.2148;
+    --background: 0.9737 0.0095 299.2426;
+    --foreground: 0.2571 0.032 265.9742;
+    --content1: 1 0 89.8756;
+    --content2: 0.9737 0.0095 299.2426;
+    --content3: 0.8976 0.0109 291.9332;
+    --content4: 0.8324 0.0124 286.1266;
+}
+
+.dark[data-accent='lavender'] {
+    --primary-accent: 0.576 0.1921 290.2148;
+    --primary-on: 1 0 0;
+    --primary-50: 0.215 0.0761 290.2148;
+    --primary-100: 0.28 0.0991 290.2148;
+    --primary-200: 0.36 0.1275 290.2148;
+    --primary-300: 0.44 0.1558 290.2148;
+    --primary-400: 0.52 0.1841 290.2148;
+    --primary-500: 0.62 0.1921 290.2148;
+    --primary-600: 0.715 0.1436 290.2148;
+    --primary-700: 0.82 0.087 290.2148;
+    --primary-800: 0.892 0.0507 290.2148;
+    --primary-900: 0.945 0.0254 290.2148;
+    --primary-950: 0.972 0.0128 290.2148;
+    --background: 0.1628 0.02 291.9756;
+    --foreground: 0.9427 0.0129 266.6981;
+    --content1: 0.2164 0.01 288.0882;
+    --content2: 0.4978 0.02 287.3084;
+    --content3: 0.6424 0.02 285.67;
+    --content4: 0.76 0.02 279.4231;
+}
+
+html[data-accent='pink'] {
+    --primary-accent: 0.7005 0.1715 352.8589;
+    --primary-on: 1 0 0;
+    --primary-50: 0.972 0.0114 352.8589;
+    --primary-100: 0.945 0.0226 352.8589;
+    --primary-200: 0.892 0.0453 352.8589;
+    --primary-300: 0.82 0.0777 352.8589;
+    --primary-400: 0.715 0.1282 352.8589;
+    --primary-500: 0.62 0.1715 352.8589;
+    --primary-600: 0.52 0.1643 352.8589;
+    --primary-700: 0.44 0.1391 352.8589;
+    --primary-800: 0.36 0.1138 352.8589;
+    --primary-900: 0.28 0.0885 352.8589;
+    --primary-950: 0.215 0.0679 352.8589;
+    --background: 0.9764 0.0084 349.2396;
+    --foreground: 0.2571 0.032 265.9742;
+    --content1: 1 0 89.8756;
+    --content2: 0.9764 0.0084 349.2396;
+    --content3: 0.8996 0.0076 332.1315;
+    --content4: 0.8346 0.0093 314.7726;
+}
+
+.dark[data-accent='pink'] {
+    --primary-accent: 0.7005 0.1715 352.8589;
+    --primary-on: 1 0 0;
+    --primary-50: 0.215 0.0679 352.8589;
+    --primary-100: 0.28 0.0885 352.8589;
+    --primary-200: 0.36 0.1138 352.8589;
+    --primary-300: 0.44 0.1391 352.8589;
+    --primary-400: 0.52 0.1643 352.8589;
+    --primary-500: 0.62 0.1715 352.8589;
+    --primary-600: 0.715 0.1282 352.8589;
+    --primary-700: 0.82 0.0777 352.8589;
+    --primary-800: 0.892 0.0453 352.8589;
+    --primary-900: 0.945 0.0226 352.8589;
+    --primary-950: 0.972 0.0114 352.8589;
+    --background: 0.1751 0.0195 347.8684;
+    --foreground: 0.9427 0.0129 266.6981;
+    --content1: 0.2228 0.01 337.491;
+    --content2: 0.5035 0.0185 319.4544;
+    --content3: 0.6464 0.014 305.9195;
+    --content4: 0.7608 0.0127 291.2072;
+}
+
+html[data-accent='mint'] {
+    --primary-accent: 0.6919 0.1298 166.4917;
+    --primary-on: 1 0 0;
+    --primary-50: 0.972 0.0086 166.4917;
+    --primary-100: 0.945 0.0171 166.4917;
+    --primary-200: 0.892 0.0343 166.4917;
+    --primary-300: 0.82 0.0588 166.4917;
+    --primary-400: 0.715 0.097 166.4917;
+    --primary-500: 0.62 0.1298 166.4917;
+    --primary-600: 0.52 0.1244 166.4917;
+    --primary-700: 0.44 0.1053 166.4917;
+    --primary-800: 0.36 0.0861 166.4917;
+    --primary-900: 0.28 0.067 166.4917;
+    --primary-950: 0.215 0.0514 166.4917;
+    --background: 0.979 0.0084 168.758;
+    --foreground: 0.2571 0.032 265.9742;
+    --content1: 1 0 89.8756;
+    --content2: 0.979 0.0084 168.758;
+    --content3: 0.9011 0.0077 186.8747;
+    --content4: 0.837 0.0078 207.1349;
+}
+
+.dark[data-accent='mint'] {
+    --primary-accent: 0.6919 0.1298 166.4917;
+    --primary-on: 1 0 0;
+    --primary-50: 0.215 0.0514 166.4917;
+    --primary-100: 0.28 0.067 166.4917;
+    --primary-200: 0.36 0.0861 166.4917;
+    --primary-300: 0.44 0.1053 166.4917;
+    --primary-400: 0.52 0.1244 166.4917;
+    --primary-500: 0.62 0.1298 166.4917;
+    --primary-600: 0.715 0.097 166.4917;
+    --primary-700: 0.82 0.0588 166.4917;
+    --primary-800: 0.892 0.0343 166.4917;
+    --primary-900: 0.945 0.0171 166.4917;
+    --primary-950: 0.972 0.0086 166.4917;
+    --background: 0.181 0.0148 171.9088;
+    --foreground: 0.9427 0.0129 266.6981;
+    --content1: 0.233 0.01 170.041;
+    --content2: 0.5087 0.0123 196.773;
+    --content3: 0.6499 0.0109 212.5342;
+    --content4: 0.7627 0.0106 238.5611;
+}

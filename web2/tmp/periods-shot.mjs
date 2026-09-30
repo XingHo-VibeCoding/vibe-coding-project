@@ -1,0 +1,15 @@
+/* 截图：分段式节次表的实际观感（引导页表单 + 「我的」页编辑弹层） */
+import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
+const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+const ctx = await b.newContext({ viewport: { width: 390, height: 1000 }, deviceScaleFactor: 2 })
+const p = await ctx.newPage()
+await p.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
+await p.waitForTimeout(700)
+await p.locator('text=直接填学期信息，自己加课').click()
+await p.waitForTimeout(500)
+await p.locator('[data-seg="1"]').scrollIntoViewIfNeeded()
+await p.waitForTimeout(300)
+await p.locator('text=节次时间表').locator('..').screenshot({ path: 'tmp/shot-periods-seg.png' })
+await ctx.close()
+await b.close()
+console.log('saved tmp/shot-periods-seg.png')
