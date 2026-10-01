@@ -42,8 +42,13 @@ const hour = ref(initH)
 const min = ref(initM)
 
 // 三份重复列表；渲染索引用 i（0..3N-1），显示值 = i % N，故 :key 必须用索引
+/* 分钟步长（2026-10-01 板块 D，用户拍板）：5 分钟一档（00/05/10…55 共 12 项）。
+   60 → 12 项后所有按「count」运转的口径（onScroll/attachWheel/attachTouch/pickAt/初始定位）
+   都要用 MIN_COUNT，值换算统一走 idx × MIN_STEP——漏一处就会出现 0-11 冒充分钟数 */
+const MIN_STEP = 5
+const MIN_COUNT = 60 / MIN_STEP
 const hours = Array.from({ length: 24 * REPEAT }, (_, i) => i % 24)
-const minutes = Array.from({ length: 60 * REPEAT }, (_, i) => i % 60)
+const minutes = Array.from({ length: MIN_COUNT * REPEAT }, (_, i) => (i % MIN_COUNT) * MIN_STEP)
 const pad = (n) => String(n).padStart(2, '0')
 
 const display = computed(() => `${pad(hour.value)}:${pad(min.value)}`)
@@ -97,7 +102,7 @@ function onScrollHour() {
   onScroll(hourCol, 24, (i) => (hour.value = i))
 }
 function onScrollMin() {
-  onScroll(minCol, 60, (i) => (min.value = i))
+  onScroll(minCol, MIN_COUNT, (i) => (min.value = i * MIN_STEP))
 }
 
 /* ---------- 触屏自接管：拖动 1:1，松手按速度滑几格 ---------- */
@@ -202,7 +207,7 @@ function pickHour(i) {
   pickAt(hourCol, i, 24, (v) => (hour.value = v))
 }
 function pickMin(i) {
-  pickAt(minCol, i, 60, (v) => (min.value = v))
+  pickAt(minCol, i, MIN_COUNT, (v) => (min.value = v * MIN_STEP))
 }
 
 /* ---------- 鼠标滚轮接管（主项目 app.js 同款口径；触屏不归这里管） ---------- */
@@ -253,12 +258,13 @@ onMounted(async () => {
   // 双 rAF：等弹层 Transition 期间布局真正稳定再定位，防止 scrollTo 被 clamp 到 0
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
   // 初始定位到「中间一份」的对应值，上下各留一整份余量
+  // 分钟列只有 12 项（5 分钟步长）：索引 = 分钟值 ÷ 5 四舍五入（07 分这类落在半档的旧值就近归档）
   hourCol.value?.scrollTo({ top: (24 + initH) * ROW })
-  minCol.value?.scrollTo({ top: (60 + initM) * ROW })
+  minCol.value?.scrollTo({ top: (MIN_COUNT + Math.round(initM / MIN_STEP)) * ROW })
   attachWheel(hourCol, 24, (v) => (hour.value = v))
-  attachWheel(minCol, 60, (v) => (min.value = v))
+  attachWheel(minCol, MIN_COUNT, (v) => (min.value = v * MIN_STEP))
   attachTouch(hourCol, 24, (v) => (hour.value = v))
-  attachTouch(minCol, 60, (v) => (min.value = v))
+  attachTouch(minCol, MIN_COUNT, (v) => (min.value = v * MIN_STEP))
 })
 defineExpose({ display })
 </script>

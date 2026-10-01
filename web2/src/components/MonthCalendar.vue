@@ -76,6 +76,7 @@ function pick(c) {
         :key="i"
         type="button"
         :data-cal-day="c ? c.key : ''"
+        :data-cal-ok="c && c.ok ? '1' : ''"
         class="flex h-9 items-center justify-center rounded-xl text-[13px] transition"
         :class="[
           !c ? 'pointer-events-none' : '',

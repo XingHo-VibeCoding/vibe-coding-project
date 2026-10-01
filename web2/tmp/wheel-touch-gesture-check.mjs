@@ -21,7 +21,7 @@ function t(name, cond, extra) {
 //   行为断言才是「线上跑的确实是这份代码」的硬证据）
 const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 const ROW = 40
-const SPAN = 60 * ROW
+const SPAN = 12 * ROW // 2026-10-01 板块 D：分钟列 5 分钟一档（60 项 → 12 项）
 const MAX_FLING = 30 // 与 src/data/wheelPhysics.js 的 FLING_MAX_STEPS 对齐（第五轮 8 → 30）
 /* 甩动动画最长 1.6s（FLING_T_MAX），取样前必须等它彻底跑完。
    旧值是 900ms —— 那是 T_MAX=0.5s 时代的余量；第五轮时长变成 ~1.2s 后，
@@ -84,6 +84,30 @@ try {
     }, SPAN + SPAN / 2)
     await page.waitForTimeout(320)
   }
+  /* 页面内 rAF 全程记录 scrollTop（B 段与 D 段共用）：
+     分钟列一份只有 480px（12 项 × 40px，5 分钟步长）后，「三点直线差」的测法会把
+     甩动位移的整份成分折叠掉（快甩 34 格里 12 的倍数全是「看不见的」）——
+     惯性大小必须用完整帧序列累计，每帧位移都很小、只有 touchend 的归位瞬移是整份，
+     visualDelta 恰好只折掉那一下。 */
+  const traceStart = () =>
+    page.evaluate(() => {
+      window.__recEl = document.querySelectorAll('.wheel')[1]
+      window.__trace = []
+      window.__rec = true
+      if (!window.__tracing) {
+        window.__tracing = true
+        const loop = () => {
+          if (window.__rec) window.__trace.push(window.__recEl.scrollTop)
+          requestAnimationFrame(loop)
+        }
+        requestAnimationFrame(loop)
+      }
+    })
+  const traceStop = () =>
+    page.evaluate(() => {
+      window.__rec = false
+      return window.__trace
+    })
   /* 手搓一次滑动：间隔放在「移动之前」，最后一发移完立刻抬手 → 松手速度 = stepPx / 最后两帧间隔。
      sampleDuring=true 时逐帧记录位置（用于看顺滑度）。 */
   async function swipe(moves, stepPx, dt, sampleDuring = false) {
@@ -131,23 +155,23 @@ try {
   for (const [name, dt] of [['轻放', 300], ['很慢', 60], ['慢', 30], ['中', 14], ['快', 8], ['很快', 4]]) {
     await reset()
     const b0 = await rawTop()
+    await traceStart()
     const s = await swipe(4, 40, dt)
-    await page.waitForTimeout(80) // 等触摸事件落到主线程再读，否则读到上一帧
-    const mid = await rawTop() // touchend 前的拖动终点（此时还没做整数份归一化）
     await send('touchEnd', cy + 160)
     await page.waitForTimeout(SETTLE_MS)
+    const traceB = await traceStop()
     const end = await rawTop()
-    /* 两个坑（都踩过）：
-       ① visualItems() 返回的**已经是格数**（内部 sum/ROW），不能再除一次 ROW
-          —— 第一版多除了一次，4 格被算成 0.1 格，B 段数字全部失真；
-       ② 不能用 delta(b0, end)：delta 按 SPAN 取模，只能表达 ±半圈（±30 格）。
-          第五轮一次快甩 = 4 格拖动 + 30 格甩动 = 34 格 > 30 格，取模会折返成 26 格，
-          「很快」档反而小于「快」档 → 单调性断言假失败（不是产品 bug，是尺子坏了）。
-       用三段采样 [起点, 松手前, 落定]：每段都远小于半圈，且 visualDelta 能识别
-       「整数份瞬移」不计入视觉位移。 */
-    const items = visualItems([b0, mid, end])
-    rows.push({ name, v: s.v, items: Math.abs(items), extra: Math.abs(items) - dragItems })
-    console.log(`   ${name} 松手速度 ${String(s.v).padStart(5)}px/s → 共 ${Math.abs(items).toFixed(1)} 格（其中甩动 ${(Math.abs(items) - dragItems).toFixed(1)} 格，落点 ${await val()}）`)
+    /* 用完整帧序列累计（visualItems）：分钟列 12 项后一份只有 480px，
+       快甩 34 格会跨 2 份，三点直线差被整份折叠吃掉（「很快」档只剩 2 格的假数据）。
+       每帧位移只有十几 px、唯独 touchend 的归位瞬移是整份 —— visualDelta 只折那一下，
+       其余真实滚动全部计入。 */
+    const items = visualItems([...traceB, end])
+    /* 物理总位移（不折叠整份瞬移）：12 项分钟列一份只有 480px，动画结束的归位瞬移
+       会被可见位移口径折掉一份 —— 「惯性够不够大」要看物理总量（诊断 diag-b5：
+       快甩 2667px/s 实测总 30 格 = 拖 4 + 甩 26，物理未变，变的只是列短了）。 */
+    const rawTotal = traceB.reduce((acc, p, i) => acc + (i && Math.abs(p - traceB[i - 1]) > 1 ? Math.abs(p - traceB[i - 1]) : 0), 0) / ROW
+    rows.push({ name, v: s.v, items: Math.abs(items), extra: Math.abs(items) - dragItems, rawTotal })
+    console.log(`   ${name} 松手速度 ${String(s.v).padStart(5)}px/s → 共 ${Math.abs(items).toFixed(1)} 格（物理 ${rawTotal.toFixed(1)} 格，其中甩动 ${(Math.abs(items) - dragItems).toFixed(1)} 格，落点 ${await val()}）`)
   }
   const maxItems = Math.max(...rows.map((r) => r.items))
   t(`B1 一次快甩总格数有上限（≤ ${dragItems + MAX_FLING} 格）`, maxItems <= dragItems + MAX_FLING + 0.5, maxItems.toFixed(1))
@@ -164,7 +188,7 @@ try {
   const vSpread = sorted[sorted.length - 1].v / sorted[0].v
   t('B4 速度档确实拉开了（最快/最慢 ≥2×，测量有效）', vSpread >= 2, `${vSpread.toFixed(1)}×`)
   const fastest = sorted[sorted.length - 1]
-  t('B5 快甩档甩动 ≥18 格（第五轮用户诉求「惯性大一点、能到 30 个数」；旧版封顶 8 格）', fastest.extra >= 18, `${fastest.v}px/s → 甩动 ${fastest.extra.toFixed(1)} 格`)
+  t('B5 快甩档物理甩动 ≥18 格（第五轮诉求「惯性到 30」；5 分钟步长后一份只 480px，可见位移会折一份，所以改测不折叠的物理总量）', fastest.rawTotal - dragItems >= 18, `${fastest.v}px/s → 物理甩动 ${(fastest.rawTotal - dragItems).toFixed(1)} 格（可见 ${fastest.extra.toFixed(1)}）`)
 
   console.log('\n=== C. 循环（一直朝一个方向拖，永不到底）===')
   await reset()
@@ -190,37 +214,17 @@ try {
   await page.waitForTimeout(SETTLE_MS)
   t('C4 反方向也通（下移手指 → 值递减）', Number(await val()) < Number(seen[2]), `${seen[2]} → ${await val()}`)
 
-  console.log('\n=== D. 跨份边界松手不空转（分钟从 58 拖到 2，跨过 59/0）===')
-  /* 页面内 rAF 全程记录 scrollTop：跨份瞬移与动画首帧发生在 touchend 的同一个任务里，
-     CDP 往返回合之间会漏掉，只在页面里采才拿得到真序列。 */
-  const traceStart = () =>
-    page.evaluate(() => {
-      window.__recEl = document.querySelectorAll('.wheel')[1]
-      window.__trace = []
-      window.__rec = true
-      if (!window.__tracing) {
-        window.__tracing = true
-        const loop = () => {
-          if (window.__rec) window.__trace.push(window.__recEl.scrollTop)
-          requestAnimationFrame(loop)
-        }
-        requestAnimationFrame(loop)
-      }
-    })
-  const traceStop = () =>
-    page.evaluate(() => {
-      window.__rec = false
-      return window.__trace
-    })
+  console.log('\n=== D. 跨份边界松手不空转（分钟从 55 拖到 15，跨过 55/00 边界；5 分钟步长）===')
+  /* traceStart/traceStop 已提前到 B 段之前共用（页面内 rAF 记录，见上方注释） */
 
   await page.evaluate((t) => {
     document.querySelectorAll('.wheel')[1].scrollTop = t
-  }, SPAN + 58 * ROW)
+  }, SPAN + 11 * ROW)
   await page.waitForTimeout(SETTLE_MS)
   const dStartVal = await val()
   const dStartTop = await rawTop()
   await traceStart()
-  /* 手指上移（值递增）4 格：58 → 59 → 00 → 01 → 02，必然跨过循环边界。
+  /* 手指上移（值递增）4 格：55 → 00 → 05 → 10 → 15（索引 11 → 11+4），必然跨过循环边界。
      手写在段内而不复用 swipe()：swipe 是「手指下移」方向，反了就到不了 59/0。
      末帧后等 80ms 再读位置（触摸事件在主线程排队，紧跟其后读会读到上一帧）。 */
   await send('touchStart', cy)
@@ -245,7 +249,7 @@ try {
     segBefore === 1 && segAfter === 2,
     `份 ${segBefore} → ${segAfter}，top ${Math.round(dStartTop)} → ${Math.round(dMid)}`
   )
-  t('D2 跨边界落点值 = 起点 + 实际拖动格数', Number(dEndVal) === (58 + movedItems) % 60, `58 + ${movedItems} → ${dEndVal}`)
+  t('D2 跨边界落点值 = 起点 + 实际拖动格数（索引 11 + 拖动格数 → ×5 分钟）', Number(dEndVal) === ((11 + movedItems) % 12) * 5, `索引 11 + ${movedItems} 格 → ${dEndVal}`)
   t(
     'D3 整个手势视觉位移 ≈ 拖动格数（松手不额外空转；bug 版 ≈ 拖动格数 + 60 格 = 转一整圈）',
     dVisual <= movedItems + 1.5,
@@ -256,7 +260,7 @@ try {
   /* D4：跨边界 + 快甩。快甩才会叠加惯性，也是最容易「跨份 + 甩动」叠在一起出错的一档。 */
   await page.evaluate((t) => {
     document.querySelectorAll('.wheel')[1].scrollTop = t
-  }, SPAN + 58 * ROW)
+  }, SPAN + 11 * ROW)
   await page.waitForTimeout(SETTLE_MS)
   const d4StartTop = await rawTop()
   await traceStart()

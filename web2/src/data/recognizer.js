@@ -8,8 +8,10 @@
    key 只落设备本地，不进导出 JSON、不进仓库。 */
 
 import { loadLlmConfig } from './summarizer.js'
+import { segmentView } from './periods.js'
+import { segName } from './weekGrid.js'
 
-export const RECOGNIZER_PROMPT_VERSION = 2
+export const RECOGNIZER_PROMPT_VERSION = 3
 
 /* ---------- 图片压缩 ----------
    相机原图动辄 3-8MB，base64 后直接顶到请求体上限；长边压到 maxEdge、转 JPEG。
@@ -86,8 +88,10 @@ export async function compressImageForRecognize(file) {
 /* ---------- 提示词 ----------
    用户要求：除了约束输出，还要把国内高校课表的通用结构讲清楚，让模型先看懂结构再提取。
    结构描述覆盖：列=星期、行=节次、合并大格、单元格内容三件套、单双周写法、上下叠课、
-   需要排除的非课程区域（标题/备注/日期表头）。「宁缺勿猜」是对抗幻觉的关键约束。 */
-export function buildRecognizerPrompt(tiled = false) {
+   需要排除的非课程区域（标题/备注/日期表头）。「宁缺勿猜」是对抗幻觉的关键约束。
+   v3（2026-10-01）：把用户自己的节次表（分上午/下午/晚上三段、午休晚休在哪）喂给模型，
+   并明令「同一门课不得跨段」——实测 AI 数错行序时会输出第 1–8 节这种横跨午休的范围。 */
+export function buildRecognizerPrompt(tiled = false, periods = null) {
   const lines = [
     '你是课表识别助手。输入是一张大学课表的图片（教务系统截图、课表 App 截图或拍照均可）。请把图里的课程逐格提取出来。',
     '',
@@ -106,6 +110,28 @@ export function buildRecognizerPrompt(tiled = false) {
     '- 不要用图上的时间换算节次，也不要把图上的时间当成课程时间：那是这所学校自己的作息（课表截图上的时间常常还是期末考时间），每所学校都不一样；上课时间由用户填的节次表换算。',
     '- 行首只写时间、没写序号时（如只有「08:00-09:40」），按该行在节次行里从上到下的顺序推断序号：第 1 行 = 第 1 节；「午休」「晚饭」这类空行不占序号。',
     '- 行首写「第一大节」这种两节合排的写法，按它占的节次数展开（第一大节 = 第 1 节到第 2 节）。',
+  ]
+  /* 用户的节次表（分段作息）。没有 periods（异常路径）时整段跳过，靠代码侧钳制兜底 */
+  if (Array.isArray(periods) && periods.length) {
+    const segs = segmentView(periods)
+    if (segs.length >= 2) {
+      const desc = segs
+        .map((g, i) => {
+          const head = i === 0 ? '' : `（与上一段之间隔 ${Math.round((g.gapBefore || 0))} 分钟休息）`
+          return `- ${segName(g)}：第 ${g.nos[0]} 到 ${g.nos[g.nos.length - 1]} 节（${g.start}–${g.end}）${head}`
+        })
+        .join('\n')
+      lines.push(
+        '',
+        '【用户学校的作息表（重要）】一天被午休/晚休分成几段，节次序号这样排：',
+        desc,
+        '硬规则：同一门课的 startSec 和 endSec 必须落在同一段里，绝不允许跨段——上午的课最多到本段最后一节（第 ' + segs[0].nos[segs[0].nos.length - 1] + ' 节），不存在「从第 1 节上到第 8 节」这种连上午带下午的课。',
+        '如果图片上某个格子看起来横跨了段间休息，说明你把「午休」「晚饭」空行数进了序号，请重数：这类空行不占节次序号。',
+        '真实场景提示：有的学校上午 4 节、下午 4 节；连堂课一般是 2 节，极少数 3 节。连续 5 节以上的课大概率是你数错了。'
+      )
+    }
+  }
+  lines.push(
     '',
     '【输出要求】只输出一个 JSON 对象，不要输出任何其他文字或代码块标记，结构如下：',
     '{"courses":[{"title":"课程名","weekday":1,"startSec":1,"endSec":2,"weekRule":"every","location":"教室","teacher":"教师"}],"notes":["看不清或拿不准的地方，没有则空数组"]}',
@@ -114,8 +140,8 @@ export function buildRecognizerPrompt(tiled = false) {
     '- weekRule：只能取 "every"（每周）、"odd"（单周）、"even"（双周）之一。',
     '- 不要编造：看不清的字段给空字符串，宁缺勿猜。',
     '- 但也不要因为图不完美就整张放弃：能认出一门课就输出一门课；只有整格完全无法辨认时才写进 notes。',
-    '- 全部用简体中文。',
-  ]
+    '- 全部用简体中文。'
+  )
   if (tiled) {
     lines.splice(2, 0,
       '- 【多图说明】本次提供了多张图片：它们是同一张竖长课表截图从上到下依次切成的几段（相邻段有少量重叠，用于防止课程被切缝截断）。请把它们拼成一张完整课表来识别：重叠区域里重复出现的课只算一次；跨段出现一半的课也要还原成一条完整记录。')
@@ -197,7 +223,7 @@ export async function recognizeScheduleImage(dataUrls, opts = {}) {
           {
             role: 'user',
             content: [
-              { type: 'text', text: buildRecognizerPrompt(urls.length > 1) },
+              { type: 'text', text: buildRecognizerPrompt(urls.length > 1, opts.periods) },
               ...urls.map((u) => ({ type: 'image_url', image_url: { url: u } })),
             ],
           },

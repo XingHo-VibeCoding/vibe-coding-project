@@ -56,7 +56,9 @@ async function gotoForm(page) {
   await page.waitForTimeout(400)
   await page.locator('[data-ob-start]').click() // 弹层月历选开学日（任意日期，内部归一到周一）
   await page.waitForTimeout(400)
-  await page.locator('[data-cal-day]:not([data-cal-day=""])').nth(9).click()
+  await page.locator('button[aria-label="上个月"]').click()
+  await page.waitForTimeout(250)
+  await page.locator('[data-cal-ok="1"]').first().click()
   await page.waitForTimeout(150)
   await page.locator('button:has-text("确定")').click()
   await page.waitForTimeout(250)
@@ -141,6 +143,34 @@ try {
     [...document.querySelectorAll('*')].some((el) => el.textContent && el.textContent.includes('高等数学'))
   )
   t('3r. 周视图能看到导入的课', weekTitle)
+  await page.context().close()
+
+  /* ---- ④ 跨段钳制：AI 输出横跨午休的课，代码钳回段内（2026-10-01 板块 B）---- */
+  page = await newPage({ llm: true, payload: JSON.stringify({
+    courses: [
+      { title: '军事理论', weekday: 2, startSec: 1, endSec: 8, weekRule: 'every', location: '', teacher: '' },
+      { title: '正常连堂课', weekday: 4, startSec: 6, endSec: 7, weekRule: 'every', location: '', teacher: '' },
+    ],
+  }) })
+  await gotoForm(page)
+  await page.locator('input[accept="image/*"]').setInputFiles(IMG)
+  await page.waitForTimeout(900)
+  const clampWarn = (await page.locator('[data-rec-item]').count() >= 0)
+    ? await page.locator('text=横跨段间休息').count()
+    : 0
+  t('4a. 确认页顶部提示跨段已被修正', clampWarn > 0)
+  /* 卡片顺序 = items 顺序：第 0 张军事理论、第 1 张正常连堂课（课程名在 input 里，
+     :has-text 匹配不到 input 的 value，只能按序号定位——rec-preview-check 同坑）。
+     卡片 select 顺序：0=星期 1=周次 2=开始节次 3=结束节次 */
+  const endSel = await page.locator('[data-rec-item]').nth(0).locator('select').nth(3).inputValue()
+  t('4b. 跨段课末节钳到上午第 5 节', endSel === '5', endSel)
+  const okEnd = await page.locator('[data-rec-item]').nth(1).locator('select').nth(3).inputValue()
+  t('4c. 段内课不受影响（末节仍 7）', okEnd === '7', okEnd)
+  /* 导入后落盘也应是钳后的（web2.added 里军事理论 end=12:25 上午段末节结束时间） */
+  await page.locator('text=开始使用').first().click()
+  await page.waitForTimeout(700)
+  const added2 = await page.evaluate(() => localStorage.getItem('web2.added') || '')
+  t('4d. 导入落盘的是钳后时间（上午段末节 12:25）', added2.includes('军事理论') && added2.includes('12:25'), added2.slice(0, 120))
   await page.context().close()
 } catch (e) {
   console.log('ERROR:', e.message)

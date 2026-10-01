@@ -26,6 +26,25 @@ export function addCourse(c) {
   localStorage.setItem(ADDED_KEY, JSON.stringify(arr))
 }
 
+/* 重复判定 key（同星期+同起止时间+同课名+同周规则视为同一门课） */
+function dupKeyOf(c) {
+  return `${c.weekday}|${c.start}|${c.end}|${c.name}|${c.week_rule || 'every'}`
+}
+
+/* 数一下 web2.added 里有几门重复（只读不删）：「清理重复课程」按钮只在有重复时显示
+   （2026-10-01 用户拍板：没有这种 bug 就不摆这个按钮） */
+export function countAddedDups() {
+  const seen = new Set()
+  let dups = 0
+  for (const c of loadAdded()) {
+    if (c.type !== 'course') continue
+    const k = dupKeyOf(c)
+    if (seen.has(k)) dups++
+    else seen.add(k)
+  }
+  return dups
+}
+
 /* 清理 web2.added 里重复的课程（同星期+同时间+同名+同周规则视为重复，保留第一条） */
 export function dedupAdded() {
   const arr = loadAdded()
@@ -36,13 +55,13 @@ export function dedupAdded() {
       next.push(c)
       continue
     }
-    const key = `${c.weekday}|${c.start}|${c.end}|${c.name}|${c.week_rule || 'every'}`
+    const key = dupKeyOf(c)
     if (seen.has(key)) continue
     seen.add(key)
     next.push(c)
   }
   const removed = arr.length - next.length
-  localStorage.setItem(ADDED_KEY, JSON.stringify(next))
+  if (removed) localStorage.setItem(ADDED_KEY, JSON.stringify(next))
   return removed
 }
 

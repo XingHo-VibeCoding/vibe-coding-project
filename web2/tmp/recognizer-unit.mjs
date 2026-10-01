@@ -36,7 +36,60 @@ t('1j. prompt 有专门讲「节次怎么数」的段落', P.includes('【节次
 t('1k. 明确禁止用图上时间换算节次', P.includes('不要用图上的时间换算') && P.includes('期末'))
 t('1l. 只写时间没写序号时按行序推断（空行不占号）', P.includes('第 1 行 = 第 1 节') && P.includes('不占序号'))
 t('1m. 大节写法（第一大节 = 1-2 节）有交代', P.includes('第一大节') && P.includes('展开'))
-t('1n. prompt 版本号已 bump 到 2', RECOGNIZER_PROMPT_VERSION === 2)
+t('1n. prompt 版本号已 bump 到 3（v3 注入用户节次表）', RECOGNIZER_PROMPT_VERSION === 3)
+
+/* ---- 1o~1r. prompt v3：注入用户节次表 + 禁止跨段（2026-10-01 板块 B）---- */
+const DEF13 = [
+  { no: 1, start: '08:00', end: '08:45' }, { no: 2, start: '08:55', end: '09:40' },
+  { no: 3, start: '09:50', end: '10:35' }, { no: 4, start: '10:45', end: '11:30' },
+  { no: 5, start: '11:40', end: '12:25' }, { no: 6, start: '14:00', end: '14:45' },
+  { no: 7, start: '14:55', end: '15:40' }, { no: 8, start: '15:50', end: '16:35' },
+  { no: 9, start: '16:45', end: '17:30' }, { no: 10, start: '17:40', end: '18:25' },
+  { no: 11, start: '19:00', end: '19:45' }, { no: 12, start: '19:55', end: '20:40' },
+  { no: 13, start: '20:50', end: '21:35' },
+]
+const P3 = buildRecognizerPrompt(false, DEF13)
+t('1o. 注入节次表：含三段作息描述', P3.includes('【用户学校的作息表') && P3.includes('上午') && P3.includes('下午') && P3.includes('晚上'))
+t('1p. 明令同一门课不得跨段', P3.includes('必须落在同一段') && P3.includes('绝不允许跨段'))
+t('1q. 告知上午末节（第 5 节）', P3.includes('最多到本段最后一节（第 5 节）'))
+t('1r. 无 periods 时整段跳过（不炸不注入）', !buildRecognizerPrompt(false, null).includes('【用户学校的作息表') && !buildRecognizerPrompt(false).includes('绝不允许跨段'))
+
+/* ---- 5. clampCoursesToSegments：跨段钳制（AI 犯错代码兜底）---- */
+const { clampCoursesToSegments, segName } = await import('../src/data/weekGrid.js')
+{
+  const r = clampCoursesToSegments([{ title: '体育', weekday: 5, startSec: 1, endSec: 8 }], DEF13)
+  t('5a. 跨段课 endSec 钳到上午末节 5', r.items[0].endSec === 5 && r.items[0].startSec === 1)
+  t('5b. fixes 文案点名课程与钳后节次', r.fixes.length === 1 && r.fixes[0].includes('体育') && r.fixes[0].includes('第 5 节'))
+  t('5c. fix 文案标注了时段（上午）', r.fixes[0].includes('上午'))
+}
+{
+  const r = clampCoursesToSegments([{ title: '晚课', weekday: 2, startSec: 6, endSec: 13 }], DEF13)
+  t('5d. 下午→晚上跨段：钳到下午末节 10', r.items[0].endSec === 10)
+  t('5e. 段名判晚上（19:00 起）', segName({ start: '19:00' }) === '晚上' && segName({ start: '14:00' }) === '下午' && segName({ start: '08:00' }) === '上午')
+}
+{
+  const r = clampCoursesToSegments([
+    { title: '段内课', weekday: 1, startSec: 1, endSec: 5 },
+    { title: '连堂', weekday: 3, startSec: 6, endSec: 7 },
+    { title: '晚自习', weekday: 4, startSec: 11, endSec: 13 },
+  ], DEF13)
+  t('5f. 段内的课原样不动（无 fix）', r.fixes.length === 0 && r.items.every((x) => x.endSec === x.endSec))
+  t('5g. items 顺序保持', r.items[0].title === '段内课' && r.items[2].title === '晚自习')
+}
+{
+  const r = clampCoursesToSegments([{ title: '超界', weekday: 1, startSec: 1, endSec: 15 }], DEF13)
+  t('5h. 超出节次表的不钳（走既有「节次超出」红字链路）', r.items[0].endSec === 15 && r.fixes.length === 0)
+}
+{
+  const one = [{ no: 1, start: '08:00', end: '08:45' }, { no: 2, start: '08:55', end: '09:40' }]
+  t('5i. 单段表不钳', clampCoursesToSegments([{ title: 'a', startSec: 1, endSec: 2 }], one).fixes.length === 0)
+  t('5j. 空表不炸', clampCoursesToSegments([], []).fixes.length === 0)
+}
+{
+  const src = [{ title: '原对象', weekday: 1, startSec: 1, endSec: 8 }]
+  const r = clampCoursesToSegments(src, DEF13)
+  t('5k. 原数组不被改写（返回新对象）', src[0].endSec === 8 && r.items[0] !== src[0])
+}
 
 /* ---- 1x. calcTilePlan：长图切块规划 ---- */
 t('4a. 普通比例截图不切块', calcTilePlan(1080, 1920) === null && calcTilePlan(1264, 2780) === null)

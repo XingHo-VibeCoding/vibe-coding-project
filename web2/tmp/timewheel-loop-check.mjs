@@ -49,28 +49,29 @@ try {
 
   const minBtns = await page.locator('.wheel').nth(1).locator('button').count()
   const hourBtns = await page.locator('.wheel').nth(0).locator('button').count()
-  t('T1a 分钟列五倍列表（300 项）', minBtns === 300)
+  /* 2026-10-01 板块 D：分钟列 5 分钟一档，60 项 → 12 项（00/05/…/55），五倍 = 60 项 */
+  t('T1a 分钟列五倍列表（60 项 = 12×5，5 分钟步长）', minBtns === 60)
   t('T1b 时列五倍列表（120 项）', hourBtns === 120)
 
   const minTop0 = await colTop(page, 1)
   const hourTop0 = await colTop(page, 0)
-  t('T2a 分钟初始定位中间份（08:00 → scrollTop=2400）', Math.abs(minTop0 - 2400) <= 2)
+  t('T2a 分钟初始定位中间份（08:00 → scrollTop=480）', Math.abs(minTop0 - 480) <= 2)
   t('T2b 时列初始定位中间份（08 时 → scrollTop=1280）', Math.abs(hourTop0 - 1280) <= 2)
   t('T2c 初始值 00 分', (await colVal(page, 1)) === '00')
 
-  // T3 分钟列向上滚 2 格：00 → 59 → 58（循环，不到底）
-  await scrollCol(page, 1, 2400 - 2 * ROW)
-  t('T3 分钟上滚过 0 → 58', (await colVal(page, 1)) === '58')
+  // T3 分钟列向上滚 2 格：00 → 55 → 50（循环，不到底）
+  await scrollCol(page, 1, 480 - 2 * ROW)
+  t('T3 分钟上滚过 0 → 50', (await colVal(page, 1)) === '50')
 
-  // T4 分钟列定位到第三份的 0（scrollTop=4800）：59 之后无缝是 00
-  await scrollCol(page, 1, 2400) // 先回 00
-  await scrollCol(page, 1, (60 + 60) * ROW) // 4800 = 第三份的 00
-  t('T4a 59 之后无缝衔接 00', (await colVal(page, 1)) === '00')
+  // T4 分钟列定位到第三份的 0（scrollTop=960）：55 之后无缝是 00
+  await scrollCol(page, 1, 480) // 先回 00
+  await scrollCol(page, 1, (12 + 12) * ROW) // 960 = 第三份的 00
+  t('T4a 55 之后无缝衔接 00', (await colVal(page, 1)) === '00')
 
-  // T4b keepMiddle 归位：scrollTop 推到 6000（≥2.5 份）应被平移回 3600，值不变（30）
-  await scrollCol(page, 1, 6000)
+  // T4b keepMiddle 归位：scrollTop 推到 1200（≥2.5 份）应被平移回 720；720/40=18 索引 → 18%12=6 → 6×5=30 分
+  await scrollCol(page, 1, 1200)
   const minTopAfter = await colTop(page, 1)
-  t('T4b 越界后 keepMiddle 归位（6000 → 3600）', Math.abs(minTopAfter - 3600) <= 2)
+  t('T4b 越界后 keepMiddle 归位（1200 → 720）', Math.abs(minTopAfter - 720) <= 2)
   t('T4c 归位后值不变（30 分）', (await colVal(page, 1)) === '30')
 
   // T5 时列过 23 → 00

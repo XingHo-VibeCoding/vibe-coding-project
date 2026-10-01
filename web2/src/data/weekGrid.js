@@ -185,3 +185,43 @@ export function findCellOverlaps(items) {
   }
   return out
 }
+
+/* 段名：按本段第一节开始时间落点判断（早读/上午/下午/晚上）。
+   与 gapLabel 的口径一致，prompt 与修正文案共用。 */
+export function segName(g) {
+  const st = timeToMin(g.start)
+  if (st < 11 * 60) return '上午'
+  if (st < 17 * 60) return '下午'
+  return '晚上'
+}
+
+/* 识别结果的跨段钳制（2026-10-01 用户实测 bug：「一节课从早上到下午，跨了午休」）：
+   AI 数错行序时会输出 startSec=1, endSec=8 这种横跨午休的范围。prompt 已加约束（v3），
+   但 AI 犯错代码兜底——按 startSec 所在段把 endSec 钳到本段最后一节。
+   两端都在表内但分属不同段才钳；超出节次表（已有「节次超出」红字链路）和单段表不动。
+   返回 { items, fixes }：items 是新数组（原对象不动），fixes 是给确认页顶部的人类可读文案。 */
+export function clampCoursesToSegments(items, periods) {
+  const list = Array.isArray(items) ? items : []
+  const ps = Array.isArray(periods) ? periods : []
+  if (!list.length || !ps.length) return { items: list, fixes: [] }
+  const segs = segmentView(ps)
+  if (segs.length < 2) return { items: list, fixes: [] }
+  const segOf = (n) => segs.find((g) => g.nos.includes(Number(n)))
+  const out = []
+  const fixes = []
+  for (const it of list) {
+    const sSeg = segOf(it.startSec)
+    const eSeg = segOf(it.endSec)
+    if (sSeg && eSeg && sSeg.seg !== eSeg.seg) {
+      const newEnd = sSeg.nos[sSeg.nos.length - 1]
+      out.push({ ...it, endSec: newEnd })
+      const name = String(it.title || '未命名')
+      fixes.push(
+        `「${name}」认成了第 ${it.startSec}–${it.endSec} 节（横跨段间休息），已按${segName(sSeg)}时段收回到第 ${newEnd} 节，可在下方卡片改`
+      )
+    } else {
+      out.push(it)
+    }
+  }
+  return { items: out, fixes }
+}

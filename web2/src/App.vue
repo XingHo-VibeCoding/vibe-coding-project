@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf } from './data/store.js'
+import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
 import { normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt } from './data/periods.js'
-import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange } from './data/weekGrid.js'
+import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange, clampCoursesToSegments } from './data/weekGrid.js'
 import { recorderAvailable, ensureMicPermission, startRecording as recStart, stopRecording as recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning } from './data/recorder.js'
 import { transcriberAvailable, modelState, ensureModel, transcribeLecture } from './data/transcriber.js'
 import { loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable, testConnection, DEEPSEEK_MODELS } from './data/summarizer.js'
@@ -162,9 +162,14 @@ function reloadDataset() {
      之前只在页面初始化时刷新，导入带录音场次/打卡记录的文件后列表不更新（测试抓出） */
   refreshLectures()
   reloadHabits()
+  addedDupCount.value = countAddedDups()
 }
 
-/* 清理重复课程：只处理 web2.added 里的重复（多次导入同一课表会叠加在这里） */
+/* 清理重复课程：只处理 web2.added 里的重复（多次导入同一课表会叠加在这里）。
+   按钮「有重复才显示」（2026-10-01 用户拍板）——没有这种脏数据就不摆这个入口。
+   注意初始值要**当场算**：页面启动走的是 loadDataset()（initial），不经过 reloadDataset()，
+   写成 ref(0) 会让入口在下次导入前永远藏着（dedup-button-check D2 抓出）。 */
+const addedDupCount = ref(countAddedDups())
 function dedupCourses() {
   const removed = dedupAdded()
   reloadDataset()
@@ -283,14 +288,21 @@ function finishOnboarding() {
   onboarding.value = false
 }
 
-/* ---------------- 清除数据并重置（对齐主项目 Store.resetAll + confirmResetModal 口径） ----------------
-   只删数据键 web2.data、录音场次 web2.lectures、打卡记录 web2.habits
-   与引导标记 web2.onboarded
-   （「回到初始设定」= 引导页重新出现）；主题/强调色是个性化设置，保留。
+/* ---------------- 清除数据并重置 ----------------
+   清 8 个数据键：web2.data（导入数据）、web2.added（手动加 + 识别导入的课）、
+   web2.todos（待办覆盖）、web2.events（日程）、web2.courseOv（课卡覆盖标记）、
+   web2.lectures（录音场次）、web2.habits（打卡）、web2.onboarded（引导标记，
+   删它才会回到引导页）。此前漏删 added/todos/events/courseOv，导致「清了课表还在」。
+   保留 4 个本机个性化设置（2026-10-01 用户拍板）：web2.theme（主题）、web2.accent
+   （强调色）、web2.llm（API Key）、web2.notify（通知设置）。
    二次确认走自建弹窗，不用原生 confirm。 */
 const confirmClear = ref(false)
 function doClearData() {
   localStorage.removeItem('web2.data')
+  localStorage.removeItem(ADDED_KEY)
+  localStorage.removeItem(TODOS_KEY)
+  localStorage.removeItem(EVENTS_KEY)
+  localStorage.removeItem(COURSE_OV_KEY)
   localStorage.removeItem(LECTURES_KEY)
   localStorage.removeItem(HABITS_KEY)
   localStorage.removeItem(ONBOARD_KEY)
@@ -1082,16 +1094,19 @@ async function onObRecFile(e) {
   obRecBusy.value = true
   try {
     const { dataUrls } = await compressImageForRecognize(file) // 长图自动切块
-    const r = await recognizeScheduleImage(dataUrls)
+    /* prompt v3：把当前节次表喂给 AI，让它按段排课、不跨午休（详见 recognizer.js） */
+    const r = await recognizeScheduleImage(dataUrls, { periods: recPeriods.value })
     if (!r.courses.length) {
       const hint = r.notes && r.notes.length ? 'AI 说：' + r.notes.join('；') + '。' : ''
       obRecErr.value = '这张图里没认出课程。' + hint + '建议直接截教务系统课表网页的原图，不要先把图缩小。'
       return
     }
+    /* AI 犯错代码兜底：跨段（横跨午休/晚休）的课按开始节次所在段钳回段内（详见 weekGrid.js） */
+    const clamped = clampCoursesToSegments(r.courses, recPeriods.value)
     recPreview.value = {
-      items: r.courses.map((c) => ({ ...c, selected: true })),
+      items: clamped.items.map((c) => ({ ...c, selected: true })),
       notes: r.notes,
-      warnings: r.warnings,
+      warnings: [...r.warnings, ...clamped.fixes],
     }
     obStepDir.value = 'obpage-fwd'
     onboardStep.value = 'recConfirm' // 识别成功落到第 3 步核对（返回第 2 步时结果仍在）
@@ -2281,20 +2296,18 @@ function gridDbl(e) {
             </template>
           </template>
 
-          <!-- 课程卡：跨行表达连堂，与格线天然对齐 -->
+          <!-- 课程卡：跨行表达连堂，与格线天然对齐；纯色块风格与识别预览表统一
+               （2026-10-01 板块 C：去掉左侧 3px 色条与配套缩进，两边一套画法） -->
           <article
             v-for="it in gridCourses"
             :key="it.c.id"
-            class="relative m-[1px] cursor-pointer overflow-hidden rounded-[6px] px-1 py-0.5 shadow-sm ring-1 ring-line/70 transition active:scale-[0.97]"
+            class="relative m-[1px] cursor-pointer overflow-hidden rounded-[5px] px-1 py-0.5 shadow-sm ring-1 ring-line/70 transition active:scale-[0.97]"
             :class="courseStatus(it.c) === 'now' ? 'ring-2 ring-primary-500' : (courseStatus(it.c) === 'past' ? 'opacity-55' : '')"
             :style="{ ...gridStyleOf(it, gridRowOfIdx), background: pal(it.c).bg }"
             @click="openDetail(it.c)"
           >
-            <span class="absolute inset-y-0.5 left-0 w-[3px] rounded-full" :style="{ background: pal(it.c).bar }"></span>
-            <div class="pl-1.5">
-              <p class="truncate text-[10px] leading-[1.15] font-semibold" :style="{ color: pal(it.c).text }">{{ it.c.name }}</p>
-              <p v-if="it.c.place" class="truncate text-[9px] leading-tight text-ink-dim">{{ it.c.place }}</p>
-            </div>
+            <p class="truncate text-[10px] leading-[1.15] font-semibold" :style="{ color: pal(it.c).text }">{{ it.c.name }}</p>
+            <p v-if="it.c.place" class="truncate text-[9px] leading-tight text-ink-dim">{{ it.c.place }}</p>
             <!-- 只在与节次边界不齐时标真实时间（识别导入的课常见），对齐的不啰嗦 -->
             <span
               v-if="!isAligned(it.c, periods)"
@@ -2653,8 +2666,9 @@ function gridDbl(e) {
           </div>
         </div>
 
-        <!-- 清除数据并重置（危险项，对齐主项目：二次确认后回到初始设定，无法恢复） -->
+        <!-- 清除数据并重置（危险项：二次确认后回到初始设定，无法恢复） -->
         <button
+          data-clear-entry
           class="flex w-full items-center gap-3.5 p-4 text-left active:bg-ink/5"
           @click="confirmClear = true"
         >
@@ -2726,14 +2740,14 @@ function gridDbl(e) {
           <p v-if="notifyMsg" class="mt-2 text-[11px]" :class="notifyMsgBad ? 'text-red-400' : 'text-primary-500'">{{ notifyMsg }}</p>
         </div>
 
-        <!-- 数据清理：多次导入叠加的重复课程 -->
-        <div class="flex items-center gap-3.5 p-4">
+        <!-- 数据清理：多次导入叠加的重复课程（有重复才显示，干净的数据不摆这个入口） -->
+        <div v-if="addedDupCount" data-dedup-entry class="flex items-center gap-3.5 p-4">
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50">
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-amber-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6l-1.6 7.2a1.5 1.5 0 01-1.5 1.3H4.6a1.5 1.5 0 01-1.5-1.3L1.5 6M6 6V4a2 2 0 012-2h0a2 2 0 012 2v2M14 6H2" /></svg>
           </span>
           <div class="flex-1">
             <span class="block text-sm font-medium">清理重复课程</span>
-            <span class="block text-[11px] text-ink-dim/70">删掉多次导入叠加的同一门课</span>
+            <span class="block text-[11px] text-ink-dim/70">检测到 {{ addedDupCount }} 门重复（多次导入叠加），一键删掉多余的</span>
           </div>
           <button
             class="rounded-full bg-ink/5 px-3 py-1.5 text-xs font-medium transition active:scale-95"
@@ -3286,7 +3300,7 @@ function gridDbl(e) {
       >
         <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"></div>
         <h2 class="text-lg font-bold">确认清除全部数据</h2>
-        <p class="mt-2 text-xs text-ink-dim">将清空学期、课程、日程与待办并回到初始设定，无法恢复。</p>
+        <p class="mt-2 text-xs text-ink-dim">将清空学期、课程、日程与待办并回到初始设定，无法恢复。API Key、主题与通知设置会保留。</p>
         <div class="mt-5 grid grid-cols-2 gap-2.5">
           <button
             class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
@@ -3295,6 +3309,7 @@ function gridDbl(e) {
             取消
           </button>
           <button
+            data-clear-confirm
             class="rounded-xl border border-red-400 bg-red-400/10 py-2.5 text-sm font-medium text-red-500 transition active:scale-[0.98]"
             @click="doClearData"
           >
