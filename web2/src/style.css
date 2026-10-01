@@ -107,6 +107,9 @@ html[data-accent='mint'] {
 /* 全局：手机 app 质感基线 */
 html {
   -webkit-tap-highlight-color: transparent;
+  /* 橡皮筋/发光拖拽要拦在滚动容器（viewport=html）上，只写 body 不够（2026-10-01 用户
+     报「还是能小幅上下拖」——真实溢出由 gridH 扣 --sat 修，这条拦的是拖到头的弹性效果） */
+  overscroll-behavior: none;
 }
 
 body {

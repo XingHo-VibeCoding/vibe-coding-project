@@ -132,6 +132,48 @@ t('E1 单节次卡片内容不溢出卡片框', cards.single && cards.single.car
   await ctxT.close()
 }
 
+/* ---- G 模拟 App 外壳：#app 被外壳加了 padding-top(--sat) 让出状态栏 ----
+   2026-10-01 用户真机报「还是能小幅上下拖」：WEEK_CHROME 是浏览器（无让位）环境量的，
+   APK 里内容被 sat 顶下去、总高正好多出 sat。修法：gridH 现量 #app padding-top 扣掉；
+   外壳异步量到高度后广播 'wb-sat'，这里同步模拟同一个事件链。 */
+{
+  const ctxA = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const pA = await ctxA.newPage()
+  pA.on('pageerror', (e) => console.log('PAGEERROR:', e.message))
+  await pA.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(seedDoc)})`)
+  await pA.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
+  await pA.goto(URL, { waitUntil: 'domcontentloaded' })
+  await pA.waitForTimeout(700)
+  await pA.locator('nav button').nth(1).click()
+  await pA.waitForTimeout(700)
+  const apk = await pA.evaluate(() => {
+    const gridHBefore = document.querySelector('[data-grid]').getBoundingClientRect().height
+    const app = document.getElementById('app')
+    // 完整模拟外壳：真外壳是设 html 的 --sat 变量（shell.css 用它同时做 #app padding-top
+    // 与主项目根容器的 min-height 收缩），缺一不可
+    document.documentElement.style.setProperty('--sat', '28px')
+    app.style.paddingTop = '28px'
+    window.dispatchEvent(new Event('wb-sat')) // 模拟外壳量到后的广播
+    return new Promise((r) => setTimeout(() => {
+      const sc = document.scrollingElement
+      window.scrollTo(0, 9999)
+      setTimeout(() => r({
+        satRead: getComputedStyle(app).paddingTop,
+        gridHBefore: +gridHBefore.toFixed(1),
+        gridHAfter: +document.querySelector('[data-grid]').getBoundingClientRect().height.toFixed(1),
+        maxScroll: sc.scrollHeight - sc.clientHeight,
+        after: sc.scrollTop,
+      }), 250)
+    }, 100))
+  })
+  console.log('G 明细:', JSON.stringify(apk))
+  t('G1 外壳让位被感知（satPx 量到 28px）', apk.satRead === '28px', apk.satRead)
+  t('G2 网格高度收窄了约一个状态栏（≥24px）', apk.gridHBefore - apk.gridHAfter >= 24, `${apk.gridHBefore} → ${apk.gridHAfter}`)
+  t('G3 让位后仍一屏看完（不产生滚动）', apk.maxScroll <= 1, `可滚 ${apk.maxScroll}px`)
+  t('G4 强行上滑后 scrollTop 仍为 0', apk.after === 0, `scrollTop=${apk.after}`)
+  await ctxA.close()
+}
+
 await browser.close()
 const fails = results.filter((r) => !r[1])
 console.log(`\n=== 周课表一屏/多行：${results.length - fails.length}/${results.length} 通过 ===`)

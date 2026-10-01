@@ -78,8 +78,13 @@ onMounted(() => {
   initBackButton() // Android 返回键分级处理（App 内生效；浏览器无桥不注册）
   window.addEventListener('resize', onWinResize) // 周课表高度按视口重算（一屏看完的保证）
   measureNavH() // 底部导航实测高度（含系统手势条安全区），网格高度要用它
+  measureSat() // 外壳状态栏让位（App 内 >0，浏览器 0）
+  window.addEventListener('wb-sat', onWinResize) // 外壳异步量到 --sat 后广播，重算周课表高度
 })
-onBeforeUnmount(() => window.removeEventListener('resize', onWinResize))
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onWinResize)
+  window.removeEventListener('wb-sat', onWinResize)
+})
 
 /* ---------------- Android 返回键分级处理（@capacitor/app，官方插件自动注册进桥） ----------------
    从上到下找第一件「有的事」做，都没有才退出：picker → 确认层 → 表单/详情 → 回今日页 → exitApp。
@@ -1696,14 +1701,26 @@ const gridCourses = computed(() => courseItems(weekVisible.value, periods.value)
 const WEEK_CHROME = 274
 const winH = ref(typeof window !== 'undefined' ? window.innerHeight : 800)
 const navH = ref(78)
-const gridH = computed(() => Math.max(300, Math.min(620, winH.value - WEEK_CHROME - navH.value)))
+/* 外壳（App 包壳）为了让出系统状态栏，给 #app 加了 padding-top: var(--sat)（真机约 28px）。
+   WEEK_CHROME 是浏览器（无让位）环境量的，APK 里内容会被这 28px 顶下去——
+   2026-10-01 用户报「还是能小幅度上下拖」，多出来的高度正好 = sat。所以这里现量
+   #app 的 computed padding-top 扣掉（不依赖变量名；浏览器里 padding 为 0，行为不变）。
+   外壳量到原生高度是异步的，可能晚于本组件 mount，写完 --sat 会广播 'wb-sat' 事件。 */
+const satPx = ref(0)
+const gridH = computed(() => Math.max(300, Math.min(620, winH.value - WEEK_CHROME - navH.value - satPx.value)))
 function measureNavH() {
   const nav = document.querySelector('nav')
   if (nav) navH.value = nav.offsetHeight
 }
+function measureSat() {
+  const app = document.getElementById('app')
+  if (!app) return
+  satPx.value = parseFloat(getComputedStyle(app).paddingTop) || 0
+}
 function onWinResize() {
   winH.value = window.innerHeight
   measureNavH()
+  measureSat()
 }
 
 /* 表头与主体共用同一份列定义（两处分开写就会对不上，这是网格的基本要求） */
@@ -1948,7 +1965,10 @@ function gridDbl(e) {
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-screen max-w-md flex-col overflow-x-clip">
+  <!-- min-height 要减掉外壳的状态栏让位 --sat（App 内 ~28px，浏览器无此变量取 0）：
+       不减的话根仍是 100vh，加上 #app 的 padding-top 后总高多出正好一个状态栏
+       —— 2026-10-01 真机「小幅上下拖」的第二层根因（第一层在 gridH 公式） -->
+  <div class="mx-auto flex min-h-[calc(100vh-var(--sat,0px))] max-w-md flex-col overflow-x-clip">
     <!-- 顶栏：淡雅氛围卡——四角全圆+四周留白，浏览器里不再有「上尖下圆」的裁切感 -->
     <header class="relative mx-4 mt-3 overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-50 to-primary-100 px-5 pb-5 pt-5 shadow-sm">
       <div class="flex items-start justify-between gap-2">
