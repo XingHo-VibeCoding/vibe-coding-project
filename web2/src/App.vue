@@ -1,10 +1,10 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
+import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
 import { normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt } from './data/periods.js'
 import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange, clampCoursesToSegments } from './data/weekGrid.js'
-import { recorderAvailable, ensureMicPermission, startRecording as recStart, stopRecording as recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning } from './data/recorder.js'
-import { transcriberAvailable, modelState, ensureModel, transcribeLecture } from './data/transcriber.js'
+import { recorderAvailable, ensureMicPermission, startRecording as recStart, stopRecording as recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning, scheduleAutoStop, consumeAutoStop } from './data/recorder.js'
+import { transcriberAvailable, modelState, ensureModel, transcribeLecture, startLiveTranscribe, stopLiveTranscribe } from './data/transcriber.js'
 import { loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable, testConnection, DEEPSEEK_MODELS } from './data/summarizer.js'
 import { compressImageForRecognize, recognizeScheduleImage, recognizerAvailable } from './data/recognizer.js'
 import { buildIcs, downloadText } from './data/ics.js'
@@ -523,7 +523,14 @@ async function startRec() {
   if (!perm.ok) return setRecMsg(perm.error, true)
   const r = await recStart()
   if (!r.ok) return setRecMsg(r.error, true)
-  const lec = addLecture({ title: defaultLecTitle() })
+  /* M5 课程关联：开录时若正落在某节课的覆盖时间内（含提前 5 分钟），
+     场次自动挂到这节课——标题显示课名，事后找纪要靠课名不靠时间戳 */
+  const d = new Date()
+  const course = courseCovering(todayCourses.value, nowTime.value)
+  const lec = addLecture({
+    schedule_id: course ? course.id : null,
+    title: course ? `${course.title} · ${d.getMonth() + 1}月${d.getDate()}日` : defaultLecTitle(d),
+  })
   recActiveId.value = lec.id
   recElapsed.value = 0
   playingId.value = null
@@ -533,29 +540,34 @@ async function startRec() {
   /* M2.5 保活：拉起前台服务，锁屏/切后台不断录（通知栏一条常驻通知）。
      保活失败不影响录音——只把提示换成「先别锁屏」，照常录。 */
   const ka = await startKeepAlive(lec.title)
+  /* M5 到点自动停：关联了课就按「下课时间 + 2 分钟宽限」排原生定时（锁屏照停）。
+     没关联课（独立日程/自由录）不排——不知道该几点停，宁可不猜；
+     排程失败只降级成手动停，不影响录音。 */
+  let auto = false
+  if (course) {
+    const end = new Date()
+    end.setHours(Math.floor(minOf(course.end) / 60), minOf(course.end) % 60, 0, 0)
+    const delayMs = end.getTime() + AUTO_STOP_GRACE_MIN * 60000 - Date.now()
+    if (delayMs > 0) {
+      const s = await scheduleAutoStop(delayMs)
+      auto = !!s.ok
+    }
+  }
   if (!ka.ok && !ka.unsupported) {
     setRecMsg('录音已开始，但后台保活没起来（' + ka.error + '）——这场请先别锁屏。', true)
   } else {
-    setRecMsg('录音中：锁屏、切到后台都会继续录。')
+    setRecMsg(course && auto ? '录音中：锁屏、切到后台都会继续录，下课后 2 分钟自动停。' : '录音中：锁屏、切到后台都会继续录。')
   }
+  /* M5 分段转写：开录即让原生边录边预转（每 3 分钟吃掉已写完的 30s 段），
+     课后只等尾巴。尽力而为：模型没下好/没文件都自动放弃，最终转写兜底全量。 */
+  if (trSupported.value) startLiveTranscribe()
 }
-async function stopRec() {
-  const id = recActiveId.value
-  if (!id) return
-  let r
-  try {
-    r = await recStop()
-  } finally {
-    /* 保活必须无条件撤下（含录音失败路径）：否则通知会一直挂着，下次还得靠启动对账清 */
-    await stopKeepAlive()
-    clearInterval(recTicker)
-    recTicker = null
-    recActiveId.value = null
-  }
-  if (!r.ok) {
-    refreshLectures()
-    return setRecMsg(r.error + '（这一场已标记为录音中断）', true)
-  }
+/* M5 自动停的拖堂宽限：下课铃后老师再讲 2 分钟很正常，到点 = 下课时间 + 2 分钟 */
+const AUTO_STOP_GRACE_MIN = 2
+
+/* 落盘收尾：写场次记录 → 刷新 → 全自动链路（转写→纪要→作业转待办）。
+   stopRec 和「锁屏回来发现原生已替我们停录」共用这一条出口。 */
+async function finalizeRecording(id, r) {
   const now = new Date().toISOString()
   const res = updateLecture(id, {
     ended_at: now,
@@ -565,8 +577,60 @@ async function stopRec() {
   refreshLectures()
   if (!res.ok) return setRecMsg(res.error, true)
   if (!r.clip.path) return setRecMsg('录音已停止，但文件没有落盘（异常），这一场只留下记录。', true)
-  setRecMsg(`已保存：${fmtDur(r.clip.duration_ms)} 的课堂录音。`)
+  if (r.auto) setRecMsg('已到下课时间，录音自动停了，正在自动转写。')
+  /* M5 分段转写：停录时取走原生预转好的前段文字，最终转写只算尾巴（live 尽力而为） */
+  let live = null
+  if (trSupported.value) {
+    try {
+      const s = await stopLiveTranscribe()
+      if (s && s.active && s.segs > 0) live = { text: s.text, segs: s.segs }
+    } catch { /* 没有 live 或领失败，全量转写兜底 */ }
+  }
+  /* M5 全自动链路：停录即自动转写 → 转写完自动生成纪要 → 完成发通知。
+     每一环失败都会就地提示并停在可手动重试的状态（手动按钮保留）。 */
+  runAutoPipeline(id, live)
 }
+async function stopRec() {
+  const id = recActiveId.value
+  if (!id) return
+  let r
+  try {
+    r = await recStop()
+  } finally {
+    /* 保活必须无条件撤下（含录音失败路径）：否则通知会一直挂着，下次还得靠启动对账清；
+       原生服务销毁时顺带撤销还没到点的自动停排程 */
+    await stopKeepAlive()
+    clearInterval(recTicker)
+    recTicker = null
+    recActiveId.value = null
+  }
+  if (!r.ok) {
+    /* 到点自动停发生在本 App 内（用户停在前台没动）时走这里：JS 的 stop 会报
+       「没有进行中的录音」，其实原生已经把文件停好落盘了——捞回来按成功收尾 */
+    const salvage = await consumeAutoStop()
+    if (salvage.ok && salvage.path) {
+      return finalizeRecording(id, { ok: true, auto: true, clip: { path: salvage.path, mime: 'audio/aac', duration_ms: salvage.msDuration } })
+    }
+    refreshLectures()
+    return setRecMsg(r.error + '（这一场已标记为录音中断）', true)
+  }
+  finalizeRecording(id, r)
+}
+/* M5 原生自动停的恢复口：强停多半发生在锁屏后，WebView 冻结，JS 当时啥也做不了；
+   解锁回来 visibilitychange 一响，先问原生有没有替我们停过录，停过就把场次补齐并进管线 */
+async function onVisibleCheckAutoStop() {
+  if (document.visibilityState !== 'visible' || !recActiveId.value) return
+  const salvage = await consumeAutoStop()
+  if (!salvage.ok || !salvage.path) return
+  const id = recActiveId.value
+  await stopKeepAlive() // 原生已自撤，这里兜个底（永远成功）
+  clearInterval(recTicker)
+  recTicker = null
+  recActiveId.value = null
+  finalizeRecording(id, { ok: true, auto: true, clip: { path: salvage.path, mime: 'audio/aac', duration_ms: salvage.msDuration } })
+}
+document.addEventListener('visibilitychange', onVisibleCheckAutoStop)
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisibleCheckAutoStop))
 /* M2.5 启动对账：recActiveId 是内存态，App 重启后必然为 null。
    若这时原生侧保活服务还在跑（上次录音后 App 被系统杀掉/异常退出），撤掉它，
    免得用户看到一条「正在录音」的幽灵通知却没在录。 */
@@ -692,9 +756,13 @@ function fmtSize(n) {
   const mb = Number(n) / 1048576
   return mb >= 1 ? mb.toFixed(1) + 'MB' : Math.max(0, Math.round(Number(n) / 1024)) + 'KB'
 }
-async function startTr(l) {
-  if (trBusyId.value) return
-  if (!trSupported.value) return setRecMsg('转写只能在 App 内使用（浏览器不支持）。', true)
+async function startTr(l, opts = {}) {
+  const auto = !!opts.auto
+  if (trBusyId.value) return false
+  if (!trSupported.value) {
+    if (!auto) setRecMsg('转写只能在 App 内使用（浏览器不支持）。', true)
+    return false
+  }
   trBusyId.value = l.id
   setRecMsg('')
   try {
@@ -716,7 +784,8 @@ async function startTr(l) {
     trPercent.value = 0
     trLabel.value = '准备识别…'
     if ((Number(l.duration_ms) || 0) > 15 * 60 * 1000) {
-      setRecMsg('长录音转写约需 10–20 分钟：屏幕会保持常亮，请留在本页看进度条走完。')
+      /* M5：转写在原生线程跑，不需要人守着看进度条了——切去干别的，回来接着跑 */
+      setRecMsg('长录音转写约需 10–20 分钟：可以先切去干别的，完成后会通知你。')
     }
     await transcribeLecture(l.id, (p) => {
       // 解码/重采样是识别前的预处理，其 percent 只反映该步内部进度——
@@ -726,19 +795,20 @@ async function startTr(l) {
         // 1 小时音频的解码要跑几分钟，百分比必须露出来（真机教训：只显示文字=看起来像卡死）
         trLabel.value = p.percent > 0 ? `解码音频 ${p.percent}%（不耗模型，快了）` : '解码音频…'
         return
-      }
-      if (p.phase === 'resample') {
+      }      if (p.phase === 'resample') {
         trLabel.value = `重采样音频 ${p.percent}%`
         return
       }
       trPercent.value = p.percent
       trLabel.value = p.clipCount > 1 ? `识别 ${p.clipIndex + 1}/${p.clipCount} 段 · ${p.percent}%` : `识别中 ${p.percent}%`
-    })
+    }, { live: opts.live || null })
     setRecMsg('转写完成，文字稿已保存。')
     notifyDone('转写完成', l.title) // App 切在后台时发完成通知（前台自动跳过）
-    trOpenId.value = l.id
+    if (!auto) trOpenId.value = l.id
+    return true
   } catch (e) {
     setRecMsg('转写失败：' + (e && e.message ? e.message : '未知错误') + '（可稍后重试）', true)
+    return false
   } finally {
     trBusyId.value = null
     trPhase.value = ''
@@ -802,17 +872,18 @@ async function testLlm() {
 function cancelSummary() {
   if (sumCtrl) sumCtrl.abort()
 }
-async function startSummary(l) {
-  if (sumBusyId.value) return
+async function startSummary(l, opts = {}) {
+  const auto = !!opts.auto
+  if (sumBusyId.value) return false
   const miss = summarizerAvailable()
   if (miss) {
-    setRecMsg(miss, true)
+    setRecMsg(auto ? `${miss}（转写已完成，配好后手动点「生成纪要」即可）` : miss, true)
     llmInputOpen.value = true // 缺配置：顺手把设置区展开，少一次找路
-    return
+    return false
   }
   if (!l.transcript || String(l.transcript).trim().length < 30) {
     setRecMsg('文字稿太短，没有可总结的内容。', true)
-    return
+    return false
   }
   sumBusyId.value = l.id
   sumStage.value = 'call'
@@ -824,13 +895,66 @@ async function startSummary(l) {
     sumOpenId.value = l.id
     setRecMsg('纪要已生成。')
     notifyDone('纪要已生成', l.title) // 同上：仅后台时发
+    return true
   } catch (e) {
     if (e && e.name === 'AbortError') setRecMsg('已取消纪要生成。', true)
     else setRecMsg('纪要生成失败：' + (e && e.message ? e.message : '未知错误'), true)
+    return false
   } finally {
     sumBusyId.value = null
     sumStage.value = ''
     refreshLectures()
+  }
+}
+
+/* ---------------- M5 全自动链路：停录 → 转写 → 纪要，一路自动到底 ----------------
+   stopRec 成功保存后触发（fire-and-forget，不阻塞停录返回）。每一环失败就地
+   提示并停在可手动重试的状态：转写失败留在「已录完待转写」，转写成功但纪要
+   失败/缺 Key 留在「已转写待总结」——手动按钮都在原位，自动只是省点击。
+   浏览器环境（trSupported=false）到此为止，保持旧行为。 */
+async function runAutoPipeline(id, live = null) {
+  const l = lectures.value.find((x) => x.id === id)
+  if (!l) return
+  if (!trSupported.value) return
+  const trOk = await startTr(l, { auto: true, live })
+  if (!trOk) return
+  const l2 = lectures.value.find((x) => x.id === id) // 转写期间 refreshLectures 重建过数组，重取最新
+  if (!l2) return
+  const sumOk = await startSummary(l2, { auto: true })
+  if (!sumOk) return
+  const l3 = lectures.value.find((x) => x.id === id) // 纪要写入后又 refresh 过，重取
+  if (l3) homeworkToTodos(l3) // M5 第 2 步：纪要里的作业自动转待办（只有自动链路触发，手动总结不自动转）
+}
+
+/* M5 第 2 步：纪要 homework → 待办。
+   截止日取「这门课下次上课那天」（nextCourseDate 纯函数在 store.js，按课名找下次槽位换算；
+   没关联课 / 学期外找不到 → 明天）。标题带课名前缀方便在待办列表里认领；
+   按标题去重——同一场重试总结不会叠出重复待办。 */
+function tomorrowStr() {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return fmtDateYMD(d)
+}
+function homeworkToTodos(l) {
+  const hw = l.summary && Array.isArray(l.summary.homework) ? l.summary.homework : []
+  const items = hw.map((h) => String(h).trim()).filter(Boolean)
+  if (!items.length) return
+  const course = l.schedule_id ? weekAll.value.find((c) => c.id === l.schedule_id) : null
+  const due = (course && nextCourseDate(weekAll.value, semester.value, todayIdx + 1, course.name)) || tomorrowStr()
+  const prefix = course ? `${course.name}：` : ''
+  const existing = new Set(todos.value.map((t) => t.title))
+  let added = 0
+  for (const h of items) {
+    const title = prefix + h
+    if (existing.has(title)) continue
+    existing.add(title)
+    addTodo({ title, due_date: due })
+    added++
+  }
+  if (added) {
+    reloadDataset()
+    setRecMsg(`纪要已生成，${added} 条作业已转成待办（截止 ${due}）。`)
+    notifyDone('作业已转待办', `${added} 条 · 截止 ${due}`) // 仅后台时发
   }
 }
 
@@ -2177,6 +2301,51 @@ function gridDbl(e) {
     >
     <!-- ===== 今日 ===== -->
     <main class="w-1/3 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
+      <!-- 课堂录音入口（M5 第 2 步）：今日页直达，不用每次绕「我的」；
+           录音中整卡变红显示计时，停录后自动转写→纪要→作业转待办一路到底 -->
+      <section
+        class="rounded-2xl border bg-card p-3.5 shadow-sm"
+        :class="recActiveId ? 'border-red-300' : 'border-line'"
+        data-today-rec
+      >
+        <div class="flex items-center gap-3.5">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" :class="recActiveId ? 'bg-red-400/10' : 'bg-primary-50'">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" :class="recActiveId ? 'text-red-400' : 'text-primary-500'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <template v-if="!recActiveId">
+              <span class="block text-sm font-medium">课堂录音</span>
+              <span class="block text-[11px] text-ink-dim/70">下课 2 分钟自动停；停录后自动转写、纪要、作业转待办</span>
+            </template>
+            <template v-else>
+              <span class="flex items-center gap-2">
+                <span class="h-2 w-2 animate-pulse rounded-full bg-red-400"></span>
+                <span class="text-sm font-semibold tabular-nums">{{ fmtDur(recElapsed * 1000) }}</span>
+              </span>
+              <span class="block text-[11px] text-ink-dim/70">录音中 · 锁屏也会继续录</span>
+            </template>
+          </span>
+          <button
+            v-if="!recActiveId"
+            data-today-rec-start
+            class="shrink-0 rounded-full bg-primary-500 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
+            :class="recSupported ? '' : 'opacity-60'"
+            @click="startRec"
+          >
+            开始录音
+          </button>
+          <button
+            v-else
+            data-today-rec-stop
+            class="shrink-0 rounded-full bg-red-400 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
+            @click="stopRec"
+          >
+            停止并保存
+          </button>
+        </div>
+        <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-400' : 'text-primary-500'">{{ recMsg }}</p>
+      </section>
+
       <!-- 今日课程：时间线卡片 -->
       <section>
         <h2 class="mb-2 px-1 text-sm font-semibold text-ink">今日课程</h2>
@@ -2554,7 +2723,7 @@ function gridDbl(e) {
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">课堂录音</span>
-            <span class="block text-[11px] text-ink-dim/70">录下整节课，课后转写总结；长按场次可删除</span>
+            <span class="block text-[11px] text-ink-dim/70">下课后 2 分钟自动停；停录后自动转写并生成纪要；长按场次可删除</span>
           </span>
           <button
             v-if="!recActiveId"

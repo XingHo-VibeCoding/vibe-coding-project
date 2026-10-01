@@ -4,6 +4,7 @@
    转写 = 逐 clip 调原生识别（30s 分段在原生层），文字按 clip 顺序拼接，写回 lectures.transcript。 */
 
 import { loadLectures, updateLecture } from './store.js'
+import { LECTURE_SUB_DIR } from './recorder.js'
 
 /* 主源 + 备源（都验证过 302→200 链路；App 侧 HttpURLConnection 会跟随重定向，
    若 Range 头在重定向后被丢，原生层按 200 全量响应自动放弃续传重下——不会产生坏文件） */
@@ -64,15 +65,44 @@ export async function ensureModel(onProgress) {
   return true
 }
 
+/* M5 分段转写（边录边预转）：开录后 fire-and-forget 调 startLive，原生每 3 分钟把
+   录音文件里已写完的完整 30s 段先识别掉；停录时 stopLive 领走前段文字。
+   尽力而为：模型没就绪/没文件/已被占用都返回 started:false，不影响录音，
+   最终转写兜底全量。 */
+export async function startLiveTranscribe() {
+  const p = plugin()
+  if (!p || typeof p.startLive !== 'function') return { started: false, unsupported: true }
+  try {
+    const r = await p.startLive({ subDir: LECTURE_SUB_DIR })
+    return { started: !!(r && r.started), reason: r && r.reason }
+  } catch (e) {
+    return { started: false, error: e && e.message ? e.message : String(e) }
+  }
+}
+
+/* 停录时取走预转结果：{ active, text, segs }；没起过 live → { active:false } */
+export async function stopLiveTranscribe() {
+  const p = plugin()
+  if (!p || typeof p.stopLive !== 'function') return { active: false, unsupported: true }
+  try {
+    const r = await p.stopLive({})
+    return { active: !!(r && r.active), text: (r && r.text) || '', segs: Number(r && r.segs) || 0 }
+  } catch (e) {
+    return { active: false, error: e && e.message ? e.message : String(e) }
+  }
+}
+
 /* 转写一整场：按 clip 顺序逐个识别，文字用换行拼接。
    onProgress({clipIndex, clipCount, percent, phase}) —— percent 为全场百分比；
    phase 来自原生层：'decode'/'resample' 是识别前的解码/重采样（percent 是该步内部
    百分比，不代表全场！直接上进度条会出现「先冲 90% 再跳回 50%」的假象，调用方必须区分），
    'asr' 才是真正的识别进度。
+   opts.live：{text, segs} 分段预转的结果——第一个 clip 跳过前 segs 段、结果前拼 text
+   （参数原样传给原生层，拼接与防重复都在原生做）。
    状态机：进 transcribing → 全部成功后 transcribed（文字稿落库）。
    失败保持 transcribing？不——失败回退到 recording（updateLecture 的状态机只拦「倒退」，
    recording < transcribing 允许，语义 = 这场还没转完，可重试）。 */
-export async function transcribeLecture(lectureId, onProgress) {
+export async function transcribeLecture(lectureId, onProgress, opts = {}) {
   const list = loadLectures()
   const lec = list.find((x) => String(x.id) === String(lectureId))
   if (!lec) throw new Error('录音场次不存在。')
@@ -84,14 +114,23 @@ export async function transcribeLecture(lectureId, onProgress) {
 
   const p = plugin()
   if (!p) throw new Error('转写只能在 App 内使用（浏览器不支持）。')
+  const live = opts.live && opts.live.segs > 0 ? opts.live : null
+  let liveApplied = false
   const texts = []
   try {
     for (let i = 0; i < clips.length; i++) {
+      const params = { path: clips[i].path }
+      // live 只对应「录音进行中的那一个文件」= 第一个 clip
+      if (live && !liveApplied) {
+        params.skipSegs = live.segs
+        params.prefixText = live.text
+        liveApplied = true
+      }
       const r = await new Promise((resolve, reject) => {
         const h = listen(p, 'transcribe', (ev) => {
           if (onProgress) onProgress({ clipIndex: i, clipCount: clips.length, percent: Number(ev.percent) || 0, phase: ev.phase || 'asr' })
         })
-        p.transcribe({ path: clips[i].path })
+        p.transcribe(params)
           .then((res) => { h.remove(); resolve(res) })
           .catch((e) => { h.remove(); reject(new Error(e && e.message ? e.message : '转写失败')) })
       })

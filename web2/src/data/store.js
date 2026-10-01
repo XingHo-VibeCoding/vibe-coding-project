@@ -89,6 +89,39 @@ export function minOf(t) {
   const [h, m] = t.split(':').map(Number)
   return h * 60 + m
 }
+
+/* 开录时把场次关联到课程（M5 交互优化）：现在这个分钟数落在哪节课的覆盖时间内
+   （含开课前 5 分钟的提前量——学生常在打铃前进教室开录），就关联哪节。
+   入参是「今天的课程/日程」列表（todayCourses 的形状：含 start/end/title/id），
+   返回命中的那条或 null——绝不拿「今天第一节」之类兜底顶替，宁可不关联。
+   课间 10 分钟 + 5 分钟提前量，保证任意时刻至多命中一节，无歧义。 */
+export function courseCovering(courses, minutes) {
+  const m = Number(minutes) || 0
+  return courses.find((c) => {
+    const s = minOf(c.start)
+    const e = minOf(c.end)
+    return m >= s - 5 && m <= e
+  }) || null
+}
+
+/* M5 作业转待办用：算「这门课下次上课」的日期（YYYY-MM-DD）。
+   courses：整周课表；semester：{ week, firstMonday, totalWeeks }；wdNow：今天 weekday（1–7，周一=1）。
+   本周今天之后还排着这节课（且本周符合周次规则）→ 用本周的；否则下周同一槽位；
+   学期周数之外 / 找不到槽位 / 缺 firstMonday → null（调用方回落「明天」）。 */
+export function nextCourseDate(courses, semester, wdNow, courseName) {
+  if (!semester || !semester.firstMonday) return null
+  const slots = courses.filter((c) => c.name === courseName)
+  const wk = Number(semester.week) || 1
+  const thisWeek = slots.filter((c) => c.weekday > wdNow && matchWeek(c, wk)).sort((a, b) => a.weekday - b.weekday)[0]
+  const nextWeek = slots.filter((c) => matchWeek(c, wk + 1)).sort((a, b) => a.weekday - b.weekday)[0]
+  const pick = thisWeek || nextWeek
+  if (!pick) return null
+  const targetWk = thisWeek ? wk : wk + 1
+  if (targetWk > semester.totalWeeks) return null
+  const d = new Date(semester.firstMonday + 'T00:00:00')
+  d.setDate(d.getDate() + (targetWk - 1) * 7 + (pick.weekday - 1))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 function fmtMin(min) {
   return pad(Math.floor(min / 60)) + ':' + pad(min % 60)
 }

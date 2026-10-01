@@ -204,3 +204,42 @@ export async function keepAliveRunning() {
     return false
   }
 }
+
+/* ---------------- M5 到点自动停录（原生计时，锁屏照停） ----------------
+   为什么必须原生：锁屏后 WebView 的 JS 冻结，setInterval 全不可靠；
+   排程交给原生 RecorderService 的 Handler，到点反射强停 voice-recorder 的
+   MediaRecorder 并落盘，结果放在原生侧等网页回来领取。
+
+   出口约定与保活一致：没有原生桥一律 { ok:false, unsupported:true }，绝不抛出；
+   排程失败只降级成「手动停」，不影响录音本身。 */
+
+/* 排自动停：delayMs 毫秒后到点（网页侧已算好「下课时间 + 宽限 − 现在」）。
+   手动停录会走原生 onDestroy 自动撤销排程，这里不用单独提供 cancel。 */
+export async function scheduleAutoStop(delayMs) {
+  const b = recSvc()
+  if (!b || typeof b.scheduleAutoStop !== 'function') return { ok: false, unsupported: true }
+  try {
+    await b.scheduleAutoStop({ delayMs: Math.max(0, Math.floor(Number(delayMs) || 0)) })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: errText(e) }
+  }
+}
+
+/* 领取原生强停的录音（取走即清）：{ ok, path, msDuration }。
+   两条路会用到：①锁屏回来 visibilitychange 恢复时；②手动 stop 报
+   「没有进行中的录音」但其实是原生已经替我们停过时。 */
+export async function consumeAutoStop() {
+  const b = recSvc()
+  if (!b || typeof b.consumeAutoStop !== 'function') return { ok: false, unsupported: true }
+  try {
+    const r = await b.consumeAutoStop({})
+    return {
+      ok: !!(r && r.consumed),
+      path: r && r.path ? String(r.path) : null,
+      msDuration: Math.max(0, Math.floor(Number(r && r.msDuration) || 0)),
+    }
+  } catch (e) {
+    return { ok: false, error: errText(e) }
+  }
+}
