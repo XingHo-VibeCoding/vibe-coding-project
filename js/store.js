@@ -247,6 +247,13 @@ window.Store = (function () {
       if (['every', 'odd', 'even'].indexOf(input.week_rule) < 0) {
         return { ok: false, error: '请选择周次规则（每周/单周/双周）。' };
       }
+    } else if (input.type === 'routine') {
+      /* 固定循环日程：与课程同形（星期 + 起止 + 周次规则），只是不占学期课表 */
+      var rwd = Number(input.weekday);
+      if (!(rwd >= 1 && rwd <= 7)) return { ok: false, error: '请选择星期。' };
+      if (input.week_rule && ['every', 'odd', 'even'].indexOf(input.week_rule) < 0) {
+        return { ok: false, error: '请选择周次规则（每周/单周/双周）。' };
+      }
     } else if (input.type === 'event') {
       if (!isDateStr(input.date)) return { ok: false, error: '请选择日期。' };
     } else {
@@ -256,19 +263,21 @@ window.Store = (function () {
   }
 
   function normalizeSchedule(input, createdAt) {
+    /* 周期型 = 按星期循环的（course 课表课程 / routine 固定循环日程）；event 是一次性具体日期 */
+    var isCycle = input.type === 'course' || input.type === 'routine';
     return {
       id: input.id || genId('sch_'),
       type: input.type,
       title: String(input.title).trim(),
       note: String(input.note || '').trim(),
       location: String(input.location || '').trim(),
-      weekday: input.type === 'course' ? Number(input.weekday) : null,
+      weekday: isCycle ? Number(input.weekday) : null,
       start_time: String(input.start_time),
       duration: Number(input.duration),
-      week_rule: input.type === 'course' ? input.week_rule : null,
+      week_rule: isCycle ? (input.week_rule || 'every') : null,
       date: input.type === 'event' ? String(input.date) : null,
       color: input.color || '',
-      semester_id: input.type === 'course' ? String(input.semester_id || '') : null,
+      semester_id: isCycle ? String(input.semester_id || '') : null,
       manual_edited: input.manual_edited !== false,
       created_at: createdAt,
       updated_at: nowIso()
