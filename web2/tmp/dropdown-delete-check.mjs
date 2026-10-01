@@ -87,7 +87,10 @@ try {
   t('B5. 确认后场次消失', (await row.count()) === 0)
   const left = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.lectures')).length)
   t('B6. 落库同步删除（0 条）', left === 0)
-  t('B7. 就近提示已删除', (await page.getByText(/已删除「长按删除我」/).count()) === 1)
+  /* 提示文案用 >=1：recMsg 现在有两个渲染点（我的页录音区 + 今日页录音入口卡，
+     后者 M5 第 2 步新增），同一条文案会同时出现在两处 DOM 里。两处都在不同 tab，
+     不会同时可见，所以不是重复展示的 bug。 */
+  t('B7. 就近提示已删除', (await page.getByText(/已删除「长按删除我」/).count()) >= 1)
 
   t('B8. 全程无 pageerror', errors.length === 0)
   if (errors.length) console.log('PAGEERROR:', errors.join(' | '))
