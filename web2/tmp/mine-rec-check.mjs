@@ -14,7 +14,7 @@ function t(name, cond) {
   console.log((cond ? 'PASS ' : 'FAIL ') + name)
 }
 
-const URL = 'http://127.0.0.1:4177/'
+const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 const IMG = 'D:/Document/Project/vibe-coding-project/web2/tmp/rec-sample.jpg'
 const LLM_CFG = JSON.stringify({ provider: 'deepseek', key: 'sk-test', model: 'deepseek-flash' })
 
