@@ -12,7 +12,8 @@ function t(name, cond, extra) {
   console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra ? '  → ' + extra : ''))
 }
 
-const URL = 'http://127.0.0.1:4199/'
+// TW_URL 可覆盖线上产物做行为断言
+const URL = process.env.TW_URL || 'http://127.0.0.1:4199/'
 
 const now = new Date()
 const mon = new Date(now)

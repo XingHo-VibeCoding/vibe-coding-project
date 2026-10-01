@@ -17,7 +17,8 @@ function t(name, cond, extra) {
   console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra ? '  → ' + extra : ''))
 }
 
-const URL = 'http://127.0.0.1:4177/'
+// TW_URL 可覆盖：TW_URL=https://college-schedule-assistant.app.workbuddy.host/ 即对线上产物做行为断言
+const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 const now = new Date()
 const mon = new Date(now)
 mon.setDate(now.getDate() - ((now.getDay() + 6) % 7))
