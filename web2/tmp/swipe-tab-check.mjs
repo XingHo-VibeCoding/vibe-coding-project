@@ -10,6 +10,9 @@
      C1 纵向滑动 → 不切 tab（m41 仍 0）
      D1 快甩 50px（速度够）→ 切到周课表
      E1 横向拖动后松手不误点卡片（详情弹层不出现）
+     F1 周课表→我的：松手后 ~70ms 平移已明显开动（110ms 空窗修复，2026-10-01 用户报「顿一下」）
+     F2 周课表→我的：strip 的 transition-delay 为 0s（编排延迟只保留「离开今日」）
+     F3 我的→周课表：同样 0s 延迟（反向也不顿）
    跑法：先起 dev server（4177）再 node tmp/swipe-tab-check.mjs */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
@@ -121,6 +124,27 @@ await page.waitForTimeout(400)
 const e1 = await page.evaluate(() => !document.querySelector('.fixed.inset-0.z-20')) // 详情遮罩未出现
 const back = await m41()
 t('E1 滑动不误触详情（回今日且无弹层）', e1 && Math.abs(back) <= 5, `m41=${back}`)
+
+/* F 周课表↔我的：无 110ms 空窗（旧逻辑「目的地不是今日就延迟 110ms」让两边
+   都不是今日的切换平层白等——松手后页面冻住一下才动）。
+   F1 用时间采样：p0=松手瞬间位置，70ms 后 p1 应已明显离开（0ms 延迟下
+   280ms 缓动前段速度很快；若有 110ms 延迟此刻还在原地）。 */
+await swipe(330, 500, [{ dx: -25, dy: 0, wait: 0 }, { dx: -35, dy: 0, wait: 0 }, { dx: -40, dy: 0, wait: 0 }, { dx: -40, dy: 0, wait: 0 }]) // 今日→周课表
+await page.waitForTimeout(600)
+await swipe(60, 500, [{ dx: -25, dy: 0, wait: 0 }, { dx: -35, dy: 0, wait: 0 }, { dx: -40, dy: 0, wait: 0 }, { dx: -40, dy: 0, wait: 0 }]) // 周课表→我的
+const f0 = await m41()
+await page.waitForTimeout(50)
+const f1 = await m41()
+t('F1 周课表→我的：松手后 70ms 已开动', f1 <= f0 - 30, `p0=${f0} p1=${f1}（位移 ${f0 - f1}px）`)
+const f2 = await page.evaluate(() => getComputedStyle(document.querySelector('main').parentElement).transitionDelay)
+t('F2 周课表→我的：transition-delay 为 0s', f2 === '0s', `delay=${f2}`)
+
+/* F3 反向：我的→周课表同样 0s */
+await swipe(60, 500, [{ dx: 30, dy: 0, wait: 0 }, { dx: 45, dy: 0, wait: 0 }, { dx: 45, dy: 0, wait: 0 }, { dx: 30, dy: 0, wait: 0 }])
+await page.waitForTimeout(400)
+const f3 = await page.evaluate(() => getComputedStyle(document.querySelector('main').parentElement).transitionDelay)
+t('F3 我的→周课表：transition-delay 为 0s', f3 === '0s', `delay=${f3}`)
+await page.waitForTimeout(400)
 
 await browser.close()
 const fails = results.filter((r) => !r[1])

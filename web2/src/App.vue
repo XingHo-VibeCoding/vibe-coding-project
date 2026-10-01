@@ -28,13 +28,17 @@ const tab = ref('today')
 const TAB_KEYS = ['today', 'week', 'me']
 const tabIndex = computed(() => TAB_KEYS.indexOf(tab.value))
 /* 时序编排（用户反馈：header 收缩与内容平移同时发生=斜向甩感）：
-   进入今日 → header 先展开腾位（0ms），平移延迟 140ms 再滑回；
-   离开今日 → 平移先行（0ms），header 延迟 150ms 等滑走大半再收缩。
-   每段运动单方向，折线代替斜线。 */
-const enterToday = ref(false)
+   进/出今日时 header 的收缩展开用各自的 transition-delay（模板里 per-element
+   `tab==='today' ? '110ms' : '0ms'`）与平移错开，每段运动单方向，折线代替斜线。
+   平移层自己的延迟见 stripDelay——只保留「离开今日」一档。 */
+/* 平移层过渡延迟：110ms 是「跨今日边界」的折线编排（header 收缩/展开与平移错开，
+   避免斜向甩感）。但原来写成「目的地不是今日就延迟」，导致周课表↔我的（两边都
+   不是今日、根本没有 header 动画）平层白等 110ms——2026-10-01 用户报「切换会顿
+   一下」。收敛为只在离开今日时保留（header 收缩要让平移先行），其余 0ms。 */
+const stripDelay = ref('0ms')
 function switchTab(key) {
   if (key === tab.value) return // 幂等：重复点当前 tab
-  enterToday.value = key === 'today'
+  stripDelay.value = tab.value === 'today' && key !== 'today' ? '110ms' : '0ms'
   tab.value = key
   window.scrollTo({ top: 0 }) // 平移后立即回顶，避免落在长页的空白处
   // 周课表锁死文档滚动（页面一屏看完，锁掉任何残余晃动）；切走即恢复。
@@ -2166,7 +2170,7 @@ function gridDbl(e) {
       style="transition-property: transform, height; transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
       :style="{
         transform: `translateX(calc(-${(tabIndex * 100) / 3}% + ${swipeDx}px))`,
-        transitionDelay: enterToday ? '0ms' : '110ms',
+        transitionDelay: stripDelay,
         transitionProperty: swiping ? 'height' : 'transform, height',
         height: stripH ? stripH + 'px' : 'auto',
       }"
