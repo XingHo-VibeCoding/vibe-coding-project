@@ -61,6 +61,68 @@ function measureStrip() {
   if (page) stripH.value = page.offsetHeight
 }
 watch(tabIndex, () => nextTick(measureStrip))
+
+/* ---------------- 左右滑动手势切 tab（2026-10-01 用户要求「丝滑切换」） ----------------
+   手指拖着平移层实时走（swipeDx 并进 translateX，拖动期间关掉 transform 过渡），
+   松手按「位移过 18% 屏宽 或 末速 > 0.55px/ms」决定切换到相邻 tab，否则回弹。
+   轴向锁定：先动满 12px 才判定横/竖，竖向让位给原生滚动（今日/我的列表），
+   横向 preventDefault 接管；边界页直接 clamp 拖不动。TimeWheel 滚轮是纵向
+   （touch-action:none 自理），与此手势互不干扰。 */
+const swipeDx = ref(0)
+const swiping = ref(false)
+let sw = null
+function onStripTouchStart(e) {
+  if (e.touches.length !== 1) { sw = null; return }
+  const t = e.touches[0]
+  sw = { x0: t.clientX, y0: t.clientY, axis: null, lastX: t.clientX, lastT: performance.now(), vx: 0 }
+}
+function onStripTouchMove(e) {
+  if (!sw) return
+  const t = e.touches[0]
+  const dx = t.clientX - sw.x0
+  const dy = t.clientY - sw.y0
+  if (!sw.axis) {
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+    if (adx < 12 && ady < 12) return
+    sw.axis = adx > ady * 1.25 ? 'h' : ady > adx * 1.25 ? 'v' : null
+    if (sw.axis === 'h') swiping.value = true
+  }
+  if (sw.axis !== 'h') return
+  e.preventDefault() // 已判定横向：拦掉原生滚动与后续 click（防拖完误点卡片）
+  const now = performance.now()
+  const dt = now - sw.lastT
+  if (dt > 0) {
+    sw.vx = (t.clientX - sw.lastX) / dt
+    sw.lastX = t.clientX
+    sw.lastT = now
+  }
+  const min = tabIndex.value >= TAB_KEYS.length - 1 ? 0 : -window.innerWidth
+  const max = tabIndex.value <= 0 ? 0 : window.innerWidth
+  swipeDx.value = Math.max(min, Math.min(max, dx))
+}
+function onStripTouchEnd() {
+  if (!sw) return
+  const wasH = sw.axis === 'h'
+  const vx = sw.vx
+  const dx = swipeDx.value
+  sw = null
+  if (!wasH) return
+  swiping.value = false
+  swipeDx.value = 0
+  const dir = dx < 0 ? 1 : dx > 0 ? -1 : 0
+  const far = Math.abs(dx) > window.innerWidth * 0.18
+  const fling = Math.abs(vx) > 0.55 && dir !== 0
+  if (far || fling) {
+    const next = Math.min(TAB_KEYS.length - 1, Math.max(0, tabIndex.value + dir))
+    if (next !== tabIndex.value) switchTab(TAB_KEYS[next])
+  }
+}
+function onStripTouchCancel() {
+  sw = null
+  swiping.value = false
+  swipeDx.value = 0
+}
 onMounted(() => {
   measureStrip()
   const ro = new ResizeObserver(() => measureStrip())
@@ -85,6 +147,13 @@ onMounted(() => {
   measureSat() // 外壳状态栏让位（App 内 >0，浏览器 0）
   measureGridTop() // 网格顶文档坐标实测（高度公式输入）
   window.addEventListener('wb-sat', onWinResize) // 外壳异步量到 --sat 后广播，重算周课表高度
+  // 左右滑动切 tab 手势（绑在平移层上；touchmove 必须 passive:false 才能 preventDefault）
+  if (stripRef.value) {
+    stripRef.value.addEventListener('touchstart', onStripTouchStart, { passive: true })
+    stripRef.value.addEventListener('touchmove', onStripTouchMove, { passive: false })
+    stripRef.value.addEventListener('touchend', onStripTouchEnd)
+    stripRef.value.addEventListener('touchcancel', onStripTouchCancel)
+  }
   // 周课表页锁死文档滚动：页面内容一屏看完，任何残余溢出/WebView 拖拽都表现为「晃动」
   // （v1.32.2 真机仍有轻微晃动）。锁的是 body overflow，切回今日/我的自动恢复滚动。
   document.body.style.overflow = tab.value === 'week' ? 'hidden' : ''
@@ -92,6 +161,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onWinResize)
   window.removeEventListener('wb-sat', onWinResize)
+  if (stripRef.value) {
+    stripRef.value.removeEventListener('touchstart', onStripTouchStart)
+    stripRef.value.removeEventListener('touchmove', onStripTouchMove)
+    stripRef.value.removeEventListener('touchend', onStripTouchEnd)
+    stripRef.value.removeEventListener('touchcancel', onStripTouchCancel)
+  }
   document.body.style.overflow = ''
 })
 
@@ -2082,12 +2157,19 @@ function gridDbl(e) {
       </div>
     </header>
 
-    <!-- 内容平移层（Day 11 二轮）：三页并排各占 1/3，translateX 跟随 tab，连点改道可打断 -->
+    <!-- 内容平移层（Day 11 二轮）：三页并排各占 1/3，translateX 跟随 tab，连点改道可打断。
+         2026-10-01 加左右滑动手势：swipeDx 并进 translateX 跟手，swiping 时关 transform
+         过渡（拖动零延迟），松手恢复过渡播放回弹/切换动画；touch-pan-y 把横向手势让给 JS。 -->
     <div
       ref="stripRef"
-      class="flex w-[300%] shrink-0 items-start overflow-y-clip duration-[280ms]"
+      class="flex w-[300%] shrink-0 items-start overflow-y-clip touch-pan-y duration-[280ms]"
       style="transition-property: transform, height; transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
-      :style="{ transform: `translateX(-${(tabIndex * 100) / 3}%)`, transitionDelay: enterToday ? '0ms' : '110ms', height: stripH ? stripH + 'px' : 'auto' }"
+      :style="{
+        transform: `translateX(calc(-${(tabIndex * 100) / 3}% + ${swipeDx}px))`,
+        transitionDelay: enterToday ? '0ms' : '110ms',
+        transitionProperty: swiping ? 'height' : 'transform, height',
+        height: stripH ? stripH + 'px' : 'auto',
+      }"
     >
     <!-- ===== 今日 ===== -->
     <main class="w-1/3 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
