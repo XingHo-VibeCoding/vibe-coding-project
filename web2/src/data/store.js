@@ -194,6 +194,7 @@ function buildMock() {
       place: [c.location, c.teacher].filter(Boolean).join(' · '),
     })), ...loadAdded()]),
     events: allEvents([]),
+    routines: allRoutines([]),
     todos: applyTodoOverlay(mockTodos),
   }
 }
@@ -235,6 +236,11 @@ function buildFromExport(data) {
       end: fmtMin(minOf(s.start_time) + Number(s.duration)),
     }))
 
+  /* 固定循环日程：不做学期过滤（跨学期常驻，semester_id 可空） */
+  const routines = schedules
+    .filter((s) => s && s.type === 'routine')
+    .map(rvDisplay)
+
   const todos = (Array.isArray(data.todos) ? data.todos : []).map((t) => ({
     id: t.id,
     title: t.title,
@@ -254,6 +260,7 @@ function buildFromExport(data) {
     },
     courses: [...courses, ...loadAdded()],
     events: allEvents(events),
+    routines: allRoutines(routines),
     todos,
   }
 }
@@ -557,8 +564,15 @@ function evDisplay(e) {
     end: fmtMin(minOf(e.start_time) + Number(e.duration)),
   }
 }
+/* overlay（web2.events）里混存独立日程与循环日程，靠 type 分流；无 type 的老条目视为 event */
+function overlayOf(type) {
+  return loadEventOverlay().filter((x) => x && (x.type || 'event') === type)
+}
 function allEvents(rawEvents) {
-  return [...(rawEvents || []), ...loadEventOverlay().map(evDisplay)]
+  return [...(rawEvents || []), ...overlayOf('event').map(evDisplay)]
+}
+function allRoutines(rawRoutines) {
+  return [...(rawRoutines || []), ...overlayOf('routine').map(rvDisplay)]
 }
 
 /* 新增独立日程（title / date / start_time / duration 必填，口径同主项目 validateSchedule） */
@@ -578,6 +592,116 @@ export function addEvent(input) {
     localStorage.setItem(EVENTS_KEY, JSON.stringify(arr))
   }
   return full
+}
+
+/* ---------- 固定循环日程（routine）：双源分支，口径同独立日程 ----------
+   与课程同形（weekday + start_time + duration + week_rule），但不占学期课表；
+   本机叠加复用 web2.events（靠 type 分流，不另开键）。 */
+
+/* 生成一条符合主项目 normalizeSchedule 形状的 routine。
+   ⚠️ importAll 是保真写入、不重新归一化 → week_rule 的缺省值必须在这里写死，
+   不能指望主项目补（主项目只在 UI 新增/编辑时归一化）。 */
+function fullRoutine(input) {
+  const now = new Date().toISOString()
+  return {
+    id: 'rout_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    type: 'routine',
+    title: String(input.title).trim(),
+    note: '',
+    location: String(input.location || '').trim(),
+    weekday: Number(input.weekday),
+    start_time: String(input.start_time),
+    duration: Number(input.duration),
+    week_rule: input.week_rule || 'every',
+    date: null,
+    color: '',
+    semester_id: String(input.semester_id || ''),
+    manual_edited: true,
+    created_at: now,
+    updated_at: now,
+  }
+}
+/* 主项目 routine 原始形状 → web2 显示形状（与课程显示形状同构，便于共用周视图排格） */
+function rvDisplay(r) {
+  const wr = r.week_rule || 'every'
+  return {
+    id: r.id,
+    type: 'routine',
+    weekday: Number(r.weekday),
+    name: r.title,
+    place: String(r.location || '').trim(),
+    tag: { every: '每周', odd: '单周', even: '双周' }[wr] || '每周',
+    start: r.start_time,
+    end: fmtMin(minOf(r.start_time) + Number(r.duration)),
+    week_rule: wr,
+  }
+}
+
+/* 循环日程的双源读写：有导入态就动 data.schedules，否则动 web2.events overlay */
+function routineStore(fn) {
+  const raw = localStorage.getItem(DATA_KEY)
+  if (raw) {
+    try {
+      const data = JSON.parse(raw)
+      if (!data || data.app !== 'sched' || !Array.isArray(data.schedules)) return false
+      if (!fn(data.schedules)) return false
+      localStorage.setItem(DATA_KEY, JSON.stringify(data))
+      return true
+    } catch {
+      return false
+    }
+  }
+  const arr = loadEventOverlay()
+  if (!fn(arr)) return false
+  localStorage.setItem(EVENTS_KEY, JSON.stringify(arr))
+  return true
+}
+
+/* 新增循环日程（title / weekday / start_time / duration 必填，口径同主项目 validateSchedule） */
+export function addRoutine(input) {
+  const full = fullRoutine(input)
+  if (localStorage.getItem(DATA_KEY)) {
+    const raw = localStorage.getItem(DATA_KEY)
+    const data = JSON.parse(raw)
+    if (!data || data.app !== 'sched' || !Array.isArray(data.schedules)) {
+      throw new Error('导入数据异常，无法添加循环日程。')
+    }
+    data.schedules.push(full)
+    localStorage.setItem(DATA_KEY, JSON.stringify(data))
+  } else {
+    const arr = loadEventOverlay()
+    arr.push(full)
+    localStorage.setItem(EVENTS_KEY, JSON.stringify(arr))
+  }
+  return full
+}
+
+/* 修改循环日程。patch 为显示形状 {weekday?,name?,place?,start?,end?,week_rule?}，
+   翻译回原始字段 title/start_time/duration/location/weekday/week_rule */
+export function updateRoutine(id, patch) {
+  return routineStore((list) => {
+    const r = list.find((x) => x && String(x.id) === String(id) && x.type === 'routine')
+    if (!r) return false
+    if (patch.weekday !== undefined) r.weekday = Number(patch.weekday)
+    if (patch.name !== undefined) r.title = String(patch.name).trim()
+    if (patch.place !== undefined) r.location = String(patch.place).trim()
+    if (patch.start !== undefined) r.start_time = String(patch.start)
+    if (patch.end !== undefined) r.duration = Math.max(5, minOf(String(patch.end)) - minOf(r.start_time))
+    if (patch.week_rule !== undefined) r.week_rule = String(patch.week_rule)
+    r.manual_edited = true
+    r.updated_at = new Date().toISOString()
+    return true
+  })
+}
+
+/* 删除循环日程 */
+export function removeRoutine(id) {
+  return routineStore((list) => {
+    const i = list.findIndex((x) => x && String(x.id) === String(id) && x.type === 'routine')
+    if (i === -1) return false
+    list.splice(i, 1)
+    return true
+  })
 }
 
 /* ---------- 待办勾选回写主项目格式 ----------
