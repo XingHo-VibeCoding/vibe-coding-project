@@ -165,6 +165,7 @@ global.fetch = async (url, opts) => {
 const r33 = await summarizeTranscript(LONG)
 t('33. 输出被截断 → 自动重试一次并成功', n33 === 2 && r33.overview === '精简版总览')
 t('34. 重试那次改用精简提示词', /务必精简/.test(bodies[bodies.length - 1].messages[0].content))
+const pConcise = bodies[bodies.length - 1].messages[0].content // 精简版提示词，供末尾的 homework 口径断言用
 
 // 35. 两次都截断 → 明确说「截断」，不再误报「不是有效 JSON」
 global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'length', message: { content: '{"overview":"半截' } }] }) })
@@ -193,6 +194,23 @@ global.fetch = async () => {
 }
 const r37 = await summarizeTranscript(LONG)
 t('37. 坏 JSON 也自动重试一次', n37 === 2 && r37.overview === '第二次好了')
+
+/* ===== M5 补充（2026-10-01）：homework 收全口径 =====
+   homework 是纪要里唯一会被下游转成待办、漏了就再也补不回来的字段（其他字段漏一条
+   只是纪要少一句话）。旧措辞「只收明确提到的任务/截止」是防幻觉的取舍，代价是把
+   「老师顺口提的作业」也丢了；而且截断重试用的精简版里原写「homework 只列必要的」，
+   等于在作业最多的长课上主动让模型砍作业。这两条现在都锁死。 */
+const hwBodies = []
+global.fetch = async (url, opts) => {
+  hwBodies.push(JSON.parse(opts.body))
+  return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"overview":"总览","key_points":[],"terms":[],"homework":[],"questions":[]}' } }] }) }
+}
+await summarizeTranscript(LONG)
+const pMain = hwBodies[0].messages[0].content
+t('38. 主提示词要求 homework 尽量收全、拿不准照原话列', /homework 要尽量收全/.test(pMain) && /照原话列出/.test(pMain))
+t('39. 主提示词已去掉「只收明确提到的」旧口径', !/只收明确提到的/.test(pMain))
+t('40. 精简版提示词明确不许省略 homework', /homework 不受精简影响/.test(pConcise) && /不许省略/.test(pConcise))
+t('41. 精简版仍保留「务必精简」总体要求', /务必精简/.test(pConcise))
 
 console.log(`\n结果：${pass} 过 / ${fail} 挂`)
 process.exit(fail ? 1 : 0)

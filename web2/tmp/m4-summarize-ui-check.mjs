@@ -2,6 +2,9 @@
    坑位继承：UI 列表倒序——定位一律用场次 id；fetch 只劫持 api.deepseek.com，其余放行。 */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
+/* 支持对线上跑：TW_URL=https://… node tmp/m4-summarize-ui-check.mjs（默认本地 4177） */
+const BASE = process.env.TW_URL || 'http://127.0.0.1:4177/'
+
 const results = []
 function t(name, cond) {
   results.push([name, !!cond])
@@ -47,7 +50,7 @@ try {
   page.on('pageerror', (e) => errors.push(String(e)))
   await page.addInitScript(seed)
   await page.addInitScript(fetchMock)
-  await page.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
   await page.locator('nav button').nth(2).click() // 进「我的」页（录音板块住这）
   await page.waitForTimeout(400)
@@ -110,7 +113,7 @@ const lectures = [
 localStorage.setItem('web2.lectures', JSON.stringify(lectures))
 localStorage.setItem('web2.onboarded', '1')`
   await p3.addInitScript(seedSaved)
-  await p3.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
+  await p3.goto(BASE, { waitUntil: 'domcontentloaded' })
   await p3.waitForTimeout(700)
   await p3.locator('nav button').nth(2).click()
   await p3.waitForTimeout(400)
@@ -128,7 +131,7 @@ localStorage.setItem('web2.onboarded', '1')`
   const seedNoCfg = seed.replace(/localStorage\.setItem\('web2\.llm'[^\n]*\n/, '')
   await p2.addInitScript(seedNoCfg)
   await p2.addInitScript(fetchMock)
-  await p2.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
+  await p2.goto(BASE, { waitUntil: 'domcontentloaded' })
   await p2.waitForTimeout(700)
   await p2.locator('nav button').nth(2).click()
   await p2.waitForTimeout(400)
@@ -155,6 +158,21 @@ localStorage.setItem('web2.onboarded', '1')`
   await p2.getByRole('button', { name: '测试连接' }).click()
   await p2.waitForTimeout(400)
   t('25. 测试连接成功提示', (await p2.getByText(/连接正常/).count()) >= 1)
+
+  /* ---- M5 补充（2026-10-01）：手动生成纪要也要把 homework 转成待办 ----
+     原来只有自动链路（停录→自动转写→自动纪要）会转；自动链路中途断环、
+     用户手动补跑转写/纪要时，作业会永久停在纪要卡片里，而且看不出来。
+     去重按标题，所以重复生成不会叠出重复待办。 */
+  const readTodoTitles = (pg) => pg.evaluate(() => {
+    const ov = JSON.parse(localStorage.getItem('web2.todos') || '{"added":[]}')
+    return (ov.added || []).map((x) => String(x.title || ''))
+  })
+  const hwTitles = await readTodoTitles(p2)
+  t('26. 手动生成纪要也把 homework 转成待办', hwTitles.some((s) => s.indexOf('课本 120 页习题 3.4') !== -1))
+  await rowT3.getByRole('button', { name: '重新生成纪要' }).click()
+  await p2.waitForTimeout(600)
+  const hwTitles2 = await readTodoTitles(p2)
+  t('27. 重复生成不叠出重复待办', hwTitles2.filter((s) => s.indexOf('课本 120 页习题 3.4') !== -1).length === 1)
 
   console.log(ok() ? 'ALL PASS ' + results.length : 'FAILED: ' + failed().join(' | '))
 } finally {

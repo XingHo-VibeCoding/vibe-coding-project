@@ -906,6 +906,13 @@ async function startSummary(l, opts = {}) {
     sumOpenId.value = l.id
     setRecMsg('纪要已生成。')
     notifyDone('纪要已生成', l.title) // 同上：仅后台时发
+    /* 手动生成纪要也接手转待办（原来只有自动链路会转）：自动链路中途断环、
+       用户手动补跑转写/纪要时，作业不该就此停在纪要里。homeworkToTodos 按
+       标题去重，所以与自动链路并存也不会叠出重复待办；有作业转成时它会
+       覆盖上面的提示文案。 */
+    refreshLectures()
+    const lAfter = lectures.value.find((x) => x.id === l.id)
+    if (lAfter) homeworkToTodos(lAfter)
     return true
   } catch (e) {
     if (e && e.name === 'AbortError') setRecMsg('已取消纪要生成。', true)

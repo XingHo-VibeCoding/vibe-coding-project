@@ -4,6 +4,9 @@
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 import { readFileSync } from 'node:fs'
 
+/* 支持对线上跑：TW_URL=https://… node tmp/backbutton-check.mjs（默认本地 4177） */
+const BASE = process.env.TW_URL || 'http://127.0.0.1:4177/'
+
 const results = []
 function t(name, cond) {
   results.push([name, !!cond])
@@ -30,7 +33,7 @@ await page.addInitScript(seed)
 
 try {
   page.on('pageerror', (e) => console.log('PAGEERROR:', e.message))
-  await page.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
 
   const fire = () => page.evaluate(() => window.Capacitor.Plugins.App._fire())
@@ -104,7 +107,7 @@ try {
 const page2 = await ctx.newPage()
 let p2err = 0
 page2.on('pageerror', () => { p2err++ })
-await page2.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
+await page2.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page2.waitForTimeout(700)
 t('6a. 无桥环境页面正常（无 pageerror）', p2err === 0)
 const hasBridge = await page2.evaluate(() => !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App))
