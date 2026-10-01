@@ -511,6 +511,12 @@ function lecStatusLabel(l) {
 function defaultLecTitle(d = new Date()) {
   return `课堂录音 ${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+/* 今日的条目是「课程 + 独立日程」两套并存的列表，字段名不同：
+   课程（weekAll ← store 归一化）用 name/place，日程（events ← fullEvent）用 title/location。
+   要显示名字的地方统一走这里，别直接读某一个字段——读错了不会报错，只会显示成 undefined。 */
+function entryName(c) {
+  return String((c && (c.name || c.title)) || '').trim()
+}
 function tickRec() {
   const l = lectures.value.find((x) => x.id === recActiveId.value)
   if (!l) return
@@ -529,7 +535,7 @@ async function startRec() {
   const course = courseCovering(todayCourses.value, nowTime.value)
   const lec = addLecture({
     schedule_id: course ? course.id : null,
-    title: course ? `${course.title} · ${d.getMonth() + 1}月${d.getDate()}日` : defaultLecTitle(d),
+    title: course ? `${entryName(course)} · ${d.getMonth() + 1}月${d.getDate()}日` : defaultLecTitle(d),
   })
   recActiveId.value = lec.id
   recElapsed.value = 0
@@ -556,7 +562,11 @@ async function startRec() {
   if (!ka.ok && !ka.unsupported) {
     setRecMsg('录音已开始，但后台保活没起来（' + ka.error + '）——这场请先别锁屏。', true)
   } else {
-    setRecMsg(course && auto ? '录音中：锁屏、切到后台都会继续录，下课后 2 分钟自动停。' : '录音中：锁屏、切到后台都会继续录。')
+    /* 没排上自动停的情况要说清楚（自由录音、或开录时刻没对上任何一节课的覆盖窗口：
+       早于开课前 5 分钟、或落在某节快下课的尾巴上）——否则用户会以为自动停坏了。 */
+    setRecMsg(course && auto
+      ? '录音中：锁屏、切到后台都会继续录，下课后 2 分钟自动停。'
+      : '录音中：锁屏、切到后台都会继续录；这场没排自动停，记得自己停。')
   }
   /* M5 分段转写：开录即让原生边录边预转（每 3 分钟吃掉已写完的 30s 段），
      课后只等尾巴。尽力而为：模型没下好/没文件都自动放弃，最终转写兜底全量。 */
@@ -578,6 +588,7 @@ async function finalizeRecording(id, r) {
   if (!res.ok) return setRecMsg(res.error, true)
   if (!r.clip.path) return setRecMsg('录音已停止，但文件没有落盘（异常），这一场只留下记录。', true)
   if (r.auto) setRecMsg('已到下课时间，录音自动停了，正在自动转写。')
+  else setRecMsg('录音已保存。')
   /* M5 分段转写：停录时取走原生预转好的前段文字，最终转写只算尾巴（live 尽力而为） */
   let live = null
   if (trSupported.value) {

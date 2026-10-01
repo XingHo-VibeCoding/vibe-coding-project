@@ -33,13 +33,18 @@ export function saveLlmConfig(cfg) {
 
 /* ---------- 提示词 ----------
    要求严格 JSON 输出；「不确定就放 questions」是为了对抗转写噪声——
-   SenseVoice 对专业名词会错字，与其让 LLM 硬编错的「事实」，不如标记存疑。 */
-function buildPrompt(transcript) {
+   SenseVoice 对专业名词会错字，与其让 LLM 硬编错的「事实」，不如标记存疑。
+   opts.concise：输出被长度上限截断后的第二次尝试。截断的根因是「长文字稿 →
+   模型要点写发散 → JSON 还没写完就撞顶」，所以第二次要收紧条数与字数，
+   让整份 JSON 在预算内收尾。 */
+function buildPrompt(transcript, opts = {}) {
   return [
     '你是一名助教，帮大学生把课堂录音的文字稿整理成复习纪要。文字稿来自语音识别，可能有错别字和同音字错误，请结合上下文理解，不要逐字照抄错字。',
     '只输出一个 JSON 对象，不要输出任何其他文字或代码块标记，结构如下：',
     '{"overview":"两三句话概括这堂课讲了什么","key_points":["要点1","要点2"],"terms":[{"term":"术语","note":"一句人话解释"}],"homework":["作业/截止事项，没有则空数组"],"questions":["内容里含糊、疑似识别错误或逻辑不通的地方，没有则空数组"]}',
-    '要求：key_points 3~8 条、每条一句话；terms 只收真正的概念词；homework 只收明确提到的任务/截止；questions 收「疑似听错的词」和「上下文读不通的段落」。全部用简体中文。',
+    opts.concise
+      ? '要求：务必精简，overview 不超过 60 字；key_points 3~5 条、每条不超过 20 字；terms 不超过 5 个；homework / questions 只列必要的。任何情况下都必须输出完整、可解析的 JSON。全部用简体中文。'
+      : '要求：key_points 3~8 条、每条一句话；terms 只收真正的概念词；homework 只收明确提到的任务/截止；questions 收「疑似听错的词」和「上下文读不通的段落」。全部用简体中文。',
     '',
     '文字稿：',
     transcript,
@@ -80,6 +85,49 @@ export async function testConnection() {
   return { ok: true, models, modelOk: !c.model || models.indexOf(c.model) !== -1 }
 }
 
+/* 输出上限（tokens）。原值 2000 太小——纪要是「长文字稿进 → 长 JSON 出」的任务，
+   一节课的文字稿会产出更多要点，JSON 没收尾就撞顶被截断，于是报「不是有效 JSON」
+   （假症状，真原因是截断）。官方文档：非思考模式不设 max_tokens 时默认 8K，
+   这里显式对齐 8000。输出按实际生成量计费，抬高上限不增加花费，只在需要时才用。 */
+const MAX_TOKENS = 8000
+
+/* 单次 chat/completions 请求。返回 { content, finishReason }；
+   网络/HTTP 层错误在此就地分类成可读消息。
+   finish_reason 官方取值：stop / length / content_filter / tool_calls /
+   insufficient_system_resource / aborted。length = 被 max_tokens 或上下文截断
+   （官方原文：「消息内容可能会被部分截断」），必须单独识别，否则会误报成 JSON 格式问题。 */
+async function requestOnce(c, model, transcript, concise, signal) {
+  let res
+  try {
+    res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: buildPrompt(transcript, { concise }) }],
+        response_format: { type: 'json_object' },
+        thinking: { type: 'disabled' }, // 思考模式默认开且 effort=high（2026-09 文档）——纪要要快，显式关
+        temperature: 0.3, // 仅非思考模式生效，与 disabled 配套
+        max_tokens: MAX_TOKENS,
+      }),
+      signal,
+    })
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw e
+    throw new Error('网络请求失败，请检查网络后重试。')
+  }
+  if (res.status === 401) throw new Error('API Key 无效（401），请检查 Key 是否填对。')
+  if (res.status === 402) throw new Error('DeepSeek 账户余额不足（402），请充值后重试。')
+  if (res.status === 429) throw new Error('请求太频繁（429），稍等几秒再试。')
+  if (res.status === 400) throw new Error('请求被拒（400）：通常是模型名无效，请在「课堂纪要」设置里重新选模型。')
+  if (!res.ok) throw new Error('DeepSeek 服务返回 ' + res.status + '，稍后重试。')
+  const data = await res.json()
+  const choice = data && data.choices && data.choices[0]
+  const content = choice && choice.message && choice.message.content
+  // 先不在这里判空内容：被截断时 content 也可能为空，交由上层按 finish_reason 定性
+  return { content: content ? String(content) : '', finishReason: (choice && choice.finish_reason) || '' }
+}
+
 const deepseekProvider = {
   available() {
     const c = loadLlmConfig()
@@ -91,34 +139,30 @@ const deepseekProvider = {
     const c = loadLlmConfig()
     // 白名单外（含旧版手填错的模型名）一律回落 deepseek-flash，避免 400「模型不存在」
     const model = DEEPSEEK_MODELS.some((m) => m.id === c.model) ? c.model : 'deepseek-flash'
-    let res
-    try {
-      res = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: buildPrompt(transcript) }],
-          response_format: { type: 'json_object' },
-          thinking: { type: 'disabled' }, // 思考模式默认开且 effort=high（2026-09 文档）——纪要要快，显式关
-          temperature: 0.3, // 仅非思考模式生效，与 disabled 配套
-          max_tokens: 2000,
-        }),
-        signal,
-      })
-    } catch (e) {
-      if (e && e.name === 'AbortError') throw e
-      throw new Error('网络请求失败，请检查网络后重试。')
+    let lastError = null
+    /* 两次机会。第一次正常提示词；若「输出被长度上限截断」或「JSON 解析失败」，
+       第二次换精简提示词再试——长文字稿最容易栽在第一下（模型把要点写发散，
+       JSON 还没收尾就撞上 max_tokens），收紧条数后基本都能写完整。 */
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await requestOnce(c, model, transcript, attempt === 1, signal)
+      if (r.finishReason === 'length') {
+        lastError = new Error('纪要输出超过长度上限被截断（文字稿太长，模型没写完）')
+        if (attempt === 0) continue
+        throw lastError
+      }
+      if (r.finishReason === 'content_filter') throw new Error('内容被服务端安全策略过滤，无法生成纪要。')
+      if (r.finishReason === 'insufficient_system_resource') throw new Error('服务端推理资源不足，生成被中断，请稍后重试。')
+      if (r.finishReason === 'aborted') throw new Error('生成过程被中断，请重试。')
+      if (!r.content) throw new Error('DeepSeek 返回了空内容。')
+      try {
+        return parseSummaryJson(r.content)
+      } catch (e) {
+        lastError = e
+        if (attempt === 0) continue // 罕见的坏 JSON：也给一次重试
+        throw e
+      }
     }
-    if (res.status === 401) throw new Error('API Key 无效（401），请检查 Key 是否填对。')
-    if (res.status === 402) throw new Error('DeepSeek 账户余额不足（402），请充值后重试。')
-    if (res.status === 429) throw new Error('请求太频繁（429），稍等几秒再试。')
-    if (res.status === 400) throw new Error('请求被拒（400）：通常是模型名无效，请在「课堂纪要」设置里重新选模型。')
-    if (!res.ok) throw new Error('DeepSeek 服务返回 ' + res.status + '，稍后重试。')
-    const data = await res.json()
-    const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content
-    if (!text) throw new Error('DeepSeek 返回了空内容。')
-    return parseSummaryJson(text)
+    throw lastError || new Error('纪要生成失败。')
   },
 }
 

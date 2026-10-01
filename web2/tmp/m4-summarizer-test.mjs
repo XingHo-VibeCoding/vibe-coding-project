@@ -138,5 +138,61 @@ const fb = await summarizeTranscript('一段足够长的文字稿，长度超过
 t('30. 坏模型名自动回落 deepseek-flash', sentModel === 'deepseek-flash' && fb.overview === '回落总览')
 t('31. 请求显式关思考模式（thinking disabled）', sentBody && sentBody.thinking && sentBody.thinking.type === 'disabled')
 
+/* ===== M5 热修（2026-10-01）：长文字稿纪要报「不是有效 JSON」的真因 =====
+   真机现象：短文字稿能出纪要，一节课的长文字稿报「纪要返回的不是有效 JSON」。
+   根因是 max_tokens=2000 太小 → 模型 JSON 没收尾就被截断（finish_reason=length），
+   却被笼统报成格式问题。这里用 mock 精确复现并锁死新行为。 */
+const LONG = '这段是课堂讲解的内容，涉及定义、定理与例题，'.repeat(60)
+
+// 32. 输出上限已提到 8000
+let bodies = []
+saveLlmConfig({ provider: 'deepseek', key: 'sk-x', model: 'deepseek-flash' })
+global.fetch = async (url, opts) => {
+  bodies.push(JSON.parse(opts.body))
+  return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"overview":"总览","key_points":[],"terms":[],"homework":[],"questions":[]}' } }] }) }
+}
+await summarizeTranscript(LONG)
+t('32. max_tokens 提到 8000（原 2000 会截断长稿纪要）', bodies[0].max_tokens === 8000)
+
+// 33/34. 第一次 finish_reason=length → 自动换精简提示词重试，第二次成功
+let n33 = 0
+global.fetch = async (url, opts) => {
+  n33++
+  bodies.push(JSON.parse(opts.body))
+  if (n33 === 1) return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'length', message: { content: '{"overview":"没写完' } }] }) }
+  return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"overview":"精简版总览","key_points":[],"terms":[],"homework":[],"questions":[]}' } }] }) }
+}
+const r33 = await summarizeTranscript(LONG)
+t('33. 输出被截断 → 自动重试一次并成功', n33 === 2 && r33.overview === '精简版总览')
+t('34. 重试那次改用精简提示词', /务必精简/.test(bodies[bodies.length - 1].messages[0].content))
+
+// 35. 两次都截断 → 明确说「截断」，不再误报「不是有效 JSON」
+global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'length', message: { content: '{"overview":"半截' } }] }) })
+try {
+  await summarizeTranscript(LONG)
+  t('35. 两次截断报可读错误', false)
+} catch (e) {
+  t('35. 两次截断报「截断」而非「不是有效 JSON」', /截断/.test(e.message) && !/有效 JSON/.test(e.message))
+}
+
+// 36. 服务端资源不足 → 可读提示（原会被当成坏 JSON）
+global.fetch = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'insufficient_system_resource', message: { content: '' } }] }) })
+try {
+  await summarizeTranscript(LONG)
+  t('36. 资源不足报可读错误', false)
+} catch (e) {
+  t('36. 资源不足报可读错误', /资源不足/.test(e.message))
+}
+
+// 37. finish_reason=stop 但 JSON 坏 → 也给一次重试
+let n37 = 0
+global.fetch = async () => {
+  n37++
+  if (n37 === 1) return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '这不是 JSON' } }] }) }
+  return { ok: true, status: 200, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: '{"overview":"第二次好了","key_points":[],"terms":[],"homework":[],"questions":[]}' } }] }) }
+}
+const r37 = await summarizeTranscript(LONG)
+t('37. 坏 JSON 也自动重试一次', n37 === 2 && r37.overview === '第二次好了')
+
 console.log(`\n结果：${pass} 过 / ${fail} 挂`)
 process.exit(fail ? 1 : 0)

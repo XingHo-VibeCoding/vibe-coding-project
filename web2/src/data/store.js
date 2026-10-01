@@ -94,14 +94,35 @@ export function minOf(t) {
    （含开课前 5 分钟的提前量——学生常在打铃前进教室开录），就关联哪节。
    入参是「今天的课程/日程」列表（todayCourses 的形状：含 start/end/title/id），
    返回命中的那条或 null——绝不拿「今天第一节」之类兜底顶替，宁可不关联。
-   课间 10 分钟 + 5 分钟提前量，保证任意时刻至多命中一节，无歧义。 */
+
+   两条规则都只用「这两节课自己的开始/结束时间」，不看课间长度——课间由用户在
+   节次表里自定义（可能是 3 分钟，也可能是 90 分钟的午休），任何「按固定课间推算」
+   的写法都会在非默认作息下失效。
+
+   规则一（多命中取后一节）：课间 < 5 分钟时，后一节的提前窗会吃到前一节的尾巴，
+   同一分钟同时命中两节。取结束最晚的那条 = 更晚开始的那条，也就是「马上要上的课」。
+   紧挨着的课（课间 0 分钟）同样落在这一支，不会被误挂到前一节。
+
+   规则二（快下课的不认）：命中的课剩余不足 COVER_TAIL_MIN 分钟，就认为「不是在录
+   这节课」而返回 null。典型场景是前一节 08:45 下课、学生 08:45 进教室为下一节开录：
+   照认的话自动停会按前一节排（08:47），刚开录就被掐断。返回 null 的语义是
+   「认不出」——不挂课名、不排自动停，交回手动停；比错挂一节课安全。 */
+export const COVER_TAIL_MIN = 3
 export function courseCovering(courses, minutes) {
   const m = Number(minutes) || 0
-  return courses.find((c) => {
+  let best = null
+  let bestEnd = -1
+  for (const c of courses || []) {
     const s = minOf(c.start)
     const e = minOf(c.end)
-    return m >= s - 5 && m <= e
-  }) || null
+    if (m >= s - 5 && m <= e && e > bestEnd) {
+      best = c
+      bestEnd = e
+    }
+  }
+  if (!best) return null
+  if (bestEnd - m < COVER_TAIL_MIN) return null
+  return best
 }
 
 /* M5 作业转待办用：算「这门课下次上课」的日期（YYYY-MM-DD）。

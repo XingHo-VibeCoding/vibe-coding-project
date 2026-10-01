@@ -8,7 +8,7 @@
    - 浏览器无桥降级 / 权限被拒提示 */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
-const URL = 'http://127.0.0.1:4177/'
+const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 let pass = 0, fail = 0
 const t = (name, cond) => { if (cond) { pass++; console.log('PASS  ' + name) } else { fail++; console.log('FAIL  ' + name) } }
@@ -110,11 +110,11 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
     cb({ actionId: 'START_REC', notification: { extra: {} } })
   })
   await page.waitForTimeout(800)
-  t('E1 点「开始录音」action 后直接进入录音态', await page.locator('button:has-text("停止并保存")').isVisible())
+  t('E1 点「开始录音」action 后直接进入录音态', await page.locator('main').nth(2).locator('button:has-text("停止并保存")').isVisible())
   t('E2 录音条出现（在「我的」页可见）', (await page.locator('text=录音中 · 锁屏也会继续录').count()) > 0)
 
   /* ---------- F：点通知本体（tap）→ 只定位不开录 ---------- */
-  await page.click('button:has-text("停止并保存")') // 先停
+  await page.locator('main').nth(2).locator('button:has-text("停止并保存")').click() // 先停（限定「我的」页：今日页也有同名按钮）
   await page.waitForTimeout(500)
   await page.evaluate(() => {
     const cb = window.__notify.listeners[window.__notify.listeners.length - 1]

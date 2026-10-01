@@ -1,5 +1,7 @@
 /* M2.5 录音保活：playwright 验证（注入假 RecorderService 桥，浏览器里跑全链路）
-   跑法：先起 dev server（4177）再 node tmp/m25-keepalive-check.mjs
+   跑法：先起 dev server（4177）再 node tmp/m25-keepalive-check.mjs（支持 TW_URL 覆盖）
+   注意：M5 第 2 步起今日页也有「开始录音 / 停止并保存」按钮，按文案全局找会命中视口外
+   那个元素并超时——所以所有按钮一律限定在「我的」页（main nth=2）内查找。
    验的是网页侧与保活桥的契约（真机才验得了「锁屏不断录」本身）：
    - 起录拉起服务且带场次标题、停录撤下一次
    - 录音停止失败时也照样撤下（finally 保证，不留幽灵通知）
@@ -8,7 +10,7 @@
    - 浏览器无桥时静默降级（起录仍走「需在 App 内使用」提示） */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
-const URL = 'http://127.0.0.1:4177/'
+const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 let pass = 0, fail = 0
 const t = (name, cond) => { if (cond) { pass++; console.log('PASS  ' + name) } else { fail++; console.log('FAIL  ' + name) } }
@@ -65,7 +67,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL, { waitUntil: 'load' })
   await page.click('nav button >> nth=2') // 我的
   await page.waitForTimeout(400)
-  await page.click('button:has-text("开始录音")')
+  await page.locator('main').nth(2).locator('button:has-text("开始录音")').click()
   await page.waitForTimeout(600)
 
   const ka1 = await page.evaluate(() => window.__ka)
@@ -75,12 +77,12 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   t('A4 提示改为「锁屏、切到后台都会继续录」', (await page.locator('text=锁屏、切到后台都会继续录').count()) > 0)
   t('A5 录音条文案改为「锁屏也会继续录」', (await page.locator('text=录音中 · 锁屏也会继续录').count()) > 0)
 
-  await page.click('button:has-text("停止并保存")')
+  await page.locator('main').nth(2).locator('button:has-text("停止并保存")').click()
   await page.waitForTimeout(600)
   const ka2 = await page.evaluate(() => window.__ka)
   t('A6 停录后撤下服务一次', count(ka2, 'stop') === 1)
   t('A7 撤下后没有多余的 start', count(ka2, 'start') === 1)
-  t('A8 停录仍正常落盘（提示含「已保存」）', (await page.locator('text=已保存').first().isVisible()))
+  t('A8 停录仍正常落盘（提示含「已保存」）', await page.locator('main').nth(2).locator('text=已保存').first().isVisible())
   await ctx.close()
 }
 
@@ -93,9 +95,9 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL + '?recStopFails=1', { waitUntil: 'load' })
   await page.click('nav button >> nth=2')
   await page.waitForTimeout(400)
-  await page.click('button:has-text("开始录音")')
+  await page.locator('main').nth(2).locator('button:has-text("开始录音")').click()
   await page.waitForTimeout(500)
-  await page.click('button:has-text("停止并保存")')
+  await page.locator('main').nth(2).locator('button:has-text("停止并保存")').click()
   await page.waitForTimeout(600)
   const ka = await page.evaluate(() => window.__ka)
   t('B1 录音停止报错后仍撤下服务一次', count(ka, 'stop') === 1)
@@ -112,14 +114,14 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL + '?startFails=1', { waitUntil: 'load' })
   await page.click('nav button >> nth=2')
   await page.waitForTimeout(400)
-  await page.click('button:has-text("开始录音")')
+  await page.locator('main').nth(2).locator('button:has-text("开始录音")').click()
   await page.waitForTimeout(600)
   const ka = await page.evaluate(() => window.__ka)
   t('C1 保活启动被尝试过一次', count(ka, 'start') === 1)
-  t('C2 保活失败仍进入录音态（按钮为「停止并保存」）', await page.locator('button:has-text("停止并保存")').isVisible())
+  t('C2 保活失败仍进入录音态（按钮为「停止并保存」）', await page.locator('main').nth(2).locator('button:has-text("停止并保存")').isVisible())
   t('C3 保活失败仍产生「录音中」场次', (await page.locator('text=录音中').count()) > 0)
   t('C4 提示改为「后台保活没起来…先别锁屏」', (await page.locator('text=后台保活没起来').count()) > 0)
-  await page.click('button:has-text("停止并保存")')
+  await page.locator('main').nth(2).locator('button:has-text("停止并保存")').click()
   await page.waitForTimeout(600)
   const ka2 = await page.evaluate(() => window.__ka)
   t('C5 失败启动后停录仍撤下服务', count(ka2, 'stop') === 1)
@@ -150,7 +152,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL, { waitUntil: 'load' })
   await page.click('nav button >> nth=2')
   await page.waitForTimeout(400)
-  await page.click('button:has-text("开始录音")')
+  await page.locator('main').nth(2).locator('button:has-text("开始录音")').click()
   await page.waitForTimeout(400)
   t('E1 浏览器点开始仍给「需在 App 内使用」提示', (await page.locator('text=需在 App 内使用').count()) > 0)
   t('E2 无桥时没有页面异常', errs.length === 0)
