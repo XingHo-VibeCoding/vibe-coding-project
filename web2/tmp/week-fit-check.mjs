@@ -70,6 +70,23 @@ const B = await page.evaluate(() => {
 })
 console.log('B 明细:', JSON.stringify(B))
 t('B1 网格底边在底部导航之上（≥6px 间隙）', B.gap >= 6, `间隙 ${B.gap}px`)
+t('B2 网格填满剩余空间（间隙 ≤14px，不留大空档）', B.gap <= 14, `间隙 ${B.gap}px`)
+
+/* ---- H 锁死 + 紧凑头部（2026-10-01 用户要求：头部多缩、课表锁死） ---- */
+const H = await page.evaluate(() => {
+  const h = document.querySelector('header').getBoundingClientRect()
+  const h1 = document.querySelector('header h1')
+  return {
+    headerH: +h.height.toFixed(1),
+    h1Size: getComputedStyle(h1).fontSize,
+    locked: document.body.style.overflow === 'hidden',
+    scrollable: document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight,
+  }
+})
+console.log('H 明细:', JSON.stringify(H))
+t('H1 周课表页锁死文档滚动（body overflow hidden）', H.locked, `scrollable=${H.scrollable}px`)
+t('H2 紧凑头部生效（header ≤115px，旧版 ~140px）', H.headerH <= 115, `${H.headerH}px`)
+t('H3 问候语降为单行小字号（紧凑态）', parseFloat(H.h1Size) < 24, H.h1Size)
 
 /* ---- C/D/E 卡片文字多行 ---- */
 const cards = await page.evaluate((longName) => {

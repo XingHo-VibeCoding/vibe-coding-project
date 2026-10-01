@@ -37,6 +37,10 @@ function switchTab(key) {
   enterToday.value = key === 'today'
   tab.value = key
   window.scrollTo({ top: 0 }) // 平移后立即回顶，避免落在长页的空白处
+  // 周课表锁死文档滚动（页面一屏看完，锁掉任何残余晃动）；切走即恢复。
+  document.body.style.overflow = key === 'week' ? 'hidden' : ''
+  // 头部收缩动画（280ms）会改变网格顶的位置，动画结束后重校网格高度
+  setTimeout(measureGridTop, 320)
   const svg = document.querySelectorAll('nav button svg')[TAB_KEYS.indexOf(key)]
   svg && svg.animate(
     [{ transform: 'scale(1)' }, { transform: 'scale(1.28)', offset: 0.4 }, { transform: 'scale(1)' }],
@@ -79,11 +83,16 @@ onMounted(() => {
   window.addEventListener('resize', onWinResize) // 周课表高度按视口重算（一屏看完的保证）
   measureNavH() // 底部导航实测高度（含系统手势条安全区），网格高度要用它
   measureSat() // 外壳状态栏让位（App 内 >0，浏览器 0）
+  measureGridTop() // 网格顶文档坐标实测（高度公式输入）
   window.addEventListener('wb-sat', onWinResize) // 外壳异步量到 --sat 后广播，重算周课表高度
+  // 周课表页锁死文档滚动：页面内容一屏看完，任何残余溢出/WebView 拖拽都表现为「晃动」
+  // （v1.32.2 真机仍有轻微晃动）。锁的是 body overflow，切回今日/我的自动恢复滚动。
+  document.body.style.overflow = tab.value === 'week' ? 'hidden' : ''
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onWinResize)
   window.removeEventListener('wb-sat', onWinResize)
+  document.body.style.overflow = ''
 })
 
 /* ---------------- Android 返回键分级处理（@capacitor/app，官方插件自动注册进桥） ----------------
@@ -1692,22 +1701,23 @@ const gridRowOfIdx = computed(() => rowIndexMap(gridRows.value))
 const gridCourses = computed(() => courseItems(weekVisible.value, periods.value))
 
 /* 网格高度：一屏塞下、永不纵向滚动。行高交给 CSS 的 1fr 均分，这里只算容器总高。
-   扣掉两块：①WEEK_CHROME＝周课表页顶部固定占位（头部 139.5 + 页 pt-4 16 + 周次条 54
-   + 间距 12 + 网格表头行 44.8 + 与底部导航的 8px 间隙 ≈ 274，2026-10-01 在 390×844 实测）；
-   ②底部导航实测高度（手机上还要加系统手势条的安全区，所以现量不写死）。
-   再夹到 [300, 620]：小屏不至于把行挤成一条线，大屏也不至于拉得空荡。
-   改这里之前先看 tmp/diag-week-space.mjs 的空间账——2026-10-01 用户报「上下还能滑」
-   就是高度算多了 16px（网格底边被底部导航压住 9px）+ 页面 pb-28 撑着 44px 空白。 */
+   2026-10-01 下午起改为「实测网格顶的文档坐标」反推：gridH = 视口 − gridTop − 导航 − 8px 间隙。
+   为什么不再用常数 WEEK_CHROME=274：真机差异太多——外壳状态栏让位、系统字体缩放把
+   头部/周次条撑高，常数在谁家都不准（v1.32.1/v1.32.2 连续两版「小幅上下拖」都栽在
+   常数与真机对不上）。实测一步到位：不管上方占了多少，网格永远正好填满剩余空间，
+   夹到 [300, 620]：小屏不至于把行挤成一条线，大屏也不至于拉得空荡。
+   兜底：gridTop 还没量到（首帧）时用 WEEK_CHROME + satPx 估算。 */
 const WEEK_CHROME = 274
 const winH = ref(typeof window !== 'undefined' ? window.innerHeight : 800)
 const navH = ref(78)
 /* 外壳（App 包壳）为了让出系统状态栏，给 #app 加了 padding-top: var(--sat)（真机约 28px）。
-   WEEK_CHROME 是浏览器（无让位）环境量的，APK 里内容会被这 28px 顶下去——
-   2026-10-01 用户报「还是能小幅度上下拖」，多出来的高度正好 = sat。所以这里现量
-   #app 的 computed padding-top 扣掉（不依赖变量名；浏览器里 padding 为 0，行为不变）。
    外壳量到原生高度是异步的，可能晚于本组件 mount，写完 --sat 会广播 'wb-sat' 事件。 */
 const satPx = ref(0)
-const gridH = computed(() => Math.max(300, Math.min(620, winH.value - WEEK_CHROME - navH.value - satPx.value)))
+const gridTop = ref(0) // [data-grid] 顶边的文档坐标（含外壳让位、头部实际高度），measureGridTop 实测
+const gridH = computed(() => {
+  const top = gridTop.value > 0 ? gridTop.value : WEEK_CHROME + satPx.value
+  return Math.max(300, Math.min(620, winH.value - top - navH.value - 8))
+})
 function measureNavH() {
   const nav = document.querySelector('nav')
   if (nav) navH.value = nav.offsetHeight
@@ -1717,10 +1727,16 @@ function measureSat() {
   if (!app) return
   satPx.value = parseFloat(getComputedStyle(app).paddingTop) || 0
 }
+function measureGridTop() {
+  const g = document.querySelector('[data-grid]')
+  if (!g) return
+  gridTop.value = g.getBoundingClientRect().top + (window.scrollY || 0)
+}
 function onWinResize() {
   winH.value = window.innerHeight
   measureNavH()
   measureSat()
+  measureGridTop()
 }
 
 /* 表头与主体共用同一份列定义（两处分开写就会对不上，这是网格的基本要求） */
@@ -1731,20 +1747,25 @@ const gridBodyStyle = computed(() => ({
   ...gridColsStyle.value,
   gridTemplateRows: `repeat(${gridRows.value.length}, minmax(0, 1fr))`,
   height: gridH.value + 'px',
+  /* 头部收缩动画（280ms）结束后 gridTop 才重校，高度跳变用同曲线过渡兜平滑 */
+  transition: 'height 280ms cubic-bezier(0.3, 0.75, 0.3, 1)',
 }))
 
 /* 卡片文字放几行：网格行高是 1fr 均分的，单节次的小格在小屏上只有 ~30px，
    连堂卡片则空间充足。按「这张卡实际有多少像素」分档，而不是一刀切：
      loose 名字 2 行 + 地点多行（连堂/大屏）
      mid   名字 2 行 + 地点 1 行
-     tight 名字 1 行 + 地点 1 行（30px 的小格，硬塞多行会切半行，比省略号更难看）
-   行高常量取自实际样式：名字 10px×1.15≈11.5、地点 9px×1.07≈9.6；card 上下 padding 各 2px。 */
+     tight 名字 1 行 + 地点 1 行（小格硬塞多行会切半行，比省略号更难看）
+   行高常量取自实际样式：名字 10px×1.15≈11.5、地点 9px×leading-tight(1.25)≈11.25
+   （2026-10-01 实测校正：原来按 9.6 算地点行高 + 漏扣卡片 inset，mid 档在小格上溢出 3px）。
+   可用高 = 行高×节数 − 8（卡片 inset 上下共 4 + padding 上下共 4）。 */
 function cardFit(it) {
   const rowH = gridH.value / Math.max(1, gridRows.value.length)
-  const h = rowH * (it.to - it.from + 1) - 4
-  if (h >= 11.5 * 2 + 9.6 * 2) return 'loose'
-  if (h >= 11.5 * 2 + 9.6) return 'mid'
-  return 'tight'
+  const h = rowH * (it.to - it.from + 1) - 8
+  if (h >= 11.5 * 2 + 11.25 * 2) return 'loose' // 名2 + 地点多行
+  if (h >= 11.5 * 2 + 11.25) return 'mid' // 名2 + 地1
+  if (h >= 11.5 * 2) return 'mid2' // 名2 + 地点让位（装不下地1，保课名两行完整度）
+  return 'tight' // 名1 + 地1
 }
 
 /* 课程配色：按课程名哈希取色，同一门课永远同色。
@@ -1970,13 +1991,22 @@ function gridDbl(e) {
        —— 2026-10-01 真机「小幅上下拖」的第二层根因（第一层在 gridH 公式） -->
   <div class="mx-auto flex min-h-[calc(100vh-var(--sat,0px))] max-w-md flex-col overflow-x-clip">
     <!-- 顶栏：淡雅氛围卡——四角全圆+四周留白，浏览器里不再有「上尖下圆」的裁切感 -->
-    <header class="relative mx-4 mt-3 overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-50 to-primary-100 px-5 pb-5 pt-5 shadow-sm">
+    <!-- 头部问候卡：今日页完整版（大问候语 + 状态气泡 + 今日概要）；周课表/我的页紧凑版
+         （2026-10-01 用户要求「上方卡片收缩时多缩一点，给课表多腾空间」——原来只有
+         气泡和概要会收，问候语和 padding 常驻不动，头部占 ~140px；紧凑版收掉 ~50px） -->
+    <header
+      class="relative mx-4 mt-3 overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-50 to-primary-100 shadow-sm transition-all duration-[280ms]"
+      :class="tab === 'today' ? 'px-5 pb-5 pt-5' : 'px-5 pb-3 pt-3.5'"
+    >
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">
           <p class="text-[13px] font-medium text-primary-600">
             {{ dateText }} {{ weekDay }} · 第 {{ semester.week }} 周
           </p>
-          <h1 class="mt-1 text-2xl font-bold tracking-tight text-ink">{{ greetingText }}</h1>
+          <h1
+            class="font-bold tracking-tight text-ink transition-all duration-[280ms]"
+            :class="tab === 'today' ? 'mt-1 text-2xl' : 'mt-0.5 truncate text-lg'"
+          >{{ greetingText }}</h1>
           <!-- 状态气泡：状态轴命中才出现（仅今日页）。收缩容器防瞬间消失：离开今日随 header 一起收起 -->
           <div
             class="grid transition-[grid-template-rows] duration-[280ms]"
@@ -2372,7 +2402,7 @@ function gridDbl(e) {
               :style="{ color: pal(it.c).text }"
             >{{ it.c.name }}</p>
             <p
-              v-if="it.c.place"
+              v-if="it.c.place && cardFit(it) !== 'mid2'"
               class="text-[9px] leading-tight text-ink-dim"
               :class="cardFit(it) === 'loose' ? 'line-clamp-3 break-words' : 'truncate'"
             >{{ it.c.place }}</p>
