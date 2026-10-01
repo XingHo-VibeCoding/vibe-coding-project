@@ -77,6 +77,7 @@ onMounted(() => {
   initNotify() // M5：通知渠道/权限 + 首次排程 + action 监听（异步，不阻塞首屏）
   initBackButton() // Android 返回键分级处理（App 内生效；浏览器无桥不注册）
   window.addEventListener('resize', onWinResize) // 周课表高度按视口重算（一屏看完的保证）
+  measureNavH() // 底部导航实测高度（含系统手势条安全区），网格高度要用它
 })
 onBeforeUnmount(() => window.removeEventListener('resize', onWinResize))
 
@@ -1686,11 +1687,24 @@ const gridRowOfIdx = computed(() => rowIndexMap(gridRows.value))
 const gridCourses = computed(() => courseItems(weekVisible.value, periods.value))
 
 /* 网格高度：一屏塞下、永不纵向滚动。行高交给 CSS 的 1fr 均分，这里只算容器总高。
-   顶部（头部 + 周次条 + 表头）与底部导航占位先扣掉，再夹到 [330, 620]：
-   小屏不至于把行挤成一条线，大屏也不至于拉得空荡。 */
+   扣掉两块：①WEEK_CHROME＝周课表页顶部固定占位（头部 139.5 + 页 pt-4 16 + 周次条 54
+   + 间距 12 + 网格表头行 44.8 + 与底部导航的 8px 间隙 ≈ 274，2026-10-01 在 390×844 实测）；
+   ②底部导航实测高度（手机上还要加系统手势条的安全区，所以现量不写死）。
+   再夹到 [300, 620]：小屏不至于把行挤成一条线，大屏也不至于拉得空荡。
+   改这里之前先看 tmp/diag-week-space.mjs 的空间账——2026-10-01 用户报「上下还能滑」
+   就是高度算多了 16px（网格底边被底部导航压住 9px）+ 页面 pb-28 撑着 44px 空白。 */
+const WEEK_CHROME = 274
 const winH = ref(typeof window !== 'undefined' ? window.innerHeight : 800)
-const gridH = computed(() => Math.max(330, Math.min(620, winH.value - 336)))
-function onWinResize() { winH.value = window.innerHeight }
+const navH = ref(78)
+const gridH = computed(() => Math.max(300, Math.min(620, winH.value - WEEK_CHROME - navH.value)))
+function measureNavH() {
+  const nav = document.querySelector('nav')
+  if (nav) navH.value = nav.offsetHeight
+}
+function onWinResize() {
+  winH.value = window.innerHeight
+  measureNavH()
+}
 
 /* 表头与主体共用同一份列定义（两处分开写就会对不上，这是网格的基本要求） */
 const gridColsStyle = computed(() => ({
@@ -1701,6 +1715,20 @@ const gridBodyStyle = computed(() => ({
   gridTemplateRows: `repeat(${gridRows.value.length}, minmax(0, 1fr))`,
   height: gridH.value + 'px',
 }))
+
+/* 卡片文字放几行：网格行高是 1fr 均分的，单节次的小格在小屏上只有 ~30px，
+   连堂卡片则空间充足。按「这张卡实际有多少像素」分档，而不是一刀切：
+     loose 名字 2 行 + 地点多行（连堂/大屏）
+     mid   名字 2 行 + 地点 1 行
+     tight 名字 1 行 + 地点 1 行（30px 的小格，硬塞多行会切半行，比省略号更难看）
+   行高常量取自实际样式：名字 10px×1.15≈11.5、地点 9px×1.07≈9.6；card 上下 padding 各 2px。 */
+function cardFit(it) {
+  const rowH = gridH.value / Math.max(1, gridRows.value.length)
+  const h = rowH * (it.to - it.from + 1) - 4
+  if (h >= 11.5 * 2 + 9.6 * 2) return 'loose'
+  if (h >= 11.5 * 2 + 9.6) return 'mid'
+  return 'tight'
+}
 
 /* 课程配色：按课程名哈希取色，同一门课永远同色。
    深色模式下改为「同色系半透明底 + 原色文字」，避免大块高亮糊在暗底上 */
@@ -1746,6 +1774,13 @@ function courseStatus(c) {
   if (nowTime.value > e) return 'past'
   if (nowTime.value >= s) return 'now'
   return 'future'
+}
+/* 周课表的「进行中/已结束」样式只对今天这一列生效：
+   courseStatus 只比时间不比星期，直接用到周网格会让其他列同一时刻的课也亮蓝框
+   （2026-10-01 用户报：上午第 3-5 节整行冒蓝框，根因就是它）。 */
+function gridStatus(it) {
+  if (weekOffset.value !== 0 || it.wd !== todayIdx + 1) return ''
+  return courseStatus(it.c)
 }
 function nowPct(c) {
   const s = minOf(c.start)
@@ -2210,8 +2245,11 @@ function gridDbl(e) {
       </section>
     </main>
 
-    <!-- ===== 周课表 ===== -->
-    <main class="w-1/3 px-4 pt-4 pb-28" :inert="tab !== 'week'">
+    <!-- ===== 周课表 =====
+         pb-16（64px）不是随手写的：网格本来就一屏看完，底部留白只需保证「不被底部导航压住」，
+         留 pb-28(112px) 会让文档比屏幕高 44px → 用户能上下滑出一片空白
+         （2026-10-01 实测：390×844 下 pb-28 时 maxScroll=44）。 -->
+    <main class="w-1/3 px-4 pt-4 pb-16" :inert="tab !== 'week'">
       <!-- 周次切换 -->
       <section class="flex items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
         <button
@@ -2302,12 +2340,22 @@ function gridDbl(e) {
             v-for="it in gridCourses"
             :key="it.c.id"
             class="relative m-[1px] cursor-pointer overflow-hidden rounded-[5px] px-1 py-0.5 shadow-sm ring-1 ring-line/70 transition active:scale-[0.97]"
-            :class="courseStatus(it.c) === 'now' ? 'ring-2 ring-primary-500' : (courseStatus(it.c) === 'past' ? 'opacity-55' : '')"
+            :class="gridStatus(it) === 'now' ? 'ring-2 ring-primary-500' : (gridStatus(it) === 'past' ? 'opacity-55' : '')"
             :style="{ ...gridStyleOf(it, gridRowOfIdx), background: pal(it.c).bg }"
             @click="openDetail(it.c)"
           >
-            <p class="truncate text-[10px] leading-[1.15] font-semibold" :style="{ color: pal(it.c).text }">{{ it.c.name }}</p>
-            <p v-if="it.c.place" class="truncate text-[9px] leading-tight text-ink-dim">{{ it.c.place }}</p>
+            <!-- 课名与地点按卡片实际高度决定行数（2026-10-01 用户要「看到完整信息」）：
+                 原来 truncate 只给一行，长课名（「习近平新时代…概论」）全被省略号吃掉。 -->
+            <p
+              class="text-[10px] leading-[1.15] font-semibold"
+              :class="cardFit(it) === 'tight' ? 'truncate' : 'line-clamp-2 break-words'"
+              :style="{ color: pal(it.c).text }"
+            >{{ it.c.name }}</p>
+            <p
+              v-if="it.c.place"
+              class="text-[9px] leading-tight text-ink-dim"
+              :class="cardFit(it) === 'loose' ? 'line-clamp-3 break-words' : 'truncate'"
+            >{{ it.c.place }}</p>
             <!-- 只在与节次边界不齐时标真实时间（识别导入的课常见），对齐的不啰嗦 -->
             <span
               v-if="!isAligned(it.c, periods)"
@@ -2790,7 +2838,7 @@ function gridDbl(e) {
       class="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card/85 backdrop-blur-lg"
       style="padding-bottom: env(safe-area-inset-bottom)"
     >
-      <div class="relative mx-auto grid max-w-md grid-cols-3 px-6 py-2">
+      <div class="relative mx-auto grid max-w-md grid-cols-3 px-6 py-1">
         <!-- 滑块：一个药丸在三个槽位间连续滑动，连点时 transition 自动改道（可打断） -->
         <div class="pointer-events-none absolute inset-0 overflow-hidden">
           <div class="absolute inset-y-0 left-6 right-6">
@@ -2799,8 +2847,9 @@ function gridDbl(e) {
               style="transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
               :style="{ transform: `translateX(${tabIndex * 100}%)` }"
             >
-              <!-- 药丸顶=容器py-2(8px)+按钮pt-1.5(6px)=14px，与图标 wrapper 逐像素重叠 -->
-              <span class="mt-3.5 h-8 w-12 rounded-full bg-primary-50"></span>
+              <!-- 药丸顶=容器py-1(4px)+按钮pt-1(4px)=8px，与 h-7 的图标 wrapper 逐像素重叠
+                   （2026-10-01 导航整体压矮：py-2→py-1、pt/pb-1.5→1、图标区 h-8→h-7，78px→62px） -->
+              <span class="mt-2 h-7 w-12 rounded-full bg-primary-50"></span>
             </div>
           </div>
         </div>
@@ -2811,16 +2860,18 @@ function gridDbl(e) {
             { key: 'me', label: '我的', icon: 'M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4' },
           ]"
           :key="t.key"
-          class="relative flex flex-col items-center pt-1.5 pb-1.5 transition-transform duration-150 active:scale-90"
+          class="relative flex flex-col items-center pt-1 pb-1 transition-transform duration-150 active:scale-90"
           :class="tab === t.key ? 'text-primary-500' : 'text-ink-dim/70'"
           @click="switchTab(t.key)"
         >
-          <span
-            v-if="t.key === 'today' && undoneCount"
-            class="absolute -top-1.5 -right-2.5 z-10 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-400 px-1 text-[10px] font-bold text-white"
-          >{{ undoneCount }}</span>
-          <!-- 图标 wrapper：h-8 w-12 与滑块药丸同尺寸同位置，图标在药丸内绝对居中 -->
-          <span class="relative flex h-8 w-12 items-center justify-center">
+          <!-- 图标 wrapper：h-7 w-12 与滑块药丸同尺寸同位置，图标在药丸内绝对居中；
+               待办徽标挂在图标容器上（2026-10-01 用户报「离得太远」——原来挂在整宽按钮的
+               -top-1.5 -right-2.5，飞到两格之间的半空），贴住图标右上角 -->
+          <span class="relative flex h-7 w-12 items-center justify-center">
+            <span
+              v-if="t.key === 'today' && undoneCount"
+              class="absolute top-0 right-1.5 z-10 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-400 px-1 text-[10px] font-bold text-white"
+            >{{ undoneCount }}</span>
             <svg viewBox="0 0 16 16" class="h-5.5 w-5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path :d="t.icon" />
             </svg>
