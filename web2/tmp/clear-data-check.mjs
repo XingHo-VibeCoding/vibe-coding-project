@@ -12,7 +12,7 @@ function t(name, cond, detail) {
   console.log((cond ? 'PASS ' : 'FAIL ') + name + (cond ? '' : '  <- ' + String(detail)))
 }
 
-const URL = 'http://127.0.0.1:4180/'
+const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 
 const DATA_KEYS = ['web2.data', 'web2.added', 'web2.todos', 'web2.events', 'web2.courseOv', 'web2.lectures', 'web2.habits', 'web2.onboarded']
 const KEEP_KEYS = ['web2.theme', 'web2.accent', 'web2.llm', 'web2.notify']
