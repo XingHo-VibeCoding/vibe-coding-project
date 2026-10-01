@@ -1787,6 +1787,15 @@ const todayCourses = computed(() => {
 const tParam = new URLSearchParams(location.search).get('t')
 const nowTime = ref(tParam ? minOf(tParam) : new Date().getHours() * 60 + new Date().getMinutes())
 
+/* 真实时间每 30 秒自走：不然页面开着不动，课表三态/头部状态/问候语全停在打开那一刻。
+   ?t= 时间后门（测试用）时不走表，保持冻结便于断言。 */
+if (!tParam) {
+  setInterval(() => {
+    const d = new Date()
+    nowTime.value = d.getHours() * 60 + d.getMinutes()
+  }, 30_000)
+}
+
 /* 时段轴：可爱系语气表，想改语气只动这里 */
 const GREET_CUTE = [
   { from: 5, text: '早上好呀～乖乖起床啦 (◍•ᴗ•◍)' },
@@ -1824,11 +1833,21 @@ const state = computed(() => {
   return null
 })
 
-const currentCourse = computed(() => {
-  const c = todayCourses.value.find((c) => {
-    return nowTime.value >= minOf(c.start) && nowTime.value <= minOf(c.end)
-  })
-  return c || todayCourses.value[0]
+/* 头部状态行的「进行中」判定：只在真覆盖当前时刻才算。
+   旧版找不到就兜底第一节课 → 全天都显示「进行中」（真机 17:27，课 12:25 早已结束还在报）。 */
+const currentCourse = computed(() =>
+  todayCourses.value.find((c) => nowTime.value >= minOf(c.start) && nowTime.value <= minOf(c.end)) || null
+)
+
+/* 头部状态行文案：进行中 > 下一节 > 全部结束 > 没课（与问候气泡的 soon/done/free 口径一致） */
+const headerCourseText = computed(() => {
+  if (currentCourse.value) return '进行中 · ' + currentCourse.value.name
+  if (!todayCourses.value.length) return '今天没有课'
+  const next = todayCourses.value
+    .filter((c) => minOf(c.start) > nowTime.value)
+    .sort((a, b) => minOf(a.start) - minOf(b.start))[0]
+  if (next) return `下一节 · ${next.name} ${next.start}`
+  return '今日课程已结束'
 })
 
 const dateText = `${today.getMonth() + 1} 月 ${today.getDate()} 日`
@@ -2264,7 +2283,7 @@ function gridDbl(e) {
               <div class="min-w-0">
                 <p class="text-xs text-ink-dim">今天 {{ todayCourses.length }} 节课</p>
                 <p class="mt-0.5 truncate text-sm font-semibold text-ink">
-                  {{ currentCourse ? '进行中 · ' + currentCourse.name : '当前没有课' }}
+                  {{ headerCourseText }}
                 </p>
               </div>
               <div class="shrink-0 text-right">
