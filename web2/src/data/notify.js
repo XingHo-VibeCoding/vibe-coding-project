@@ -120,9 +120,12 @@ function hashId(key) {
 
 /* 展开 future horizonDays 天（含今天）里每个需要提醒的时刻。
    - 课程：weekday 对得上 + 周次在学期内 + week_rule 匹配（无学期信息时 odd/even 无法判断，跳过）
+   - 循环日程：weekday 对得上 + week_rule 匹配。**不做学期边界过滤**——循环日程的
+     定义就是「跨学期常驻」（口径同 todayCourses / ics.js 的 routine 展开），
+     放假期间也在。无学期信息时 odd/even 同样无法判断，跳过。
    - 独立日程：date 精确匹配
    - 已过去的时刻不排；提前量把时刻推到当天 0 点前的整条跳过（罕见，避免排到昨天） */
-export function buildScheduleItems({ courses = [], events = [], semester = null, settings, now = new Date(), horizonDays = HORIZON_DAYS }) {
+export function buildScheduleItems({ courses = [], events = [], routines = [], semester = null, settings, now = new Date(), horizonDays = HORIZON_DAYS }) {
   const lead = Math.max(0, Math.floor(Number(settings.minutesBefore) || 0))
   const leadLabel = lead > 0 ? lead + ' 分钟后开始' : '现在开始'
   const out = []
@@ -145,6 +148,21 @@ export function buildScheduleItems({ courses = [], events = [], semester = null,
         if (!matchWeekRule(c.week_rule, weekNo)) continue
       }
       const item = makeItem('c', c.id, dKey, day, c.start, lead, leadLabel, c.name, c.place)
+      if (item) out.push(item)
+    }
+
+    /* 循环日程：与课程同一套周次规则，但不受学期起止约束（跨学期常驻）。
+       kind 用 'r' 前缀，与课程的 'c' 区分——两套 id 空间各自独立（课程的 uuid
+       与 routine 的 uuid 可能撞号），key 必须能分开。 */
+    for (const r of routines) {
+      if (!r || r.type !== 'routine') continue
+      if (Number(r.weekday) !== weekday) continue
+      if (weekNo === null) {
+        if ((r.week_rule || 'every') !== 'every') continue // 无法判断单双周 → 不排
+      } else if (!matchWeekRule(r.week_rule, weekNo)) {
+        continue
+      }
+      const item = makeItem('r', r.id, dKey, day, r.start, lead, leadLabel, r.name, r.place)
       if (item) out.push(item)
     }
 

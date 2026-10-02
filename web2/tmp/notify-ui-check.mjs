@@ -177,6 +177,34 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await ctx.close()
 }
 
+/* ---------- 场景 I：循环日程也进课前提醒排程（2026-10-02 用户要） ----------
+   循环日程存在 web2.events 的 routine overlay 里（与课程不同源），必须端到端验一次：
+   它是否真的被 buildScheduleItems 展开、并落到原生排程里。
+   造的日期取「今天 + 0/1 天」，保证落在 7 天窗口内且时刻在未来。 */
+{
+  const ctx = await browser.newContext({ viewport: { width: 412, height: 900 } })
+  await ctx.addInitScript(SEED)
+  await ctx.addInitScript(FAKE_APP)
+  /* 周五（本地 today）固定一条 23:50 的循环日程：每天都有，必落在窗口内且晚于当前时刻 */
+  const routine = JSON.stringify([{
+    id: 'rt-1', type: 'routine', title: '晚间健身', location: '体育馆',
+    weekday: ((new Date().getDay() + 6) % 7) + 1, start_time: '23:50', duration: 40,
+    week_rule: 'every', semester_id: null,
+  }])
+  await ctx.addInitScript(`localStorage.setItem('web2.events', ${JSON.stringify(routine)})`)
+  const page = await ctx.newPage()
+  page.on('pageerror', (e) => console.log('PAGEERROR:', e.message))
+  await page.goto(URL, { waitUntil: 'load' })
+  await page.waitForTimeout(1200)
+  const n = await page.evaluate(() => window.__notify)
+  const mine = n.scheduled.filter((x) => x.extra && x.extra.key && x.extra.key.startsWith('r_'))
+  t('I1 循环日程进了排程（key 前缀 r_）', mine.length >= 1, String(mine.length))
+  t('I2 排程标题是循环日程名', mine.length >= 1 && mine[0].title === '晚间健身', mine.length ? mine[0].title : '')
+  t('I3 排程正文带提前量与地点', mine.length >= 1 && /分钟后开始 · 体育馆/.test(mine[0].body), mine.length ? mine[0].body : '')
+  t('I4 循环日程提醒与原课表提醒共存（课程仍排着）', n.scheduled.some((x) => x.extra && x.extra.key && x.extra.key.startsWith('c_')))
+  await ctx.close()
+}
+
 await browser.close()
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

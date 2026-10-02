@@ -330,6 +330,9 @@ async function applyNotifySchedule() {
   const items = buildScheduleItems({
     courses: weekAll.value,
     events: events.value,
+    /* 循环日程也排课前提醒（2026-10-02 用户要）：它和课程一样「今天几点到几点」，
+       已经在今日页参与三态与开录关联，提醒口径不该有例外。 */
+    routines: routines.value,
     semester: semester.value,
     settings: notifySettings.value,
   })
@@ -360,7 +363,7 @@ async function onTestNotify() {
 }
 
 /* 课表 / 设置变动 → 重排（saveNotifySettings 返回新对象，引用变化即触发） */
-watch([weekAll, events, semester], () => { applyNotifySchedule() })
+watch([weekAll, events, routines, semester], () => { applyNotifySchedule() })
 watch(notifySettings, () => { applyNotifySchedule() })
 
 async function initNotify() {
@@ -1603,15 +1606,21 @@ function recImport() {
   if (recFromMine.value) {
     let ok = 0
     let dup = 0
-    let bad = 0
+    let badName = 0
+    let badSec = 0
     const conflictNames = []
     const seen = new Set()
     const exists = (c) => weekAll.value.some((x) => x.type === 'course' && x.weekday === c.weekday && x.start === c.start && x.end === c.end && x.name === c.name && x.week_rule === c.week_rule)
     for (const it of items) {
       const a = ps.find((p) => p.no === Number(it.startSec))
       const b = ps.find((p) => p.no === Number(it.endSec))
-      if (!a || !b || !String(it.title || '').trim()) {
-        bad++
+      /* 同 recImport 引导页分支：两类跳过原因分开计数，文案才可行动 */
+      if (!a || !b) {
+        badSec++
+        continue
+      }
+      if (!String(it.title || '').trim()) {
+        badName++
         continue
       }
       const course = {
@@ -1638,7 +1647,8 @@ function recImport() {
     mineRecCancel()
     importMsg.value = `导入成功：新增 ${ok} 门课`
       + (dup ? `，${dup} 门重复已跳过` : '')
-      + (bad ? `，${bad} 门因课程名没填或节次超出被跳过` : '')
+      + (badName ? `，${badName} 门因课程名没填被跳过` : '')
+      + (badSec ? `，${badSec} 门因节次超出当前节次表被跳过（去学期卡片改节次表后重新识别）` : '')
       + (conflictNames.length ? `；与现有课表时间冲突：${[...new Set(conflictNames)].join('、')}（没动现有课，冲突的课可在周视图调整）` : '')
     return
   }
@@ -1656,14 +1666,22 @@ function recImport() {
   todos.value = r.data.todos.map((t) => ({ ...t }))
   let ok = 0
   let dup = 0
-  let bad = 0
+  let badName = 0
+  let badSec = 0
   const seen = new Set()
   const exists = (c) => weekAll.value.some((x) => x.type === 'course' && x.weekday === c.weekday && x.start === c.start && x.end === c.end && x.name === c.name && x.week_rule === c.week_rule)
   for (const it of items) {
     const a = ps.find((p) => p.no === Number(it.startSec))
     const b = ps.find((p) => p.no === Number(it.endSec))
-    if (!a || !b || !String(it.title || '').trim()) {
-      bad++
+    /* 两类跳过原因分开计数：文案要能告诉用户「下一步改哪里」——
+       课名没填 → 在周视图手动补；节次超出 → 去改学期节次表再加回来。
+       混成一句「因课程名没填或节次超出」等于没说。 */
+    if (!a || !b) {
+      badSec++
+      continue
+    }
+    if (!String(it.title || '').trim()) {
+      badName++
       continue
     }
     const course = {
@@ -1689,8 +1707,9 @@ function recImport() {
   tab.value = 'week'
   importMsg.value = `课表识别已导入 ${ok} 门课`
     + (dup ? `，${dup} 门重复已跳过` : '')
-    + (bad ? `，${bad} 门因课程名没填或节次超出被跳过（可在周视图手动补）` : '')
-    + (ok && !dup && !bad ? '：双击或长按课表空白处还能继续加课' : '')
+    + (badName ? `，${badName} 门因课程名没填被跳过（可在周视图手动补）` : '')
+    + (badSec ? `，${badSec} 门因节次超出当前节次表被跳过（去学期卡片改节次表后重新识别）` : '')
+    + (ok && !dup && !badName && !badSec ? '：双击或长按课表空白处还能继续加课' : '')
 }
 
 /* ---------------- 主题（浅色 / 深色） ---------------- */
@@ -3743,7 +3762,7 @@ function gridDbl(e) {
             <span class="block text-sm font-medium">课前提醒</span>
             <span class="block text-[11px] leading-relaxed text-ink-dim/70">
               {{ notifyOk
-                ? '上课前高优先级提醒（会响、会弹横幅），点通知或「开始录音」直接开录。'
+                ? '上课前高优先级提醒（会响、会弹横幅），点通知或「开始录音」直接开录。课程、独立日程、循环日程都包含。'
                 : '通知能力仅 App 内生效，浏览器上不可用。' }}
             </span>
           </span>
