@@ -46,8 +46,9 @@ try {
   await page.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
 
-  const navBtns = page.locator('nav button')
-  await navBtns.nth(2).click()
+  // 录音列表在「我的」页 —— 按文案选，别按序号（tab 数会变；这里曾写死 nth(2)，
+  // 加第 4 个 tab「打卡」后就点到别页了）
+  await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(400)
 
   const stuckRow = page.locator('li', { hasText: '卡死场次' })
