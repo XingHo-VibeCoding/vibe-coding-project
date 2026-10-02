@@ -25,10 +25,11 @@ vibe-coding-project/
 ├── js/                  # 主应用核心（见下）
 ├── samples/             # 素材样本
 ├── skills/              # 训练营相关素材
-├── web2/                # 概念版应用（Vite 构建，当前 v1.38.0，已上线）
+├── web2/                # 正式版应用（Vite 构建，当前 v1.38.0，已上线）
 ├── db/                  # schema.sql + seed.sql（PostgreSQL 版，Day 16）
 ├── cloudfunctions/      # 云函数（health=Day15 健康检查，list=Day17 读接口）
-├── mock-frontend/       # Day15 部署练习页（部署在静态托管）
+├── mock-frontend/       # Day15 mock 练习页（线上 = *.tcloudbaseapp.com，不是 web2 本体）
+├── .workbuddy/          # 工具临时区（检查脚本/备份），被 .gitignore 忽略，有意保留不清理
 └── docs/                # api-contract.md（接口契约）、Day15-复盘.md、本文件
 ```
 
@@ -44,7 +45,7 @@ vibe-coding-project/
 | `mock.js` / `components.js` / `components-demo.js` | mock 数据 / 组件库 / 组件演示 |
 | `ai/` | AI 能力相关（录音总结、课表识别用到） |
 
-`web2/`（概念版，独立可运行）：`src/` 源码、`dist/` 构建产物、`serve.js` 本地预览；**升版本号只改 `web2/package.json` 一处**。
+`web2/`（正式版，原「概念版」，Day 14/15 起转正为开发主线；独立可运行）：`src/` 源码、`dist/` 构建产物、`serve.js` 本地预览；**升版本号只改 `web2/package.json` 一处**。
 
 ## 三、五期路线与当前进度
 
@@ -68,6 +69,8 @@ web2 导出 JSON ──→ 主项目 js/store.js 校验（硬闸门）──→ 
 
 - 三个接口已上线的公网地址见 `docs/api-contract.md`「环境信息」。
 - 云函数凭据只放在**函数环境变量**（`TCB_ENV_ID` / `CLOUDBASE_API_KEY`），永远不进代码、不进 git、不进聊天。
+- **两个线上地址别混淆**：`college-schedule-assistant.app.workbuddy.host` ＝ web2 应用本体（TECH_DESIGN §2.3 的线上入口）；`*.tcloudbaseapp.com` ＝ Day 15 mock 练习页（api-contract 的静态托管）。互不替代。
+- **`/api/list` 的 type 白名单目前只有 `course/event/routine`**（`cloudfunctions/list/index.js` 的 `allowedTypes`）——exam 与未来预留的 lectures/reviews 还没进白名单，**四期/五期开单时必须同步扩**（函数白名单 + api-contract + schema 注释三处）。
 
 ## 五、三条铁律（都真实踩过坑）
 

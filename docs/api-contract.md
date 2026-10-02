@@ -52,7 +52,8 @@
   - 无必填参数，不传时返回库里三张表的全部行
   - 可选 Query 参数：
     - `semester=<semester_id>`：只看某个学期（对 schedules / todos 生效）
-    - `type=course|event|routine|exam`：只看某类日程（只对 schedules 生效），逗号组合如 `type=course,event`
+    - `type=course|event|routine`：只看某类日程（只对 schedules 生效），逗号组合如 `type=course,event`
+      ⚠️ 与实现保持一致：exam 及未来预留的 lectures/reviews **尚未进白名单**（`cloudfunctions/list/index.js` 的 `allowedTypes`），用它们查询会报错。扩类型时必须同步改：函数白名单 + 本行 + `db/schema.sql` 注释。
     - `limit=<1~500>`：每张表最多返回条数，不传不限、超界按 500 收口
   - 排序不开放自定义，按表固定（课程按学期/星期/开始时间，待办按截止日期）
 
