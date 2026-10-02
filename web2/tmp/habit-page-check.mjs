@@ -40,7 +40,7 @@ await page.waitForTimeout(600)
 /* 入口 A：今日页「管理 ›」直达打卡页 */
 await page.locator('[data-today-habit-more]').click()
 await page.waitForTimeout(500)
-const card = page.locator('main').nth(2)
+const card = page.locator('[data-page="habit"]')
 t('1. 「管理 ›」跳到打卡页', (await card.locator('h2', { hasText: '打卡记录' }).count()) === 1)
 
 const row = card.locator('[data-habit-row]').filter({ hasText: '宽限测试' })

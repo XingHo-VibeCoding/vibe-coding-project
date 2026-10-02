@@ -33,7 +33,7 @@ t('2. 今日页有「管理 ›」入口', (await todaySection.locator('[data-to
 /* ===== 切到打卡页 ===== */
 await page.locator('nav button', { hasText: '打卡' }).click()
 await page.waitForTimeout(500)
-const card = page.locator('main').nth(2) // 平移层第 3 页 = 打卡页（today/week/habit/me）
+const card = page.locator('[data-page="habit"]') // 平移层第 3 页 = 打卡页（today/week/habit/me）
 t('3. 打卡页有「打卡记录」标题', (await card.locator('h2', { hasText: '打卡记录' }).count()) === 1)
 t('4. 打卡页初始空态', (await card.locator('p', { hasText: '还没有打卡习惯' }).count()) === 1)
 
@@ -79,7 +79,7 @@ t('15. 刷新后打卡状态保持', (await todaySection2.locator('[data-today-h
 /* ===== 回打卡页：两段式删除 ===== */
 await page.locator('nav button', { hasText: '打卡' }).click()
 await page.waitForTimeout(500)
-const card2 = page.locator('main').nth(2)
+const card2 = page.locator('[data-page="habit"]')
 const row2 = card2.locator('[data-habit-row]').filter({ hasText: '晨跑' })
 await row2.locator('button[aria-label="删除习惯"]').click()
 await page.waitForTimeout(150)
@@ -123,7 +123,7 @@ await page.locator('input[type="file"]').first().setInputFiles({ name: 'backup.j
 await page.waitForTimeout(600)
 /* 导入成功走 reloadDataset 统一刷新（含 habits），就地更新，无需切页/刷新 */
 await page.waitForTimeout(300)
-const card3 = page.locator('main').nth(2)
+const card3 = page.locator('[data-page="habit"]')
 t('20. 导入整体接管（旧习惯不在）', (await card3.locator('[data-habit-row]').filter({ hasText: '背单词' }).count()) === 0)
 t('21. 导入的习惯出现', (await card3.locator('[data-habit-row]').filter({ hasText: '导入的习惯甲' }).count()) === 1)
 t('22. 坏数据（空名）被剔除', (await card3.locator('[data-habit-row]').count()) === 1)
@@ -138,7 +138,7 @@ await p2.goto(BASE, { waitUntil: 'domcontentloaded' })
 await p2.waitForTimeout(500)
 await p2.locator('nav button', { hasText: '打卡' }).click()
 await p2.waitForTimeout(400)
-t('24. 桌面 1280 正常渲染打卡页', (await p2.locator('main').nth(2).locator('h2', { hasText: '打卡记录' }).count()) === 1)
+t('24. 桌面 1280 正常渲染打卡页', (await p2.locator('[data-page="habit"]').locator('h2', { hasText: '打卡记录' }).count()) === 1)
 await p2.close()
 
 t('全程无页面报错', errors.length === 0)

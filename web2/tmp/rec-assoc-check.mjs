@@ -100,10 +100,10 @@ async function probe(schedules) {
   await page.waitForTimeout(600)
   const scheduled = await page.evaluate(() => window.__fake.scheduled)
   const card = await page.locator('[data-today-rec]').textContent()
-  await page.locator('nav button').nth(2).click()
+  await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(500)
   const li = await page
-    .locator('main').nth(2)
+    .locator('[data-page="me"]')
     .locator('section', { hasText: '课堂录音' })
     .locator('ul li').first()
     .innerText()

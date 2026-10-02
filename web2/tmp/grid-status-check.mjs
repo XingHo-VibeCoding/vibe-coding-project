@@ -55,7 +55,7 @@ await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(see
 await page.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
 await page.goto(URL, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(700)
-await page.locator('nav button').nth(1).click() // 周课表
+await page.locator('nav button', { hasText: '周课表' }).click() // 周课表
 await page.waitForTimeout(600)
 
 /* 收集每张课卡：列号（gridColumnStart=wd+1）+ 是否蓝框 + 是否变暗 */

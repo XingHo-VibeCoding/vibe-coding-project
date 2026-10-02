@@ -12,7 +12,7 @@ await page.addInitScript(() => {
 })
 await page.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(700)
-await page.locator('nav button').nth(2).click()
+await page.locator('nav button', { hasText: '我的' }).click()
 await page.waitForTimeout(400)
 await page.getByRole('button', { name: /课堂纪要/ }).click()
 await page.waitForTimeout(200)

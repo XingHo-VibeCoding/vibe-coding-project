@@ -52,7 +52,7 @@ try {
   await page.addInitScript(fetchMock)
   await page.goto(BASE, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
-  await page.locator('nav button').nth(2).click() // 进「我的」页（录音板块住这）
+  await page.locator('nav button', { hasText: '我的' }).click() // 录音板块住「我的」页
   await page.waitForTimeout(400)
 
   const lecRow = (id) => page.locator('li').filter({ has: page.locator(`[data-lec="${id}"], text=${id}`) })
@@ -115,7 +115,7 @@ localStorage.setItem('web2.onboarded', '1')`
   await p3.addInitScript(seedSaved)
   await p3.goto(BASE, { waitUntil: 'domcontentloaded' })
   await p3.waitForTimeout(700)
-  await p3.locator('nav button').nth(2).click()
+  await p3.locator('nav button', { hasText: '我的' }).click()
   await p3.waitForTimeout(400)
   const rowS = p3.locator('li', { hasText: '已总结的录音' })
   t('18. 存盘 summary 重新加载后可展开', (await rowS.getByRole('button', { name: '查看纪要 ▼' }).count()) === 1)
@@ -133,7 +133,7 @@ localStorage.setItem('web2.onboarded', '1')`
   await p2.addInitScript(fetchMock)
   await p2.goto(BASE, { waitUntil: 'domcontentloaded' })
   await p2.waitForTimeout(700)
-  await p2.locator('nav button').nth(2).click()
+  await p2.locator('nav button', { hasText: '我的' }).click()
   await p2.waitForTimeout(400)
   const rowT3 = p2.locator('li', { hasText: '高数三班 录音' })
   await rowT3.getByRole('button', { name: '生成纪要', exact: true }).click()

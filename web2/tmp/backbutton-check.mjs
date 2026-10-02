@@ -55,11 +55,11 @@ try {
   t('1d. 退出时提示条清掉', !(await page.locator('text=再按一次返回键退出').isVisible().catch(() => false)))
 
   // 2. 在「我的」页 → 回今日，不退出
-  //    （2026-10-02 加第四个 tab「打卡」后，「我的」从 nth(2) 变 nth(3)；
-  //     按文案选不按序号选，下次再加减 tab 这里不会再腐）
+  //    （tab 数会变：4 tab 时「我的」是 index 3，2026-10-02 加第 5 个 tab「日程」后是 4；
+  //     点击按文案选不按序号，这里的期望值是唯一跟 tab 数挂钩的地方）
   await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(400)
-  t('2a. 已切到「我的」页', (await activeTab()) === 3)
+  t('2a. 已切到「我的」页', (await activeTab()) === 4)
   await fire()
   t('2b. 返回键回到今日页', (await activeTab()) === 0)
   t('2c. 没有误退出', (await exits()) === 1)
@@ -93,7 +93,7 @@ try {
   t('4f. 仍未退出', (await exits()) === 1)
 
   // 5. 今日页：退出预备窗口过期后，重新走「提示 → 再按退出」
-  await page.locator('nav button').nth(0).click()
+  await page.locator('nav button', { hasText: '今日' }).click()
   await page.waitForTimeout(2300) // 等 2 秒退出预备窗口过期
   await fire()
   t('5a. 窗口过期后按返回 → 重新显示退出预备提示', await page.locator('text=再按一次返回键退出').isVisible())

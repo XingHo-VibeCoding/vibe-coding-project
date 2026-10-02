@@ -28,7 +28,7 @@ await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(see
 await page.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
 await page.goto(URL, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(700)
-await page.locator('nav button').nth(1).click()
+await page.locator('nav button', { hasText: '周课表' }).click()
 await page.waitForTimeout(600)
 
 const m = await page.evaluate(() => {

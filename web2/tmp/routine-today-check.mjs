@@ -111,7 +111,7 @@ await p3.context().close()
 
 /* ================= C/D. 周视图手势造冲突 ================= */
 const page = await openPage(browser, { t: '07:00' })
-await page.locator('nav button').nth(1).click() // 周课表
+await page.locator('nav button', { hasText: '周课表' }).click()
 await page.waitForTimeout(600)
 
 const cellBox = async (key) => {

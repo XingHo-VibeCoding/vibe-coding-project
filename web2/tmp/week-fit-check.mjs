@@ -47,7 +47,7 @@ await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(see
 await page.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
 await page.goto(URL, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(700)
-await page.locator('nav button').nth(1).click()
+await page.locator('nav button', { hasText: '周课表' }).click()
 await page.waitForTimeout(700)
 
 /* ---- A 上下滑不动 ---- */
@@ -129,7 +129,7 @@ t('E1 单节次卡片内容不溢出卡片框', cards.single && cards.single.car
   await pT.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
   await pT.goto(URL, { waitUntil: 'domcontentloaded' })
   await pT.waitForTimeout(700)
-  await pT.locator('nav button').nth(1).click()
+  await pT.locator('nav button', { hasText: '周课表' }).click()
   await pT.waitForTimeout(700)
   const tall = await pT.evaluate(() => {
     const lineCount = (el) => Math.round(el.getBoundingClientRect().height / (parseFloat(getComputedStyle(el).lineHeight) || 1))
@@ -161,7 +161,7 @@ t('E1 单节次卡片内容不溢出卡片框', cards.single && cards.single.car
   await pA.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
   await pA.goto(URL, { waitUntil: 'domcontentloaded' })
   await pA.waitForTimeout(700)
-  await pA.locator('nav button').nth(1).click()
+  await pA.locator('nav button', { hasText: '周课表' }).click()
   await pA.waitForTimeout(700)
   const apk = await pA.evaluate(() => {
     const gridHBefore = document.querySelector('[data-grid]').getBoundingClientRect().height

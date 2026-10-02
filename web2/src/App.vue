@@ -25,7 +25,7 @@ const tab = ref('today')
    滑块与内容层都是 CSS transition：快速连点时 transform 直接改道新目标，从当前位置
    平滑续走——动画天然可打断，不需要锁定和「切换中」提示；bounce 用 WAAPI 重触发，
    新动画自动覆盖旧动画，同样可打断。全部前端临时状态，不接数据库。 */
-const TAB_KEYS = ['today', 'week', 'habit', 'me']
+const TAB_KEYS = ['today', 'week', 'list', 'habit', 'me']
 const tabIndex = computed(() => TAB_KEYS.indexOf(tab.value))
 /* 时序编排（用户反馈：header 收缩与内容平移同时发生=斜向甩感）：
    进/出今日时 header 的收缩展开用各自的 transition-delay（模板里 per-element
@@ -2199,6 +2199,95 @@ function openDetail(c) {
 }
 const WDN = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
+/* ---------------- 日程清单页（三期「日程分类视图」，2026-10-02） ----------------
+   存在理由见模板顶部注释：独立日程此前没有集中入口。
+   数据全部来自已就绪的 ref（weekAll / events / routines / todos），不新增任何存储。 */
+const LIST_FILTERS = [
+  { key: 'all', label: '全部' },
+  { key: 'course', label: '课程' },
+  { key: 'event', label: '独立日程' },
+  { key: 'routine', label: '循环日程' },
+  { key: 'todo', label: '待办' },
+]
+const listFilter = ref('all')
+
+const listCounts = computed(() => ({
+  all: weekAll.value.length + events.value.length + routines.value.length + todos.value.length,
+  course: weekAll.value.length,
+  event: events.value.length,
+  routine: routines.value.length,
+  todo: todos.value.length,
+}))
+const listFilteredCount = computed(() => listCounts.value[listFilter.value] ?? 0)
+
+/* 绝对日期：清单是总览，不跟今日页用「今天 / 明天」那种相对文案 */
+function listDateLabel(d) {
+  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return m ? Number(m[2]) + '月' + Number(m[3]) + '日' : ''
+}
+
+/* 分组：课程 / 独立日程 / 循环日程 / 待办。
+   排序口径——课程与循环按「星期 → 起始时间」（它们本来就按周重复），
+   独立日程按「日期 → 起始时间」，待办按「未完成优先 → 截止日期」。 */
+const listGroups = computed(() => {
+  const f = listFilter.value
+  const byWeek = (a, b) => (a.weekday - b.weekday) || (minOf(a.start) - minOf(b.start))
+  const out = []
+  if (f === 'all' || f === 'course') {
+    const items = [...weekAll.value].sort(byWeek)
+    if (items.length) out.push({ key: 'course', title: '课程', items })
+  }
+  if (f === 'all' || f === 'event') {
+    const items = [...events.value].sort(
+      (a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (minOf(a.start) - minOf(b.start))
+    )
+    if (items.length) out.push({ key: 'event', title: '独立日程', items })
+  }
+  if (f === 'all' || f === 'routine') {
+    const items = [...routines.value].sort(byWeek)
+    if (items.length) out.push({ key: 'routine', title: '循环日程', items })
+  }
+  if (f === 'all' || f === 'todo') {
+    const items = [...todos.value].sort(
+      (a, b) => ((a.done ? 1 : 0) - (b.done ? 1 : 0))
+        || String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'))
+    )
+    if (items.length) out.push({ key: 'todo', title: '待办', items })
+  }
+  return out
+})
+
+/* 左侧色条：三类日程各走自己的调色板（循环日程是固定灰蓝），待办用中性灰 */
+function listBarColor(it, kind) {
+  if (kind === 'todo') return it.done ? '#cbd1dc' : '#8b97ad'
+  return pal(it).bar
+}
+
+/* 次要行：星期或日期 + 时间区间 + 地点 + 周次规则（独立日程不重复打「日程」二字） */
+function listMeta(it, kind) {
+  if (kind === 'todo') {
+    /* 导入态有待办绝对日期（due_date）；示例态只有相对文案（due = 今天/明天/周五）。
+       两者取其一，都没有才说「无截止日期」——不要漏成「截止 —」。 */
+    const when = listDateLabel(it.due_date) || it.due || ''
+    if (it.done) return '已完成' + (when ? ' · 截止 ' + when : '')
+    if (!when) return '无截止日期'
+    const overdue = (it.due_date && it.due_date < todayKeyOf()) || it.due === '已过期'
+    return (overdue ? '已过期 · ' : '截止 ') + when
+  }
+  const parts = []
+  parts.push(it.weekday ? WDN[it.weekday - 1] : listDateLabel(it.date))
+  if (it.start) parts.push(it.start + '–' + (it.end || ''))
+  if (it.place) parts.push(it.place)
+  if (it.tag && kind !== 'event') parts.push(it.tag)
+  return parts.filter(Boolean).join(' · ')
+}
+
+/* 点条目：三类日程走同一个详情弹层（那里能编辑/删除），待办开编辑表单 */
+function onListItem(it, kind) {
+  if (kind === 'todo') openTodoEdit(it)
+  else openDetail(it)
+}
+
 /* ---------------- 添加课程（周视图长按 / 双击空白处） ---------------- */
 const addForm = ref(null)
 const addErr = ref('')
@@ -2570,7 +2659,7 @@ function gridDbl(e) {
          原来写死的 /3 让平移只走四分之三，页面错位（截图实证）。 -->
     <div
       ref="stripRef"
-      class="flex w-[400%] shrink-0 items-start overflow-y-clip touch-pan-y duration-[280ms]"
+      class="flex w-[500%] shrink-0 items-start overflow-y-clip touch-pan-y duration-[280ms]"
       style="transition-property: transform, height; transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
       :style="{
         transform: `translateX(calc(-${(tabIndex * 100) / TAB_KEYS.length}% + ${swipeDx}px))`,
@@ -2580,7 +2669,7 @@ function gridDbl(e) {
       }"
     >
     <!-- ===== 今日 ===== -->
-    <main class="w-1/4 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
+    <main data-page="today" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
       <!-- 课堂录音入口（M5 第 2 步）：今日页直达，不用每次绕「我的」；
            录音中整卡变红显示计时，停录后自动转写→纪要→作业转待办一路到底 -->
       <section
@@ -2826,7 +2915,7 @@ function gridDbl(e) {
          pb-16（64px）不是随手写的：网格本来就一屏看完，底部留白只需保证「不被底部导航压住」，
          留 pb-28(112px) 会让文档比屏幕高 44px → 用户能上下滑出一片空白
          （2026-10-01 实测：390×844 下 pb-28 时 maxScroll=44）。 -->
-    <main class="w-1/4 px-4 pt-4 pb-16" :inert="tab !== 'week'">
+    <main data-page="week" class="w-1/5 px-4 pt-4 pb-16" :inert="tab !== 'week'">
       <!-- 周次切换 -->
       <section class="flex items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
         <button
@@ -2967,11 +3056,99 @@ function gridDbl(e) {
       </section>
     </main>
 
+    <!-- ===== 日程清单页（三期「日程分类视图」，2026-10-02）=====
+         为什么需要它：独立日程（event）此前没有任何集中入口——加一条「10 月 20 日交材料」，
+         除非翻到那天的今日页，否则根本看不见。这一页把三类日程 + 待办平铺成可筛选的清单。
+         分组口径：课程（导入态 + 自加）、独立日程、循环日程、待办；课程/循环按星期排，
+         独立日程/待办按日期排。点条目复用 openDetail（同一套详情与编辑），待办直接勾选。 -->
+    <main data-page="list" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'list'">
+      <section data-list-page>
+        <div class="mb-2 flex items-baseline justify-between px-1">
+          <h2 class="text-sm font-semibold text-ink">日程清单</h2>
+          <span class="text-xs text-ink-dim/70">{{ listFilteredCount }} 项</span>
+        </div>
+
+        <!-- 筛选 chips：热区 min-h-11(44px)、选中态走字重 + 主色（与今日页待办筛选同一套观感） -->
+        <div class="mb-3 flex flex-wrap gap-2">
+          <button
+            v-for="f in LIST_FILTERS"
+            :key="f.key"
+            type="button"
+            :data-list-filter="f.key"
+            class="flex min-h-11 items-center rounded-full border px-3.5 text-xs transition active:scale-95"
+            :class="listFilter === f.key
+              ? 'border-primary-400 bg-primary-50 font-semibold text-primary-500'
+              : 'border-line bg-card text-ink-dim'"
+            :aria-pressed="listFilter === f.key"
+            @click="listFilter = f.key"
+          >
+            {{ f.label }}<span class="ml-1 tabular-nums opacity-70">{{ listCounts[f.key] }}</span>
+          </button>
+        </div>
+
+        <!-- 空态：区分「本来就没有」与「筛选后为空」 -->
+        <p
+          v-if="!listGroups.length"
+          data-list-empty
+          class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim"
+        >
+          {{ listFilter === 'all' ? '还没有任何日程，去周课表长按空白处加一条' : '这一类还没有内容' }}
+        </p>
+
+        <!-- 分组列表 -->
+        <div v-for="g in listGroups" :key="g.key" :data-list-group="g.key" class="mb-4">
+          <p class="mb-1.5 px-1 text-xs font-semibold text-ink-dim">{{ g.title }} · {{ g.items.length }}</p>
+          <div class="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
+            <div
+              v-for="it in g.items"
+              :key="g.key + '-' + it.id"
+              data-list-item
+              :data-item-type="g.key"
+              class="flex items-center gap-3 px-3.5 py-3"
+            >
+              <!-- 待办：左侧直接给勾选圆圈（点圆圈才算打勾，不包整行） -->
+              <button
+                v-if="g.key === 'todo'"
+                type="button"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 transition active:scale-90"
+                :class="it.done ? 'border-primary-500 bg-primary-500 text-white' : 'border-ink-dim/30 text-transparent'"
+                :aria-label="it.done ? '取消完成' : '标记完成'"
+                @click="toggleTodo(it.id)"
+              >
+                <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </button>
+
+              <!-- 主体：点开详情（待办也点开，但不含勾选动作） -->
+              <button type="button" class="flex min-w-0 flex-1 items-center gap-3 text-left" @click="onListItem(it, g.key)">
+                <span class="h-9 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: listBarColor(it, g.key) }"></span>
+                <span class="min-w-0 flex-1">
+                  <span class="flex items-center gap-1.5">
+                    <svg
+                      v-if="g.key === 'routine'"
+                      data-routine-mark
+                      viewBox="0 0 16 16"
+                      class="h-3.5 w-3.5 shrink-0 text-ink-dim"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.5"
+                      stroke-linecap="round"
+                    ><path d="M3 8a5 5 0 105-5M3 8V5M3 8h3" /></svg>
+                    <span class="truncate text-sm" :class="g.key === 'todo' && it.done ? 'text-ink-dim line-through' : 'text-ink'">{{ entryName(it) }}</span>
+                  </span>
+                  <span class="mt-0.5 block truncate text-[11px] text-ink-dim/80">{{ listMeta(it, g.key) }}</span>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
     <!-- ===== 打卡页（三期「每日打卡」）=====
          分工：今日页只留「一按即打」的高频动作，管理（添加 / 删除 / 翻历史周 / 补卡）收在这一页。
          宽限期 = 本周内且今天之前（口径见 data/store.js）；过期/未来格子明确画成锁定态，
          并且**不用 disabled**（那样点下去毫无反馈还挡测试），改由 onHabitCell 静默忽略。 -->
-    <main class="w-1/4 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'habit'">
+    <main data-page="habit" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'habit'">
       <!-- 今日完成度 -->
       <section class="rounded-3xl border border-line bg-card p-5 shadow-sm">
         <div class="flex items-end justify-between">
@@ -3127,7 +3304,7 @@ function gridDbl(e) {
     </main>
 
     <!-- ===== 我的 ===== -->
-    <main class="w-1/4 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'me'">
+    <main data-page="me" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'me'">
       <section class="flex items-center gap-4 rounded-3xl border border-line bg-card p-5 shadow-sm">
         <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 text-xl font-bold text-white shadow-md shadow-primary-500/25">
           示
@@ -3598,12 +3775,12 @@ function gridDbl(e) {
       class="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card/85 backdrop-blur-lg"
       style="padding-bottom: env(safe-area-inset-bottom)"
     >
-      <div class="relative mx-auto grid max-w-md grid-cols-4 px-6 py-1">
+      <div class="relative mx-auto grid max-w-md grid-cols-5 px-6 py-1">
         <!-- 滑块：一个药丸在四个槽位间连续滑动，连点时 transition 自动改道（可打断） -->
         <div class="pointer-events-none absolute inset-0 overflow-hidden">
           <div class="absolute inset-y-0 left-6 right-6">
             <div
-              class="flex h-full w-1/4 justify-center transition-transform duration-300"
+              class="flex h-full w-1/5 justify-center transition-transform duration-300"
               style="transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
               :style="{ transform: `translateX(${tabIndex * 100}%)` }"
             >
@@ -3617,6 +3794,7 @@ function gridDbl(e) {
           v-for="t in [
             { key: 'today', label: '今日', icon: 'M8 3a5 5 0 100 10A5 5 0 008 3zM8 1v2M8 13v2M1 8h2M13 8h2' },
             { key: 'week', label: '周课表', icon: 'M2 4h12v11H2zM2 7h12M5.5 2v3M10.5 2v3' },
+            { key: 'list', label: '日程', icon: 'M2.5 4h1.2M6 4h7.5M2.5 8h1.2M6 8h7.5M2.5 12h1.2M6 12h4.5' },
             { key: 'habit', label: '打卡', icon: 'M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM5.4 8.3l1.8 1.8 3.6-4' },
             { key: 'me', label: '我的', icon: 'M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4' },
           ]"
