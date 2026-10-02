@@ -60,8 +60,9 @@ function vevent(uid, date, startTime, durationMin, summary, location, descriptio
   return lines
 }
 
-/* 生成 .ics 全文。返回 { text, count }：text 为空串表示没有可导出的日程 */
-export function buildIcs({ semester, courses, events }) {
+/* 生成 .ics 全文。返回 { text, count }：text 为空串表示没有可导出的日程
+   routines 与 courses 同构（weekday + start/end + week_rule），同样逐周展开 */
+export function buildIcs({ semester, courses, events, routines }) {
   const firstMonday = semester && semester.firstMonday
   const total = semester && Number(semester.totalWeeks) ? Number(semester.totalWeeks) : 0
   const semName = (semester && semester.name) || ''
@@ -90,6 +91,28 @@ export function buildIcs({ semester, courses, events }) {
       d.setDate(d.getDate() + (w - 1) * 7 + (Number(c.weekday) - 1))
       const loc = c.place ? (semName + ' 第' + w + '周 · ' + c.place) : ''
       out.push(...vevent(c.id + '-' + dateKey(d) + '@sched-web2', d, c.start, dur, c.name, loc, ''))
+      count++
+    }
+  }
+
+  // 循环日程：与课程同一套展开方式（按周次规则逐周落到具体日期）。
+  // SUMMARY 保持原样不加前缀 —— 日历列表里「健身」本来就不会和课名混；
+  // 是不是循环日程写在 DESCRIPTION，点开才看到，不占列表宽度。
+  for (const r of Array.isArray(routines) ? routines : []) {
+    if (!r || r.type !== 'routine') continue
+    if (!firstMonday || !total) continue
+    const anchor = new Date(firstMonday + 'T00:00:00')
+    if (isNaN(anchor)) continue
+    const dur = minOf(r.end) - minOf(r.start)
+    const rl = r.week_rule && r.week_rule !== 'every'
+      ? (r.week_rule === 'odd' ? '单周' : '双周')
+      : ''
+    for (let w = 1; w <= total; w++) {
+      if (!matchWeek(r, w)) continue
+      const d = new Date(anchor)
+      d.setDate(d.getDate() + (w - 1) * 7 + (Number(r.weekday) - 1))
+      const loc = r.place ? (semName + ' · ' + r.place) : semName
+      out.push(...vevent(r.id + '-' + dateKey(d) + '@sched-web2', d, r.start, dur, r.name, loc, '循环日程' + rl))
       count++
     }
   }

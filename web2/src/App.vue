@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
+import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, dayScope, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, addRoutine, updateRoutine, removeRoutine, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
 import { normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt } from './data/periods.js'
 import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange, clampCoursesToSegments } from './data/weekGrid.js'
 import { recorderAvailable, ensureMicPermission, startRecording as recStart, stopRecording as recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning, scheduleAutoStop, consumeAutoStop } from './data/recorder.js'
@@ -188,6 +188,7 @@ function closeTopmostLayer() {
   if (onboarding.value && recFromMine.value) { mineRecCancel(); return true } // mine 识别流程当弹层对待；纯引导页不拦（v1.16 口径）
   if (onboarding.value && !recFromMine.value && onboardStep.value === 'periods') { backObForm(); return true } // 课程时间设置二级页：返回先回上一级，不直接退（2026-09-30 用户反馈）
   if (detail.value) { detail.value = null; return true }
+  if (addPick.value) { addPick.value = null; return true } // 长按出的类型菜单（加课程/加循环日程）
   if (addForm.value) { addForm.value = null; return true }
   if (todoForm.value) { todoForm.value = null; return true }
   if (evtForm.value) { evtForm.value = null; return true }
@@ -243,6 +244,7 @@ const source = ref(initial.source)
 const semester = ref(initial.semester)
 const weekAll = ref(initial.courses)   // 整周课程（type: course）
 const events = ref(initial.events)     // 独立日程（type: event，有日期）
+const routines = ref(initial.routines || []) // 固定循环日程（type: routine，按周重复、跨学期常驻）
 const importMsg = ref('')
 
 function reloadDataset() {
@@ -251,6 +253,7 @@ function reloadDataset() {
   semester.value = d.semester
   weekAll.value = d.courses
   events.value = d.events
+  routines.value = d.routines || []
   todos.value = d.todos.map((t) => ({ ...t }))
   /* 导入/恢复示例会整体接管（或保留）lectures/habits 落盘，界面 ref 必须跟着重取——
      之前只在页面初始化时刷新，导入带录音场次/打卡记录的文件后列表不更新（测试抓出） */
@@ -1550,7 +1553,7 @@ function recImport() {
         continue
       }
       seen.add(key)
-      const conf = findConflicts({ type: 'course', weekday: course.weekday, start: course.start, end: course.end, week_rule: course.week_rule }, weekAll.value)
+      const conf = findConflicts({ type: 'course', weekday: course.weekday, start: course.start, end: course.end, week_rule: course.week_rule }, conflictPool.value)
       if (conf.length) conflictNames.push(...conf.map((c) => c.name))
       addCourse(course)
       ok++
@@ -1737,10 +1740,15 @@ function onDeleteTodo() {
 /* ---------------- 独立日程（event）添加表单 ---------------- */
 const evtForm = ref(null) // { title, date, start, duration, place }
 const evtErr = ref('')
+const evtWarn = ref('')
+const evtConfirmed = ref(false)
+watch(evtForm, () => { evtConfirmed.value = false; evtWarn.value = '' }, { deep: true })
 
 function openEventAdd() {
   evtForm.value = { title: '', date: todayStr, start: '18:00', duration: 60, place: '' }
   evtErr.value = ''
+  evtWarn.value = ''
+  evtConfirmed.value = false
 }
 
 function submitEvent() {
@@ -1748,6 +1756,29 @@ function submitEvent() {
   if (!f.title.trim()) { evtErr.value = '请填写日程名称'; return }
   if (!f.date) { evtErr.value = '请选择日期'; return }
   if (!f.start) { evtErr.value = '请选择开始时间'; return }
+  /* 冲突检测：独立日程是「那一天」的事，先把日期换算成星期与周次再比对
+     （口径同课程/循环日程：第一次点保存只提示，再点一次放行） */
+  if (!evtConfirmed.value) {
+    const sc = dayScope(f.date, semester.value)
+    const conflicts = findConflicts(
+      {
+        type: 'event',
+        date: f.date,
+        weekday: sc ? sc.weekday : null,
+        weekNo: sc ? sc.weekNo : null,
+        start: f.start,
+        end: fmtTime(minOf(f.start) + f.duration),
+      },
+      conflictPool.value,
+    )
+    if (conflicts.length) {
+      evtConfirmed.value = true
+      const names = [...new Set(conflicts.map((c) => c.name))].join('」「')
+      const mix = conflicts.some((c) => c.type === 'routine') ? '（含循环日程）' : ''
+      evtWarn.value = '这一天与「' + names + '」' + mix + '时间冲突，再点一次「添加」可忽略'
+      return
+    }
+  }
   addEvent({ title: f.title, date: f.date, start_time: f.start, duration: f.duration, location: f.place })
   evtForm.value = null
   reloadDataset()
@@ -1771,9 +1802,9 @@ function onExportBack() {
   importMsg.value = '已导出主项目格式 JSON：到主项目「导出/备份」里导入即可同步勾选状态'
 }
 
-/* 导出日历 .ics：课程按周次逐周展开 + 独立日程单次，课前 15 分钟提醒 */
+/* 导出日历 .ics：课程 + 循环日程（都按周次逐周展开）+ 独立日程单次，课前 15 分钟提醒 */
 function onExportIcs() {
-  const { text, count } = buildIcs({ semester: semester.value, courses: weekAll.value, events: events.value })
+  const { text, count } = buildIcs({ semester: semester.value, courses: weekAll.value, events: events.value, routines: routines.value })
   if (!text) {
     importMsg.value = '没有可导出的日程：示例数据没有学期起始日，课程换算不了日期；导入真实课表后再试'
     return
@@ -1788,16 +1819,36 @@ const today = new Date()
 const todayIdx = (today.getDay() + 6) % 7 // 周一=0
 const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 
-/* 今天要上的课：本周课程里筛今天 + 周次规则命中 + 独立日程落位，按开始时间排 */
+/* 今天要上的课：本周课程 + 循环日程（同按周次规则命中）+ 独立日程落位，按开始时间排。
+   循环日程进这一页是有意的（用户 2026-10-01 定）：它和课程一样「今天几点到几点」，
+   所以要一起参与状态三态、进度条，以及开录时的课程关联。 */
 const todayCourses = computed(() => {
   const wd = todayIdx + 1
   const list = weekAll.value
     .filter((c) => c.weekday === wd && matchWeek(c, semester.value.week))
     .map((c) => ({ ...c }))
+  for (const r of routines.value) {
+    if (r.weekday === wd && matchWeek(r, semester.value.week)) list.push({ ...r })
+  }
   for (const ev of events.value) {
     if (ev.date === todayStr) list.push({ ...ev, weekday: wd })
   }
   return list.sort((a, b) => minOf(a.start) - minOf(b.start))
+})
+
+/* 今日循环日程条数：只用来决定文案口径（「N 节课」还是「N 项安排」） */
+const todayRoutineCount = computed(() => todayCourses.value.filter((c) => c.type === 'routine').length)
+
+/* 冲突检测的统一候选池：课程 + 循环日程 + 独立日程。
+   独立日程没有星期几的概念，这里先把 date 换算成 { weekday, weekNo } 再交给 findConflicts
+   —— 换算不了（缺学期起始日）就留 null，检测那边会跳过、不猜。 */
+const conflictPool = computed(() => {
+  const list = [...weekAll.value, ...routines.value]
+  for (const ev of events.value) {
+    const sc = dayScope(ev.date, semester.value)
+    list.push({ ...ev, weekday: sc ? sc.weekday : null, weekNo: sc ? sc.weekNo : null })
+  }
+  return list
 })
 
 /* ---------------- 问候：可爱系（时段轴 + 状态轴，状态优先） ---------------- */
@@ -1865,7 +1916,7 @@ const headerCourseText = computed(() => {
     .filter((c) => minOf(c.start) > nowTime.value)
     .sort((a, b) => minOf(a.start) - minOf(b.start))[0]
   if (next) return `下一节 · ${next.name} ${next.start}`
-  return '今日课程已结束'
+  return '今日安排已结束'
 })
 
 const dateText = `${today.getMonth() + 1} 月 ${today.getDate()} 日`
@@ -1905,7 +1956,9 @@ const weekDays = computed(() =>
   })
 )
 
-/* 周视图可见条目：课程按周次规则过滤 + 独立日程按日期落位 */
+/* 周视图可见条目：课程按周次规则过滤 + 独立日程按日期落位 + 循环日程按周次规则过滤。
+   循环日程**不做学期过滤**（「每周三健身」跨学期常驻），且与课程显示形状同构，
+   所以直接混进同一个列表、由同一套落格算法排格（见下方 gridCourses）。 */
 const weekVisible = computed(() => {
   const list = weekAll.value
     .filter((c) => matchWeek(c, weekNo.value))
@@ -1914,6 +1967,9 @@ const weekVisible = computed(() => {
     if (!ev.date) continue
     const diff = Math.round((new Date(ev.date + 'T00:00:00') - monday.value) / 86400000)
     if (diff >= 0 && diff <= 6) list.push({ ...ev, weekday: diff + 1 })
+  }
+  for (const r of routines.value) {
+    if (matchWeek(r, weekNo.value)) list.push({ ...r })
   }
   return list
 })
@@ -2027,7 +2083,18 @@ function hexA(hex, a) {
   const n = parseInt(hex.slice(1), 16)
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`
 }
+/* 循环日程用固定的石板灰蓝，不走名字哈希 —— 课程那六色是「区分不同课程」的，
+   循环日程要的是「一眼看出这类不是课」。配左上角的小循环标记双重区分
+   （2026-10-01 用户拍板：卡片带小图标/前缀标记）。 */
+const ROUTINE_PAL = { bg: '#eef0f5', bar: '#5b6b8c', text: '#44506b' }
+function isRoutine(c) {
+  return !!c && c.type === 'routine'
+}
 function pal(c) {
+  if (isRoutine(c)) {
+    if (!isDark.value) return ROUTINE_PAL
+    return { bg: hexA(ROUTINE_PAL.bar, 0.22), bar: ROUTINE_PAL.bar, text: '#a9b6d4' }
+  }
   const p = PALETTES[hashName(c.name) % PALETTES.length]
   if (!isDark.value) return p
   return { bg: hexA(p.bar, 0.16), bar: p.bar, text: p.bar }
@@ -2035,9 +2102,10 @@ function pal(c) {
 
 /* 节次时间轴：periods 为空回落默认节次表（口径同主项目） */
 const periods = computed(() => periodsOf({ semester: semester.value }))
-/* 课程落在哪些节：起止都与节次边界精确对齐才显示「第X–Y节」，否则 null */
+/* 课程落在哪些节：起止都与节次边界精确对齐才显示「第X–Y节」，否则 null。
+   循环日程同样按周重复、同样落在节次上，所以一并算（独立日程有具体日期、不套节次表）。 */
 function periodSpan(c) {
-  if (!c || c.type !== 'course') return null
+  if (!c || c.type === 'event') return null
   const s = periods.value.findIndex((p) => p.start === c.start)
   const e = periods.value.findIndex((p) => p.end === c.end)
   if (s < 0 || e < 0 || s > e) return null
@@ -2089,13 +2157,34 @@ const DURATIONS = [40, 45, 60, 90]
 function fmtTime(m) {
   return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')
 }
-/* 从网格位置打开表单：分钟吸附到 5 分钟，整段钳在 08:00–22:00 内 */
+/* 从网格位置打开表单：分钟吸附到 5 分钟，整段钳在 08:00–22:00 内
+   kind 决定这张表单是「课程」还是「循环日程」——同一个面板两态，字段几乎一样，
+   差别只在：循环日程固定每周（不显示单双周）、不占学期课表、落库走 routine 分支 */
 function openAdd(wd, min) {
   min = Math.max(DAY_START + 30, Math.min(DAY_END - 45, Math.round(min / 5) * 5))
-  addForm.value = { weekday: wd, start: fmtTime(min), duration: 45, name: '', place: '', week_rule: 'every', editingId: null }
+  addForm.value = { kind: 'course', weekday: wd, start: fmtTime(min), duration: 45, name: '', place: '', week_rule: 'every', editingId: null }
   addErr.value = ''
   addWarn.value = ''
   addConfirmed.value = false
+}
+/* 循环日程表单：默认 60 分钟（运动/自习这类通常一小时），周次固定每周 */
+function openAddRoutine(wd, min) {
+  min = Math.max(DAY_START + 30, Math.min(DAY_END - 45, Math.round(min / 5) * 5))
+  addForm.value = { kind: 'routine', weekday: wd, start: fmtTime(min), duration: 60, name: '', place: '', week_rule: 'every', editingId: null }
+  addErr.value = ''
+  addWarn.value = ''
+  addConfirmed.value = false
+}
+/* 长按空白处的两选一菜单（2026-10-01 用户拍板：长按弹菜单、双击仍直接进加课程）。
+   菜单只记落点，选完再开对应表单，避免「长按直接定死类型」改掉老习惯。 */
+const addPick = ref(null) // { wd, start }
+function pickKind(kind) {
+  const p = addPick.value
+  addPick.value = null
+  if (!p) return
+  const min = minOf(p.start)
+  if (kind === 'routine') openAddRoutine(p.wd, min)
+  else openAdd(p.wd, min)
 }
 /* 编辑课程：详情弹层进来，预填原值（自加课/导入课/mock 课都走这张表单，origin 记来源） */
 function editCourseFromDetail() {
@@ -2103,6 +2192,7 @@ function editCourseFromDetail() {
   const c = detail.value
   detail.value = null
   addForm.value = {
+    kind: 'course',
     weekday: c.weekday || 1,
     start: c.start,
     duration: minOf(c.end) - minOf(c.start),
@@ -2116,6 +2206,27 @@ function editCourseFromDetail() {
   addWarn.value = ''
   addConfirmed.value = false
 }
+/* 编辑循环日程：与课程同一个表单，走 kind:'routine' 分支。
+   表单不显示单双周选项，但这里要把原值带上 —— 导入进来的 odd/even 循环日程
+   （主项目那边可以有）编辑一次不该被静默改成「每周」。 */
+function editRoutineFromDetail() {
+  if (!detail.value || detail.value.type !== 'routine') return
+  const c = detail.value
+  detail.value = null
+  addForm.value = {
+    kind: 'routine',
+    weekday: c.weekday || 1,
+    start: c.start,
+    duration: minOf(c.end) - minOf(c.start),
+    name: c.name,
+    place: c.place || '',
+    week_rule: c.week_rule || 'every',
+    editingId: c.id,
+  }
+  addErr.value = ''
+  addWarn.value = ''
+  addConfirmed.value = false
+}
 function stepStart(d) {
   const f = addForm.value
   if (!f) return
@@ -2124,13 +2235,58 @@ function stepStart(d) {
 }
 function submitAdd() {
   const f = addForm.value
-  if (!f || !f.name.trim()) {
-    addErr.value = '先给课程起个名字～'
+  if (!f) return
+  const isRoutine = f.kind === 'routine'
+  if (!f.name.trim()) {
+    addErr.value = isRoutine ? '先给循环日程起个名字～' : '先给课程起个名字～'
     return
   }
   const endMin = minOf(f.start) + f.duration
   if (endMin > DAY_END) {
     addErr.value = '结束时间会超出 22:00，调短时长吧'
+    return
+  }
+  const end = fmtTime(endMin)
+  /* 冲突检测（PRD F4 口径：提示但不强制阻止）——第一次点保存只警告，再点一次放行。
+     课程 ↔ 循环日程双向互检；候选池同时含独立日程（换算出那天的星期与周次后比）。
+     不分课程/循环日程两条路各写一遍：口径一样，写两处迟早漂移。 */
+  if (!addConfirmed.value) {
+    const conflicts = findConflicts(
+      { id: f.editingId, type: isRoutine ? 'routine' : 'course', weekday: f.weekday, start: f.start, end, week_rule: f.week_rule },
+      conflictPool.value,
+    )
+    if (conflicts.length) {
+      addConfirmed.value = true
+      const names = [...new Set(conflicts.map((c) => c.name))].join('」「')
+      /* 后缀只在「目标是课程、撞上的是循环日程」时加 —— 目标自己就是循环日程时不必解释 */
+      const mix = !isRoutine && conflicts.some((c) => c.type === 'routine') ? '（含循环日程）' : ''
+      addWarn.value = '与「' + names + '」' + mix + '时间冲突，再点一次「保存」可忽略'
+      return
+    }
+  }
+  /* 循环日程：不进课表，落库走 routine 双源分支 */
+  if (isRoutine) {
+    if (f.editingId) {
+      updateRoutine(f.editingId, {
+        weekday: f.weekday,
+        name: f.name.trim(),
+        place: f.place.trim(),
+        start: f.start,
+        end,
+        week_rule: f.week_rule,
+      })
+    } else {
+      addRoutine({
+        title: f.name.trim(),
+        weekday: f.weekday,
+        start_time: f.start,
+        duration: f.duration,
+        location: f.place.trim(),
+        week_rule: f.week_rule,
+      })
+    }
+    addForm.value = null
+    reloadDataset()
     return
   }
   const payload = {
@@ -2139,17 +2295,8 @@ function submitAdd() {
     place: f.place.trim(),
     tag: { every: '每周', odd: '单周', even: '双周' }[f.week_rule],
     start: f.start,
-    end: fmtTime(endMin),
+    end,
     week_rule: f.week_rule,
-  }
-  /* 冲突检测（PRD F4 口径：提示但不强制阻止）——第一次点保存只警告，再点一次放行 */
-  if (!addConfirmed.value) {
-    const conflicts = findConflicts({ id: f.editingId, type: 'course', weekday: f.weekday, start: f.start, end: fmtTime(endMin), week_rule: f.week_rule }, weekAll.value)
-    if (conflicts.length) {
-      addConfirmed.value = true
-      addWarn.value = '与「' + [...new Set(conflicts.map((c) => c.name))].join('」「') + '」时间冲突，再点一次「保存」可忽略'
-      return
-    }
   }
   if (f.editingId) {
     if (f.origin === 'added') updateCourse(f.editingId, payload)
@@ -2186,19 +2333,46 @@ function onDelCourse() {
   removeCourseFromDetail()
 }
 
-/* 手势：触屏长按 550ms / 鼠标双击；点在课卡上不触发，拖动超 8px（滚动）取消。
+/* 循环日程删除：与课程共用二次确认（同一时刻详情弹层里只会有一种类型） */
+function removeRoutineFromDetail() {
+  if (!detail.value || detail.value.type !== 'routine') return
+  removeRoutine(detail.value.id)
+  detail.value = null
+  reloadDataset()
+}
+function onDelRoutine() {
+  if (!confirmDel.value) {
+    confirmDel.value = true
+    clearTimeout(confirmDelTimer)
+    confirmDelTimer = setTimeout(() => { confirmDel.value = false }, 3000)
+    return
+  }
+  clearTimeout(confirmDelTimer)
+  confirmDel.value = false
+  removeRoutineFromDetail()
+}
+
+/* 手势：触屏长按 550ms → 类型菜单；鼠标双击 → 直接加课程（老习惯保留）。
+   点在课卡上不触发，拖动超 8px（滚动）取消。
    网格化后不再做「像素 → 时间」换算 —— 那套换算正是旧画法对不齐的根源。
    改成直接问「手指落在哪个格子上」：位置由 DOM 说了算，永远不会错一格。 */
 let lpTimer = null
 let lpFrom = null
-function fireAdd(p) {
+/* 落点 → { wd, start }：位置由 DOM 说了算，永远不会错一格 */
+function cellAt(p) {
   const el = document.elementFromPoint(p.x, p.y)
   const cell = el && el.closest ? el.closest('[data-cell]') : null
-  if (!cell) return
+  if (!cell) return null
   const [wd, idx] = cell.dataset.cell.split('-').map(Number)
   const per = periods.value[idx]
-  if (!per) return
-  openAdd(wd, minOf(per.start))
+  if (!per) return null
+  return { wd, start: per.start }
+}
+/* 长按：弹「加课程 / 加循环日程」菜单 */
+function firePick(p) {
+  const at = cellAt(p)
+  if (!at) return
+  addPick.value = { wd: at.wd, start: at.start }
 }
 function gridDown(e) {
   if (e.target.closest('article')) return
@@ -2206,7 +2380,7 @@ function gridDown(e) {
   clearTimeout(lpTimer)
   lpTimer = setTimeout(() => {
     lpTimer = null
-    fireAdd(lpFrom)
+    firePick(lpFrom)
   }, 550)
 }
 function gridMove(e) {
@@ -2219,9 +2393,11 @@ function gridUp() {
   clearTimeout(lpTimer)
   lpTimer = null
 }
+/* 双击：不进菜单，直接开「添加课程」表单 */
 function gridDbl(e) {
   if (e.target.closest('article')) return
-  fireAdd({ x: e.clientX, y: e.clientY })
+  const at = cellAt({ x: e.clientX, y: e.clientY })
+  if (at) openAdd(at.wd, minOf(at.start))
 }
 </script>
 
@@ -2299,7 +2475,7 @@ function gridDbl(e) {
           >
             <div class="flex items-center justify-between">
               <div class="min-w-0">
-                <p class="text-xs text-ink-dim">今天 {{ todayCourses.length }} 节课</p>
+                <p class="text-xs text-ink-dim">今天 {{ todayCourses.length }} {{ todayRoutineCount ? '项安排' : '节课' }}</p>
                 <p class="mt-0.5 truncate text-sm font-semibold text-ink">
                   {{ headerCourseText }}
                 </p>
@@ -2383,13 +2559,15 @@ function gridDbl(e) {
         <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-400' : 'text-primary-500'">{{ recMsg }}</p>
       </section>
 
-      <!-- 今日课程：时间线卡片 -->
+      <!-- 今日课程与循环日程：时间线卡片（循环日程带小循环标记 + 专属灰蓝，与课程区分） -->
       <section>
         <h2 class="mb-2 px-1 text-sm font-semibold text-ink">今日课程</h2>
         <div v-if="todayCourses.length" class="space-y-2.5">
           <article
             v-for="c in todayCourses"
             :key="c.id"
+            data-today-item
+            :data-item-type="c.type || 'course'"
             class="flex cursor-pointer items-center gap-3.5 rounded-2xl border bg-card p-3.5 shadow-sm transition active:scale-[0.98]"
             :class="
               courseStatus(c) === 'now'
@@ -2401,12 +2579,38 @@ function gridDbl(e) {
             @click="openDetail(c)"
           >
             <div class="w-11 text-center">
-              <p class="text-sm font-bold" :class="courseStatus(c) === 'now' ? 'text-primary-600' : 'text-primary-500'">{{ c.start }}</p>
+              <p
+                class="text-sm font-bold"
+                :class="courseStatus(c) === 'now' ? 'text-primary-600' : 'text-primary-500'"
+                :style="isRoutine(c) ? { color: pal(c).text } : {}"
+              >{{ c.start }}</p>
               <p class="text-[11px] text-ink-dim">{{ c.end }}</p>
             </div>
-            <div class="h-9 w-1 rounded-full" :class="courseStatus(c) === 'now' ? 'bg-primary-500' : 'bg-primary-200'"></div>
+            <div
+              class="h-9 w-1 rounded-full"
+              :class="courseStatus(c) === 'now' ? 'bg-primary-500' : 'bg-primary-200'"
+              :style="isRoutine(c) ? { background: pal(c).bar } : {}"
+            ></div>
             <div class="min-w-0 flex-1">
-              <p class="truncate text-[15px] font-medium">{{ c.name }}</p>
+              <div class="flex items-center gap-1">
+                <svg
+                  v-if="isRoutine(c)"
+                  data-routine-mark
+                  viewBox="0 0 16 16"
+                  aria-label="循环日程"
+                  class="h-3.5 w-3.5 shrink-0"
+                  :style="{ color: pal(c).text }"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.9"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M13 8a5 5 0 11-1.9-3.9" />
+                  <path d="M13 2.2V5h-2.8" />
+                </svg>
+                <p class="truncate text-[15px] font-medium">{{ c.name }}</p>
+              </div>
               <p class="mt-0.5 text-xs text-ink-dim">{{ c.place || '—' }}</p>
               <!-- 进行中：呼吸圆点 + 实时进度 -->
               <p v-if="courseStatus(c) === 'now'" class="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-primary-600">
@@ -2417,7 +2621,11 @@ function gridDbl(e) {
                 进行中 · 已过 {{ nowPct(c) }}%
               </p>
             </div>
-            <span v-if="c.tag" class="shrink-0 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] text-primary-600">
+            <span
+              v-if="c.tag"
+              class="shrink-0 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] text-primary-600"
+              :style="isRoutine(c) ? { background: hexA(pal(c).bar, 0.14), color: pal(c).text } : {}"
+            >
               {{ c.tag }}
             </span>
           </article>
@@ -2595,16 +2803,18 @@ function gridDbl(e) {
       <!-- 周次切换 -->
       <section class="flex items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
         <button
+          data-week-prev
           class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
           @click="weekOffset--"
         >
           <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
         </button>
-        <p class="text-sm font-semibold">
+        <p class="text-sm font-semibold" data-week-label>
           第 {{ weekNo }} 周
           <span class="ml-1 text-xs font-normal text-ink-dim">/ 共 {{ semester.totalWeeks }} 周</span>
         </p>
         <button
+          data-week-next
           class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
           @click="weekOffset++"
         >
@@ -2681,18 +2891,40 @@ function gridDbl(e) {
           <article
             v-for="it in gridCourses"
             :key="it.c.id"
+            :data-item-type="it.c.type || 'course'"
             class="relative m-[1px] cursor-pointer overflow-hidden rounded-[5px] px-1 py-0.5 shadow-sm ring-1 ring-line/70 transition active:scale-[0.97]"
             :class="gridStatus(it) === 'now' ? 'ring-2 ring-primary-500' : (gridStatus(it) === 'past' ? 'opacity-55' : '')"
             :style="{ ...gridStyleOf(it, gridRowOfIdx), background: pal(it.c).bg }"
             @click="openDetail(it.c)"
           >
-            <!-- 课名与地点按卡片实际高度决定行数（2026-10-01 用户要「看到完整信息」）：
-                 原来 truncate 只给一行，长课名（「习近平新时代…概论」）全被省略号吃掉。 -->
-            <p
-              class="text-[10px] leading-[1.15] font-semibold"
-              :class="cardFit(it) === 'tight' ? 'truncate' : 'line-clamp-2 break-words'"
-              :style="{ color: pal(it.c).text }"
-            >{{ it.c.name }}</p>
+            <!-- 课名行包一层 flex：循环日程在课名前挂一枚小循环标记
+                 （2026-10-01 用户拍板「卡片带小图标/前缀标记」，与固定灰蓝底色双重区分） -->
+            <div class="flex items-start gap-[2px]">
+              <svg
+                v-if="isRoutine(it.c)"
+                data-routine-mark
+                viewBox="0 0 16 16"
+                aria-label="循环日程"
+                class="mt-[1.5px] h-3 w-3 shrink-0"
+                :style="{ color: pal(it.c).text }"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.9"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M13 8a5 5 0 11-1.9-3.9" />
+                <path d="M13 2.2V5h-2.8" />
+              </svg>
+              <!-- 课名与地点按卡片实际高度决定行数（2026-10-01 用户要「看到完整信息」）：
+                   原来 truncate 只给一行，长课名（「习近平新时代…概论」）全被省略号吃掉。
+                   min-w-0 是 flex 子项能正常收缩+clamp 的前提。 -->
+              <p
+                class="min-w-0 text-[10px] leading-[1.15] font-semibold"
+                :class="cardFit(it) === 'tight' ? 'truncate' : 'line-clamp-2 break-words'"
+                :style="{ color: pal(it.c).text }"
+              >{{ it.c.name }}</p>
+            </div>
             <p
               v-if="it.c.place && cardFit(it) !== 'mid2'"
               class="text-[9px] leading-tight text-ink-dim"
@@ -3237,8 +3469,27 @@ function gridDbl(e) {
         <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"></div>
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
-            <p class="truncate text-lg font-bold">{{ detail.name }}</p>
+            <!-- 循环日程在详情里也挂同一枚小循环标记 + 一行类型说明（点开也能确认这不是课） -->
+            <p class="flex items-center gap-1.5 text-lg font-bold">
+              <svg
+                v-if="isRoutine(detail)"
+                data-routine-mark
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+                class="h-4 w-4 shrink-0 text-ink-dim"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.9"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M13 8a5 5 0 11-1.9-3.9" />
+                <path d="M13 2.2V5h-2.8" />
+              </svg>
+              <span class="truncate">{{ detail.name }}</span>
+            </p>
             <p class="mt-1 text-xs text-ink-dim">
+              <span v-if="isRoutine(detail)" class="mr-1">循环日程 ·</span>
               {{ detail.type === 'event' ? detail.date : WDN[(detail.weekday || 1) - 1] }}
               <span v-if="detail.tag" class="ml-1.5 rounded-full bg-primary-50 px-2 py-0.5 text-primary-600">{{ detail.tag }}</span>
             </p>
@@ -3281,6 +3532,24 @@ function gridDbl(e) {
             class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
             :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
             @click="onDelCourse"
+          >
+            {{ confirmDel ? '再点一次确认' : '删除' }}
+          </button>
+        </div>
+        <!-- 循环日程：编辑与删除，版式与课程一致；二次确认共用同一个 confirmDel -->
+        <div v-else-if="detail.type === 'routine'" class="mt-4 grid grid-cols-2 gap-2.5">
+          <button
+            data-routine-edit
+            class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+            @click="editRoutineFromDetail"
+          >
+            编辑
+          </button>
+          <button
+            data-routine-del
+            class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
+            :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
+            @click="onDelRoutine"
           >
             {{ confirmDel ? '再点一次确认' : '删除' }}
           </button>
@@ -3387,7 +3656,56 @@ function gridDbl(e) {
       </div>
     </Transition>
 
-    <!-- 添加课程面板：长按/双击周网格空白处唤起 -->
+    <!-- 长按空白处弹出的类型菜单：加课程 / 加循环日程（用户拍板：长按弹菜单、双击直接加课）。
+         与下面的表单面板同为 z-20/z-30 层，二者互斥（选完立刻关菜单再开表单）。 -->
+    <Transition name="fade">
+      <div v-if="addPick" data-add-pick-mask class="fixed inset-0 z-20 bg-black/40" @click="addPick = null"></div>
+    </Transition>
+    <Transition name="slide">
+      <div
+        v-if="addPick"
+        data-add-pick
+        class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
+      >
+        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
+        <p class="text-base font-bold">在 {{ WDN[addPick.wd - 1] }} {{ addPick.start }} 添加</p>
+        <p class="mt-1 text-xs text-ink-dim">选一个类型</p>
+        <div class="mt-4 space-y-2.5">
+          <button
+            data-pick-course
+            class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.98]"
+            @click="pickKind('course')"
+          >
+            <span class="text-sm font-semibold">课程</span>
+            <span class="text-xs text-ink-dim">按周重复 · 计入学期课表</span>
+          </button>
+          <button
+            data-pick-routine
+            class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.98]"
+            @click="pickKind('routine')"
+          >
+            <span class="flex items-center gap-1.5 text-sm font-semibold">
+              <!-- 小循环箭头，与周视图卡片上的标记同款，选的时候就认得出 -->
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0" fill="none" stroke="#5b6b8c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4M13.5 8a5.5 5.5 0 0 1-9.3 4" />
+                <path d="M11.5 1.6v2.6h-2.6M4.5 14.4v-2.6h2.6" />
+              </svg>
+              循环日程
+            </span>
+            <span class="text-xs text-ink-dim">每周固定 · 不占课表</span>
+          </button>
+        </div>
+        <button
+          data-pick-cancel
+          class="mt-3 w-full rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+          @click="addPick = null"
+        >
+          取消
+        </button>
+      </div>
+    </Transition>
+
+    <!-- 添加/编辑面板：长按菜单或双击周网格空白处唤起；同一个面板两态，靠 addForm.kind 分流 -->
     <Transition name="fade">
       <div v-if="addForm" class="fixed inset-0 z-20 bg-black/40" @click="addForm = null"></div>
     </Transition>
@@ -3398,11 +3716,11 @@ function gridDbl(e) {
         class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
       >
         <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
-        <p class="text-base font-bold">{{ addForm.editingId ? '编辑课程' : '添加课程' }} · {{ WDN[addForm.weekday - 1] }}</p>
+        <p class="text-base font-bold" data-add-title>{{ addForm.editingId ? (addForm.kind === 'routine' ? '编辑循环日程' : '编辑课程') : (addForm.kind === 'routine' ? '添加循环日程' : '添加课程') }} · {{ WDN[addForm.weekday - 1] }}</p>
         <div class="mt-4 space-y-3">
           <input
             v-model="addForm.name"
-            placeholder="课程名称（必填）"
+            :placeholder="addForm.kind === 'routine' ? '日程名称（必填）' : '课程名称（必填）'"
             class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
           />
           <!-- 时间：点哪填哪，左右微调 -->
@@ -3431,8 +3749,8 @@ function gridDbl(e) {
             placeholder="地点（选填）"
             class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
           />
-          <!-- 周次规则 -->
-          <div class="flex gap-2">
+          <!-- 周次规则：循环日程固定每周，不显示单双周（2026-10-01 用户拍板口径） -->
+          <div v-if="addForm.kind !== 'routine'" class="flex gap-2">
             <button
               v-for="r in [{ k: 'every', n: '每周' }, { k: 'odd', n: '单周' }, { k: 'even', n: '双周' }]"
               :key="r.k"
@@ -3443,6 +3761,12 @@ function gridDbl(e) {
               {{ r.n }}
             </button>
           </div>
+          <!-- 编辑导入进来的单/双周循环日程时如实说明：表单不给这个选项，但也不会把它改掉 -->
+          <p v-else class="rounded-xl border border-line bg-canvas px-3 py-2 text-xs leading-relaxed text-ink-dim">
+            {{ addForm.week_rule === 'every'
+              ? '循环日程每周重复，不占学期课表。'
+              : '这条原本是' + ({ odd: '单周', even: '双周' }[addForm.week_rule] || '每周') + '，保存后保持原样（循环日程表单不提供单双周选项）。' }}
+          </p>
         </div>
         <p v-if="addWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-500">{{ addWarn }}</p>
         <p v-if="addErr" class="mt-2.5 text-xs text-red-400">{{ addErr }}</p>
@@ -3457,7 +3781,7 @@ function gridDbl(e) {
             class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
             @click="submitAdd"
           >
-            {{ addForm.editingId ? '保存修改' : '添加' }}
+            {{ addForm.editingId ? '保存修改' : (addForm.kind === 'routine' ? '添加日程' : '添加') }}
           </button>
         </div>
       </div>
@@ -3522,6 +3846,7 @@ function gridDbl(e) {
     <Transition name="slide">
       <div
         v-if="evtForm"
+        data-sheet-evt
         class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
       >
         <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
@@ -3567,6 +3892,7 @@ function gridDbl(e) {
             class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
           />
         </div>
+        <p v-if="evtWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-500">{{ evtWarn }}</p>
         <p v-if="evtErr" class="mt-2.5 text-xs text-red-400">{{ evtErr }}</p>
         <div class="mt-4 flex gap-2.5">
           <button

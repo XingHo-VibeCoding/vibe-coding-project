@@ -202,7 +202,10 @@ try {
   await p2.waitForTimeout(800)
   await p2.mouse.up()
   await p2.waitForTimeout(400)
-  t('J3. 长按仍能唤起添加课程表单', await p2.locator('[data-sheet-add]').isVisible())
+  t('J3. 长按仍能唤起添加菜单（Step 4 起长按先出「加课程/加循环日程」两选一）', await p2.locator('[data-add-pick]').isVisible())
+  await p2.locator('[data-pick-course]').click()
+  await p2.waitForTimeout(400)
+  t('J4. 菜单里选「课程」→ 添加课程表单', await p2.locator('[data-sheet-add]').isVisible())
 } catch (e) {
   console.log('SCRIPT ERROR:', e && e.message)
   results.push(['脚本异常', false])

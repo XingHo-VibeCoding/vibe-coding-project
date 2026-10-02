@@ -150,17 +150,24 @@ try {
   if (await sheet.count()) { await sheet.locator('button').first().click(); await page.waitForTimeout(350) }
   t('H1b. 详情关得掉', (await page.locator('[data-sheet-detail]').count()) === 0)
 
-  /* 长按空格子 → 添加表单，默认开始时间 = 该节次开始时间 */
+  /* 长按空格子 → 类型菜单 → 选「课程」→ 添加表单，默认开始时间 = 该节次开始时间
+     （2026-10-01 三期 Step 4 起：长按先弹「加课程 / 加循环日程」两选一菜单，
+      双击才是直接进加课程的老习惯 —— 断言随之更新，不是功能坏了） */
   const cell = await box(page, '[data-cell="4-2"]') // 周四第 3 节（09:50）
   await page.mouse.move(cell.x + cell.width / 2, cell.y + cell.height / 2)
   await page.mouse.down()
   await page.waitForTimeout(750)
   await page.mouse.up()
   await page.waitForTimeout(400)
+  const pick = page.locator('[data-add-pick]')
+  const pickText = (await pick.count()) ? await pick.innerText() : ''
+  t('H2. 长按空格子唤出类型菜单（落点是周四）', pickText.includes('周四') && pickText.includes('循环日程'), JSON.stringify(pickText.replace(/\s+/g, ' ').slice(0, 60)))
+  await page.locator('[data-pick-course]').click()
+  await page.waitForTimeout(400)
   const add = page.locator('[data-sheet-add]')
   const addText = (await add.count()) ? await add.innerText() : ''
-  t('H2. 长按空格子仍能唤出添加课程（默认落在周四）', addText.includes('添加课程') && addText.includes('周四'), JSON.stringify(addText.replace(/\s+/g, ' ').slice(0, 60)))
-  t('H3. 添加表单默认带上该节次的开始时间 09:50', addText.includes('09:50'))
+  t('H3. 菜单里选「课程」→ 唤出添加课程表单（落在周四）', addText.includes('添加课程') && addText.includes('周四'), JSON.stringify(addText.replace(/\s+/g, ' ').slice(0, 60)))
+  t('H4. 添加表单默认带上该节次的开始时间 09:50', addText.includes('09:50'))
 
   await ctx.close()
 

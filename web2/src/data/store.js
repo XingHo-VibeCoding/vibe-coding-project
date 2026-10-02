@@ -497,10 +497,35 @@ export function removeMockCourse(id) {
 }
 
 /* ---------- 冲突检测（移植主项目 Rules.findConflicts，PRD F4：提示但不强制阻止） ----------
-   显示形状入参：target/list 元素 = { id?, type:'course', weekday, start, end, week_rule } */
+   显示形状入参：target/list 元素 = { id?, type, weekday, start, end, week_rule?, date?, weekNo? }
+   三类一起参与：课程 / 循环日程（按「星期 + 周次规则」展开）、独立日程（只有具体那一天）。
+   独立日程的判断需要「周次」而不是「星期几」—— 调用方要把它换算好写进元素：
+   weekday = 由 date 算出的 1–7，weekNo = 相对 firstMonday 的学期第 N 周（换算不了就 null）。 */
 export function weekRulesIntersect(a, b) {
   if (!a || a === 'every' || !b || b === 'every') return true
   return a === b
+}
+/* 周次规则 × 具体某周：这周轮不轮得上（单周/双周/每周） */
+export function weekMatches(rule, weekNo) {
+  if (!rule || rule === 'every') return true
+  const w = Number(weekNo)
+  if (!(w >= 1)) return true
+  if (rule === 'odd') return w % 2 === 1
+  if (rule === 'even') return w % 2 === 0
+  return true
+}
+/* 两条日程的周次是否可能落在同一周：一次性的只占「那一周」，周期型按 week_rule 展开。
+   换算不出周次（缺 firstMonday）时返回 false —— 宁可漏报，不猜着报。 */
+function weeksOverlap(a, b) {
+  const aOnce = !!a.date
+  const bOnce = !!b.date
+  if (aOnce && bOnce) {
+    if (a.weekNo == null || b.weekNo == null) return false
+    return Number(a.weekNo) === Number(b.weekNo)
+  }
+  if (aOnce) return a.weekNo == null ? false : weekMatches(b.week_rule, a.weekNo)
+  if (bOnce) return b.weekNo == null ? false : weekMatches(a.week_rule, b.weekNo)
+  return weekRulesIntersect(a.week_rule, b.week_rule)
 }
 export function findConflicts(target, list) {
   const out = []
@@ -509,15 +534,25 @@ export function findConflicts(target, list) {
   const tE = minOf(target.end)
   if (tS < 0) return out
   for (const o of list) {
-    if (!o || o.type !== 'course') continue
+    if (!o) continue
     if (target.id != null && String(o.id) === String(target.id)) continue // 编辑自己不算
     if (Number(o.weekday) !== Number(target.weekday)) continue // 不同天
-    if (!weekRulesIntersect(target.week_rule, o.week_rule)) continue // 单双周错开
+    if (!weeksOverlap(target, o)) continue // 单双周错开 / 不在一周
     const oS = minOf(o.start)
     const oE = minOf(o.end)
     if (tS < oE && oS < tE) out.push(o) // 区间重叠
   }
   return out
+}
+/* 把「某一天」换算成冲突检测要的 { weekday, weekNo }。缺学期锚点 / 日期非法 → null */
+export function dayScope(dateStr, semester) {
+  const fm = semester && semester.firstMonday
+  if (!fm || !dateStr) return null
+  const a = new Date(fm + 'T00:00:00')
+  const d = new Date(dateStr + 'T00:00:00')
+  if (isNaN(a) || isNaN(d)) return null
+  const diff = Math.round((d - a) / 86400000)
+  return { weekday: ((d.getDay() + 6) % 7) + 1, weekNo: diff < 0 ? null : Math.floor(diff / 7) + 1 }
 }
 
 /* ---------- 独立日程（event）添加：双源分支，口径同待办 ---------- */

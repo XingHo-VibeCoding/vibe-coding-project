@@ -34,31 +34,38 @@ try {
   // ---- A. 自建下拉 ----
   await page.getByRole('button', { name: /课堂纪要/ }).click() // 展开设置区
   await page.waitForTimeout(200)
-  t('A1. 纪要服务触发器显示「未选择」', (await page.locator('[data-dd="provider"] button').innerText()).trim() === '未选择')
+  /* 等下拉面板真正离场：面板有 0.16s 离场动效，headless 下这个动效实际耗时明显更长，
+     固定 sleep(300) 会在断言时读到「面板还在 DOM 里」而假红（2026-10-01 实测）。
+     两处细节：触发器一律用 `> button`（直接子元素）——展开时 `[data-dd=x] button`
+     会连选项按钮一起匹配到，写断言时一碰就撞 strict mode。 */
+  const ddClosed = (key) =>
+    page.locator(`[data-dd="${key}"] ul`).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {})
 
-  await page.locator('[data-dd="provider"] button').click()
+  t('A1. 纪要服务触发器显示「未选择」', (await page.locator('[data-dd="provider"] > button').innerText()).trim() === '未选择')
+
+  await page.locator('[data-dd="provider"] > button').click()
   await page.waitForTimeout(300)
   t('A2. 展开后有 3 个选项', (await page.locator('[data-dd="provider"] ul button').count()) === 3)
 
   await page.locator('[data-dd="provider"] ul button', { hasText: 'DeepSeek（自己的 API Key）' }).click()
-  await page.waitForTimeout(300)
-  t('A3. 选中后触发器文案更新', (await page.locator('[data-dd="provider"] button').innerText()).includes('DeepSeek'))
+  await ddClosed('provider')
+  t('A3. 选中后触发器文案更新', (await page.locator('[data-dd="provider"] > button').innerText()).includes('DeepSeek'))
   const saved1 = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.llm')).provider)
   t('A4. 选完即落库 provider=deepseek', saved1 === 'deepseek')
 
-  await page.locator('[data-dd="model"] button').click()
+  await page.locator('[data-dd="model"] > button').click()
   await page.waitForTimeout(300)
   t('A5. 模型下拉 2 档', (await page.locator('[data-dd="model"] ul button').count()) === 2)
   await page.locator('[data-dd="model"] ul button', { hasText: 'deepseek-v4-pro' }).click()
-  await page.waitForTimeout(300)
+  await ddClosed('model')
   const saved2 = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.llm')).model)
   t('A6. 模型落库 deepseek-v4-pro', saved2 === 'deepseek-v4-pro')
 
   // 外点关闭：再展开，点设置区标题（面板外）
-  await page.locator('[data-dd="model"] button').click()
+  await page.locator('[data-dd="model"] > button').click()
   await page.waitForTimeout(200)
   await page.getByText('课堂纪要', { exact: true }).first().click()
-  await page.waitForTimeout(200)
+  await ddClosed('model')
   t('A7. 点外面收起面板', (await page.locator('[data-dd="model"] ul').count()) === 0)
 
   // ---- B. 长按删除 ----
