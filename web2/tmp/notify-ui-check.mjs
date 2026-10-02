@@ -73,6 +73,11 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   t('A6 排程时刻都是未来', n.scheduled.every((x) => new Date(x.schedule.at).getTime() > Date.now() - 60000))
   await page.locator('nav button', { hasText: '我的' }).click() // 2026-10-02 加第 4 个 tab 后序号会变，按文案选
   await page.waitForTimeout(400)
+  /* 2026-10-02 减法：「课前提醒」收进了默认收起的「设置」折叠区 → 先展开 */
+  if ((await page.locator('[data-settings-body]').count()) === 0) {
+    await page.locator('[data-settings-toggle]').click()
+    await page.waitForTimeout(350)
+  }
   t('A7 设置区出现「课前提醒」且开关为开', (await page.locator('button[aria-label="课前提醒开关"]').count()) === 1)
   const verText = (await page.locator('text=/^v\\d+\\.\\d+$/').first().innerText()).trim()
   t('A8 页面上有 vX.Y 版本串（宽松匹配：以前写死 v1.23，每次升版本都要回来改，漏改就假红）', /^v\d+\.\d+$/.test(verText), verText)
@@ -133,6 +138,17 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   const page = await ctx.newPage()
   await page.goto(URL + '?permDenied=1', { waitUntil: 'load' })
   await page.waitForTimeout(1000)
+  /* 2026-10-02 减法：「课前提醒」收进默认收起的「设置」折叠区。
+     注意顺序：必须先切到「我的」页（否则平移层还停在今日页，折叠头在视口外，点不到），
+     再展开折叠，最后才断言提示可见。 */
+  await page.locator('nav button', { hasText: '我的' }).click()
+  await page.waitForTimeout(500)
+  const toggleG = page.locator('[data-settings-toggle]')
+  await toggleG.scrollIntoViewIfNeeded()
+  if ((await page.locator('[data-settings-body]').count()) === 0) {
+    await toggleG.click()
+    await page.waitForTimeout(400)
+  }
   t('G1 权限被拒时显示红色提示', (await page.locator('text=通知权限被拒绝了').count()) > 0)
   const n = await page.evaluate(() => window.__notify)
   t('G2 被拒后仍完成排程（权限与排程互不阻塞）', n.scheduled.length > 10)
@@ -150,6 +166,11 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL, { waitUntil: 'load' })
   await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(400)
+  /* 2026-10-02 减法：「课前提醒」收进了默认收起的「设置」折叠区 → 先展开 */
+  if ((await page.locator('[data-settings-body]').count()) === 0) {
+    await page.locator('[data-settings-toggle]').click()
+    await page.waitForTimeout(350)
+  }
   t('H1 无桥时开关不渲染（能力不可用）', (await page.locator('button[aria-label="课前提醒开关"]').count()) === 0)
   t('H2 副文案说明仅 App 生效', (await page.locator('text=通知能力仅 App 内生效').count()) > 0)
   t('H3 无页面异常', errs.length === 0)

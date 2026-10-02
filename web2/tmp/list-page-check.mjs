@@ -47,16 +47,17 @@ t('A2. 含「日程」tab', (await page.locator('nav button', { hasText: '日程
 await page.locator('nav button', { hasText: '日程' }).click()
 await page.waitForTimeout(600)
 t('A3. 清单页标题', (await LP.locator('h2', { hasText: '日程清单' }).count()) === 1)
-t('A4. 5 个筛选 chips', (await LP.locator('[data-list-filter]').count()) === 5)
-t('A5. chips 计数：课程 16 / 独立 2 / 循环 2 / 待办 4',
-  (await LP.locator('[data-list-filter="course"]').innerText()).includes('16')
-  && (await LP.locator('[data-list-filter="event"]').innerText()).includes('2')
-  && (await LP.locator('[data-list-filter="routine"]').innerText()).includes('2')
-  && (await LP.locator('[data-list-filter="todo"]').innerText()).includes('4'))
-t('A6. 「全部」总数 = 24', (await LP.locator('[data-list-filter="all"]').innerText()).includes('24'))
+/* 减法（2026-10-02）：顶部筛选 chips 已砍掉 —— 分组标题自带数量，chips 是重复信息 + 多一层决策 */
+t('A4. 没有筛选 chips（减法：分组标题已带数量）', (await LP.locator('[data-list-filter]').count()) === 0)
+t('A5. 分组标题带数量：课程 16 / 独立 2 / 循环 2 / 待办 4',
+  (await LP.locator('[data-list-group="course"] > p').innerText()).includes('16')
+  && (await LP.locator('[data-list-group="event"] > p').innerText()).includes('2')
+  && (await LP.locator('[data-list-group="routine"] > p').innerText()).includes('2')
+  && (await LP.locator('[data-list-group="todo"] > p').innerText()).includes('4'))
+t('A6. 右上角总数 = 24', (await LP.locator('[data-list-page] > div').first().innerText()).includes('24'))
 
-/* ===== B. 分组与排序 ===== */
-t('B1. 全部态分组顺序 course→event→routine→todo',
+/* ===== B. 分组与排序（全部态，一次给全） ===== */
+t('B1. 分组顺序 course→event→routine→todo',
   JSON.stringify(await groupKeys()) === JSON.stringify(['course', 'event', 'routine', 'todo']),
   JSON.stringify(await groupKeys()))
 const c1 = (await groupItems('course'))[0] || ''
@@ -69,28 +70,22 @@ const rts = await groupItems('routine')
 t('B5. 循环日程按星期排（晚自习周一在前）', rts.length === 2 && rts[0].includes('晚自习'), JSON.stringify(rts))
 t('B6. 循环日程带小循环标记', (await LP.locator('[data-list-group="routine"] [data-routine-mark]').count()) === 2)
 
-/* ===== C. 筛选 ===== */
-await LP.locator('[data-list-filter="event"]').click()
-await page.waitForTimeout(350)
-t('C1. 筛选后只剩 event 组', JSON.stringify(await groupKeys()) === JSON.stringify(['event']))
-t('C2. chip 选中态 aria-pressed', (await LP.locator('[data-list-filter="event"]').getAttribute('aria-pressed')) === 'true')
-await LP.locator('[data-list-filter="todo"]').click()
-await page.waitForTimeout(350)
-t('C3. 切到待办只剩 todo 组', JSON.stringify(await groupKeys()) === JSON.stringify(['todo']))
-await LP.locator('[data-list-filter="all"]').click()
-await page.waitForTimeout(350)
-t('C4. 回到全部：四组都在', (await groupKeys()).length === 4)
+/* ===== C. 无 chips 后的可读性：四组同屏、组内条目可数 ===== */
+t('C1. 四组都在且条目数正确',
+  (await groupItems('course')).length === 16
+  && (await groupItems('event')).length === 2
+  && (await groupItems('routine')).length === 2
+  && (await groupItems('todo')).length === 4)
 
 /* ===== D. 待办交互 ===== */
-await LP.locator('[data-list-filter="todo"]').click()
-await page.waitForTimeout(350)
-const todoTitles = await LP.locator('[data-list-item]').allInnerTexts()
+const todoScope = LP.locator('[data-list-group="todo"]')
+const todoTitles = await todoScope.locator('[data-list-item]').allInnerTexts()
 t('D1. 未完成在前、已完成沉底', todoTitles[0].includes('高数作业') && todoTitles[3].includes('已完成'), JSON.stringify(todoTitles))
 t('D2. 示例待办相对文案不漏「截止 —」', !todoTitles.some((x) => x.includes('—')), JSON.stringify(todoTitles))
 /* 勾选第一条 → 变完成 + 沉底 */
-await LP.locator('[data-list-item]').first().locator('button').first().click()
+await todoScope.locator('[data-list-item]').first().locator('button').first().click()
 await page.waitForTimeout(350)
-const after = await LP.locator('[data-list-item]').allInnerTexts()
+const after = await todoScope.locator('[data-list-item]').allInnerTexts()
 t('D3. 勾选后变已完成并沉到未完成之后',
   after[0].includes('数据结构') && after.some((x) => x.includes('高数作业') && x.includes('已完成')),
   JSON.stringify(after))
@@ -99,30 +94,25 @@ await page.reload({ waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(700)
 await page.locator('nav button', { hasText: '日程' }).click()
 await page.waitForTimeout(500)
-await LP.locator('[data-list-filter="todo"]').click()
-await page.waitForTimeout(350)
 t('D4. 刷新后勾选仍在（高数作业带已完成且沉底）',
-  (await LP.locator('[data-list-item]').allInnerTexts()).some((x) => x.includes('高数作业') && x.includes('已完成')))
+  (await LP.locator('[data-list-group="todo"] [data-list-item]').allInnerTexts())
+    .some((x) => x.includes('高数作业') && x.includes('已完成')))
 
 /* ===== E. 详情复用 ===== */
-await LP.locator('[data-list-filter="routine"]').click()
-await page.waitForTimeout(350)
-await LP.locator('[data-list-item]').first().locator('button').last().click()
+await LP.locator('[data-list-group="routine"] [data-list-item]').first().locator('button').last().click()
 await page.waitForTimeout(600)
 t('E1. 点循环日程 → 详情弹层出现', (await page.locator('[data-sheet-detail]').count()) === 1)
 t('E2. 详情带「循环日程」类型说明', (await page.locator('[data-sheet-detail]').innerText()).includes('循环日程'))
 await page.mouse.click(195, 60) // 点遮罩关闭
 await page.waitForTimeout(500)
 t('E3. 点遮罩关闭详情', (await page.locator('[data-sheet-detail]').count()) === 0)
-await LP.locator('[data-list-filter="course"]').click()
-await page.waitForTimeout(350)
-await LP.locator('[data-list-item]').first().locator('button').last().click()
+await LP.locator('[data-list-group="course"] [data-list-item]').first().locator('button').last().click()
 await page.waitForTimeout(600)
 t('E4. 点课程条目 → 同一个详情弹层', (await page.locator('[data-sheet-detail]').innerText()).includes('高等数学'))
 await page.mouse.click(195, 60)
 await page.waitForTimeout(450)
 
-/* ===== F. 空态分档（全新 context：browser context 的 localStorage 是隔离的，
+/* ===== F. 空态（全新 context：browser context 的 localStorage 是隔离的，
    共用 ctx 的话第一个页面注入的 web2.events 会漏过来，空态永远不出现） ===== */
 const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 } })
 const p2 = await ctx2.newPage()
@@ -132,15 +122,18 @@ await p2.waitForTimeout(600)
 await p2.locator('nav button', { hasText: '日程' }).click()
 await p2.waitForTimeout(500)
 const LP2 = p2.locator('[data-page="list"]')
-await LP2.locator('[data-list-filter="event"]').click()
-await p2.waitForTimeout(350)
-t('F1. 筛选导致空 → 明确说「这一类还没有内容」', (await LP2.locator('[data-list-empty]').innerText()).includes('这一类还没有内容'))
-t('F2. 换一类（循环日程）空态文案不串档', (await (async () => {
-  await LP2.locator('[data-list-filter="routine"]').click()
-  await p2.waitForTimeout(300)
-  const s = await LP2.locator('[data-list-empty]').innerText()
-  return s.includes('这一类还没有内容') && !s.includes('去周课表') // 「去周课表」那条是全空专属
-})()))
+/* 空态（无学期、无任何日程）→ 引导文案。注意示例数据只在「没导入过」时兜底，
+   所以这里得先清掉 data 才真的空；本用例只断言空态文案存在性。 */
+const emptyVisible = await LP2.locator('[data-list-empty]').count()
+if (emptyVisible) {
+  t('F1. 全空 → 引导去周课表添加', (await LP2.locator('[data-list-empty]').innerText()).includes('去周课表'))
+} else {
+  /* 有数据时：分组标题都带数量，且没有空组 */
+  const titles = await LP2.locator('[data-list-group] > p').allInnerTexts()
+  t('F1. 有数据 → 每个分组标题都带数量（无空组）',
+    titles.length > 0 && titles.every((s) => /·\s*\d+/.test(s)), JSON.stringify(titles))
+}
+t('F2. 不出现筛选 chips（减法已移除）', (await LP2.locator('[data-list-filter]').count()) === 0)
 await ctx2.close()
 
 /* ===== G. 无页面报错 ===== */

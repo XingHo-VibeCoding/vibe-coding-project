@@ -40,7 +40,10 @@ function switchTab(key) {
   if (key === tab.value) return // 幂等：重复点当前 tab
   stripDelay.value = tab.value === 'today' && key !== 'today' ? '110ms' : '0ms'
   tab.value = key
-  window.scrollTo({ top: 0 }) // 平移后立即回顶，避免落在长页的空白处
+  // 瞬时复位：默认的 scrollTo 是平滑滚动，切页动画期间会被浏览器节流/取消，
+  // 留下「切到某页但页面停在旧滚动位置」的中间态（App 启动时 initNotify → goMeTab
+  // 就会撞上：我的页在视口外，用户看到的是空白）。瞬时版不受节流影响。
+  window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
   // 周课表锁死文档滚动（页面一屏看完，锁掉任何残余晃动）；切走即恢复。
   document.body.style.overflow = key === 'week' ? 'hidden' : ''
   // 头部收缩动画（280ms）会改变网格顶的位置，动画结束后重校网格高度
@@ -316,6 +319,10 @@ const notifyMsgBad = ref(false)
 
 function goMeTab() {
   if (tab.value !== 'me') switchTab('me')
+  /* 「我的」页的低频项（课前提醒开关、纪要配置、清除数据…）都收在「设置」折叠区里，
+     凡是从别处「跳过来让用户看某个设置」的路径，都得顺手把折叠展开，
+     否则用户跳到我的页也是一脸茫然（2026-10-02 减法后新增）。 */
+  settingsOpen.value = true
 }
 
 async function applyNotifySchedule() {
@@ -453,6 +460,17 @@ function onHabitDelete(id) {
 
 function toggleHabit(id) {
   toggleHabitRecord(id, habitToday)
+  reloadHabits()
+}
+
+/* 今日页打卡区「全部打完就收成一行」用（2026-10-02 减法）：
+   完成后列表本身没有信息量，收起来让位给真正还没做的事；
+   收起态仍提供「取消」和「管理 ›」两个出口，不会把人堵死。 */
+const habitsAllDoneToday = computed(
+  () => habits.value.length > 0 && habits.value.every((h) => !!h.records[habitToday])
+)
+function undoAllHabitsToday() {
+  for (const h of habits.value) if (h.records[habitToday]) toggleHabitRecord(h.id, habitToday)
   reloadHabits()
 }
 
@@ -889,7 +907,11 @@ async function startTr(l, opts = {}) {
    与转写不同，纪要在浏览器里也能用（fetch 直连 LLM API，无原生依赖）。
    取消用 AbortController；生成中不允许并发第二场（sumBusyId 单值锁）。 */
 const llmCfg = ref(loadLlmConfig()) // {provider,key,model}；key 只在本机
-const llmInputOpen = ref(false) // 设置区展开
+const llmInputOpen = ref(false) // 课堂纪要的「纪要服务」子区展开（在设置折叠区内部）
+/* 「设置」折叠区（2026-10-02 减法）：默认收起。低频设置不该和高频动作抢首屏；
+   但「课堂纪要」缺配置时会自动展开它（见 startSummary 缺配置分支），
+   否则用户会以为功能被删了。 */
+const settingsOpen = ref(false)
 const PROVIDER_OPTIONS = [
   { id: '', label: '未选择' },
   { id: 'deepseek', label: 'DeepSeek（自己的 API Key）' },
@@ -945,7 +967,8 @@ async function startSummary(l, opts = {}) {
   const miss = summarizerAvailable()
   if (miss) {
     setRecMsg(auto ? `${miss}（转写已完成，配好后手动点「生成纪要」即可）` : miss, true)
-    llmInputOpen.value = true // 缺配置：顺手把设置区展开，少一次找路
+    llmInputOpen.value = true // 缺配置：顺手把纪要子区展开，少一次找路
+    settingsOpen.value = true // 外面那层「设置」折叠也要打开，否则展开了也看不见
     return false
   }
   if (!l.transcript || String(l.transcript).trim().length < 30) {
@@ -2201,24 +2224,14 @@ const WDN = ['周一', '周二', '周三', '周四', '周五', '周六', '周日
 
 /* ---------------- 日程清单页（三期「日程分类视图」，2026-10-02） ----------------
    存在理由见模板顶部注释：独立日程此前没有集中入口。
-   数据全部来自已就绪的 ref（weekAll / events / routines / todos），不新增任何存储。 */
-const LIST_FILTERS = [
-  { key: 'all', label: '全部' },
-  { key: 'course', label: '课程' },
-  { key: 'event', label: '独立日程' },
-  { key: 'routine', label: '循环日程' },
-  { key: 'todo', label: '待办' },
-]
-const listFilter = ref('all')
+   数据全部来自已就绪的 ref（weekAll / events / routines / todos），不新增任何存储。
+   减法（2026-10-02）：筛选 chips / listFilter / listCounts 整组移除。
+   分组标题自带数量（「待办 · 3」），chips 提供的计数是重复信息；
+   而 chips 的代价是每次进页都要先做一次「我该选哪个」的判断——这正是不无感。 */
 
-const listCounts = computed(() => ({
-  all: weekAll.value.length + events.value.length + routines.value.length + todos.value.length,
-  course: weekAll.value.length,
-  event: events.value.length,
-  routine: routines.value.length,
-  todo: todos.value.length,
-}))
-const listFilteredCount = computed(() => listCounts.value[listFilter.value] ?? 0)
+const listTotalCount = computed(
+  () => weekAll.value.length + events.value.length + routines.value.length + todos.value.length
+)
 
 /* 绝对日期：清单是总览，不跟今日页用「今天 / 明天」那种相对文案 */
 function listDateLabel(d) {
@@ -2228,32 +2241,24 @@ function listDateLabel(d) {
 
 /* 分组：课程 / 独立日程 / 循环日程 / 待办。
    排序口径——课程与循环按「星期 → 起始时间」（它们本来就按周重复），
-   独立日程按「日期 → 起始时间」，待办按「未完成优先 → 截止日期」。 */
+   独立日程按「日期 → 起始时间」，待办按「未完成优先 → 截止日期」。
+   空组不输出（没有内容的组连标题都不出现）。 */
 const listGroups = computed(() => {
-  const f = listFilter.value
   const byWeek = (a, b) => (a.weekday - b.weekday) || (minOf(a.start) - minOf(b.start))
   const out = []
-  if (f === 'all' || f === 'course') {
-    const items = [...weekAll.value].sort(byWeek)
-    if (items.length) out.push({ key: 'course', title: '课程', items })
-  }
-  if (f === 'all' || f === 'event') {
-    const items = [...events.value].sort(
-      (a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (minOf(a.start) - minOf(b.start))
-    )
-    if (items.length) out.push({ key: 'event', title: '独立日程', items })
-  }
-  if (f === 'all' || f === 'routine') {
-    const items = [...routines.value].sort(byWeek)
-    if (items.length) out.push({ key: 'routine', title: '循环日程', items })
-  }
-  if (f === 'all' || f === 'todo') {
-    const items = [...todos.value].sort(
-      (a, b) => ((a.done ? 1 : 0) - (b.done ? 1 : 0))
-        || String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'))
-    )
-    if (items.length) out.push({ key: 'todo', title: '待办', items })
-  }
+  const courses = [...weekAll.value].sort(byWeek)
+  if (courses.length) out.push({ key: 'course', title: '课程', items: courses })
+  const evs = [...events.value].sort(
+    (a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (minOf(a.start) - minOf(b.start))
+  )
+  if (evs.length) out.push({ key: 'event', title: '独立日程', items: evs })
+  const rts = [...routines.value].sort(byWeek)
+  if (rts.length) out.push({ key: 'routine', title: '循环日程', items: rts })
+  const tds = [...todos.value].sort(
+    (a, b) => ((a.done ? 1 : 0) - (b.done ? 1 : 0))
+      || String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'))
+  )
+  if (tds.length) out.push({ key: 'todo', title: '待办', items: tds })
   return out
 })
 
@@ -2870,45 +2875,74 @@ function gridDbl(e) {
         </button>
       </section>
 
-      <!-- 今日打卡（三期）：今日页只留「一按即打」这个高频动作——它跟「今天的课/待办」同住一屏，
-           不用为了打个卡先切页。7 格 / 连续 / 累计 / 添加 / 删除 / 补卡都是管理动作（低频），
-           全部收在「打卡」页，同一个动作不到处各写一份。
-           打卡圆圈保留 h-11 热区；aria-label 沿用「今日打卡 / 取消今日打卡」。 -->
-      <section>
-        <div class="mb-2 flex items-center justify-between px-1">
-          <h2 class="text-sm font-semibold text-ink">今日打卡</h2>
-          <button
-            type="button"
-            data-today-habit-more
-            class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
-            @click="switchTab('habit')"
-          >
-            管理 ›
-          </button>
-        </div>
+<!-- 今日打卡（三期）：今日页只留「一按即打」这个高频动作——它跟「今天的课/待办」同住一屏，
+     不用为了打个卡先切页。7 格 / 连续 / 累计 / 添加 / 删除 / 补卡都是管理动作（低频），
+     全部收在「打卡」页，同一个动作不到处各写一份。
+     打卡圆圈保留 h-11 热区；aria-label 沿用「今日打卡 / 取消今日打卡」。
+     ⚠️ 减法（2026-10-02）：**全部打完就收成一行**——不摆无意义的 0 项待办列表，
+     已完成的事退出视线（设计三原则之一「与当前任务无关的界面元素绝不出现」）。
+     收起来后仍要能「取消打卡」和进管理页，所以那一行右边留小勾按钮 + 管理入口。 -->
+<section>
+  <!-- 全部打完：一行摘要（可取消 · 可进管理 · 可展开回看） -->
+  <div v-if="habits.length && habitsAllDoneToday" data-today-habit-done class="flex items-center gap-2 px-1">
+    <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-500 text-white">
+      <svg viewBox="0 0 16 16" class="h-3 w-3" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </span>
+    <p class="min-w-0 flex-1 truncate text-xs text-ink-dim">今日打卡已完成 · {{ habits.length }} 项</p>
+    <button
+      type="button"
+      data-today-habit-undo
+      class="shrink-0 text-xs text-ink-dim/70 underline decoration-dotted underline-offset-2 transition active:opacity-60"
+      @click="undoAllHabitsToday"
+    >
+      取消
+    </button>
+    <button
+      type="button"
+      data-today-habit-more
+      class="shrink-0 rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
+      @click="switchTab('habit')"
+    >
+      管理 ›
+    </button>
+  </div>
 
-        <div v-if="habits.length" class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
-          <div v-for="h in habits" :key="h.id" :data-today-habit="h.id" class="flex items-center gap-3 p-3.5">
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm" :class="h.records[habitToday] ? 'text-ink-dim' : 'text-ink'">{{ h.name }}</p>
-              <p class="mt-0.5 text-[11px] text-ink-dim/70">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</p>
-            </div>
-            <!-- 打卡主操作：h-11 = 44px 热区；已打卡实心勾（可点取消） -->
-            <button
-              type="button"
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-90"
-              :class="h.records[habitToday] ? 'bg-primary-500 text-white' : 'border-2 border-ink-dim/30 text-ink-dim/40'"
-              :aria-label="h.records[habitToday] ? '取消今日打卡' : '今日打卡'"
-              @click="toggleHabit(h.id)"
-            >
-              <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            </button>
-          </div>
+  <template v-else>
+    <div class="mb-2 flex items-center justify-between px-1">
+      <h2 class="text-sm font-semibold text-ink">今日打卡</h2>
+      <button
+        type="button"
+        data-today-habit-more
+        class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
+        @click="switchTab('habit')"
+      >
+        管理 ›
+      </button>
+    </div>
+
+    <div v-if="habits.length" class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
+      <div v-for="h in habits" :key="h.id" :data-today-habit="h.id" class="flex items-center gap-3 p-3.5">
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm" :class="h.records[habitToday] ? 'text-ink-dim' : 'text-ink'">{{ h.name }}</p>
+          <p class="mt-0.5 text-[11px] text-ink-dim/70">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</p>
         </div>
-        <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">
-          还没有打卡习惯，去「打卡」页建一个
-        </p>
-      </section>
+        <!-- 打卡主操作：h-11 = 44px 热区；已打卡实心勾（可点取消） -->
+        <button
+          type="button"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-90"
+          :class="h.records[habitToday] ? 'bg-primary-500 text-white' : 'border-2 border-ink-dim/30 text-ink-dim/40'"
+          :aria-label="h.records[habitToday] ? '取消今日打卡' : '今日打卡'"
+          @click="toggleHabit(h.id)"
+        >
+          <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+      </div>
+    </div>
+    <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">
+      还没有打卡习惯，去「打卡」页建一个
+    </p>
+  </template>
+</section>
     </main>
 
     <!-- ===== 周课表 =====
@@ -3056,53 +3090,37 @@ function gridDbl(e) {
       </section>
     </main>
 
-    <!-- ===== 日程清单页（三期「日程分类视图」，2026-10-02）=====
-         为什么需要它：独立日程（event）此前没有任何集中入口——加一条「10 月 20 日交材料」，
-         除非翻到那天的今日页，否则根本看不见。这一页把三类日程 + 待办平铺成可筛选的清单。
-         分组口径：课程（导入态 + 自加）、独立日程、循环日程、待办；课程/循环按星期排，
-         独立日程/待办按日期排。点条目复用 openDetail（同一套详情与编辑），待办直接勾选。 -->
-    <main data-page="list" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'list'">
-      <section data-list-page>
-        <div class="mb-2 flex items-baseline justify-between px-1">
-          <h2 class="text-sm font-semibold text-ink">日程清单</h2>
-          <span class="text-xs text-ink-dim/70">{{ listFilteredCount }} 项</span>
-        </div>
+<!-- ===== 日程清单页（三期「日程分类视图」，2026-10-02）=====
+     为什么需要它：独立日程（event）此前没有任何集中入口——加一条「10 月 20 日交材料」，
+     除非翻到那天的今日页，否则根本看不见。这一页把三类日程 + 待办平铺成清单。
+     分组口径：课程（导入态 + 自加）、独立日程、循环日程、待办；课程/循环按星期排，
+     独立日程/待办按日期排。点条目复用 openDetail（同一套详情与编辑），待办直接勾选。
+     减法（2026-10-02）：**砍掉顶部 5 个筛选 chips**——分组标题已经说明一切，
+     chips 只是又一层「先做选择」的门槛；想只看待办时往下滚比先点一下更便宜。 -->
+<main data-page="list" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'list'">
+  <section data-list-page>
+    <div class="mb-2 flex items-baseline justify-between px-1">
+      <h2 class="text-sm font-semibold text-ink">日程清单</h2>
+      <span class="text-xs text-ink-dim/70">{{ listTotalCount }} 项</span>
+    </div>
 
-        <!-- 筛选 chips：热区 min-h-11(44px)、选中态走字重 + 主色（与今日页待办筛选同一套观感） -->
-        <div class="mb-3 flex flex-wrap gap-2">
-          <button
-            v-for="f in LIST_FILTERS"
-            :key="f.key"
-            type="button"
-            :data-list-filter="f.key"
-            class="flex min-h-11 items-center rounded-full border px-3.5 text-xs transition active:scale-95"
-            :class="listFilter === f.key
-              ? 'border-primary-400 bg-primary-50 font-semibold text-primary-500'
-              : 'border-line bg-card text-ink-dim'"
-            :aria-pressed="listFilter === f.key"
-            @click="listFilter = f.key"
-          >
-            {{ f.label }}<span class="ml-1 tabular-nums opacity-70">{{ listCounts[f.key] }}</span>
-          </button>
-        </div>
+    <!-- 空态：本来就没有 -->
+    <p
+      v-if="!listGroups.length"
+      data-list-empty
+      class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim"
+    >
+      还没有任何日程，去周课表长按空白处加一条
+    </p>
 
-        <!-- 空态：区分「本来就没有」与「筛选后为空」 -->
-        <p
-          v-if="!listGroups.length"
-          data-list-empty
-          class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim"
-        >
-          {{ listFilter === 'all' ? '还没有任何日程，去周课表长按空白处加一条' : '这一类还没有内容' }}
-        </p>
-
-        <!-- 分组列表 -->
-        <div v-for="g in listGroups" :key="g.key" :data-list-group="g.key" class="mb-4">
-          <p class="mb-1.5 px-1 text-xs font-semibold text-ink-dim">{{ g.title }} · {{ g.items.length }}</p>
-          <div class="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
-            <div
-              v-for="it in g.items"
-              :key="g.key + '-' + it.id"
-              data-list-item
+    <!-- 分组列表 -->
+    <div v-for="g in listGroups" :key="g.key" :data-list-group="g.key" class="mb-4">
+      <p class="mb-1.5 px-1 text-xs font-semibold text-ink-dim">{{ g.title }} · {{ g.items.length }}</p>
+      <div class="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
+        <div
+          v-for="it in g.items"
+          :key="g.key + '-' + it.id"
+          data-list-item
               :data-item-type="g.key"
               class="flex items-center gap-3 px-3.5 py-3"
             >
@@ -3567,6 +3585,43 @@ function gridDbl(e) {
           </span>
         </button>
 
+      </section>
+
+      <!-- ===== 设置（折叠）：一次配好、装完就不碰的东西全收在这里 =====
+           减法（2026-10-02）：此前主题/纪要/通知/清理/重置/关于全部平铺在首页，
+           「我的」页要滑约 3.5 屏，其中 2.5 屏是低频设置 —— 高频的「换学期、导数据」
+           反而被埋住。设计三原则第一条写着「与当前任务无关的界面元素绝不出现」，
+           折叠就是这句话的落地：平时不出现，需要时一步可达。
+           默认收起（高频动作优先）；「课堂纪要」缺 API Key 时会自动展开（见 llmInputOpen）。 -->
+      <section class="rounded-2xl border border-line bg-card shadow-sm">
+        <button
+          type="button"
+          data-settings-toggle
+          class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-ink/5"
+          :aria-expanded="settingsOpen"
+          @click="settingsOpen = !settingsOpen"
+        >
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2" /><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">设置</span>
+            <span class="block text-[11px] text-ink-dim/70">主题外观 · 课前提醒 · 课堂纪要 · 数据重置</span>
+          </span>
+          <svg
+            viewBox="0 0 16 16"
+            class="h-3.5 w-3.5 shrink-0 text-ink-dim/50 transition-transform"
+            :class="settingsOpen ? 'rotate-90' : ''"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ><path d="M6 3l5 5-5 5" /></svg>
+        </button>
+
+        <div v-if="settingsOpen" data-settings-body class="divide-y divide-line border-t border-line">
+
         <!-- 主题外观（明暗） -->
         <div
           class="flex cursor-pointer items-center gap-3.5 p-4 active:bg-ink/5"
@@ -3747,6 +3802,7 @@ function gridDbl(e) {
           </span>
           <span class="flex-1 text-sm font-medium">关于</span>
           <span class="text-xs text-ink-dim/70" data-app-version>{{ APP_VERSION }}</span>
+        </div>
         </div>
       </section>
 

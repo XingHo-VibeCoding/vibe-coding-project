@@ -169,6 +169,11 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL, { waitUntil: 'load' })
   await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(400)
+  /* 2026-10-02 减法：「后台录音」说明收进了默认收起的「设置」折叠区 → 先展开 */
+  if ((await page.locator('[data-settings-body]').count()) === 0) {
+    await page.locator('[data-settings-toggle]').click()
+    await page.waitForTimeout(350)
+  }
   await page.locator('text=后台录音').first().scrollIntoViewIfNeeded()
   t('F1 App 环境显示「后台录音」说明行', (await page.locator('text=后台录音').count()) > 0)
   t('F2 说明里含通知权限提示', (await page.locator('text=打开本应用的通知权限').count()) > 0)

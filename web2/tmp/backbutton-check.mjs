@@ -67,6 +67,11 @@ try {
   // 3. 确认层开着 → 只关确认层
   await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(400)
+  /* 2026-10-02 减法：「清除数据」收进了默认收起的「设置」折叠区 → 先展开外层 */
+  if ((await page.locator('[data-settings-body]').count()) === 0) {
+    await page.locator('[data-settings-toggle]').click()
+    await page.waitForTimeout(350)
+  }
   await page.locator('button', { hasText: '清除数据' }).first().click()
   await page.waitForTimeout(400)
   t('3a. 确认层已打开', await page.locator('text=确认清除全部数据').isVisible())

@@ -22,6 +22,11 @@ async function openMine(seed) {
   await page.waitForTimeout(700)
   await page.locator('text=我的').last().click()
   await page.waitForTimeout(400)
+  /* 2026-10-02 减法：「清理重复课程」收进了默认收起的「设置」折叠区 → 先展开 */
+  if ((await page.locator('[data-settings-body]').count()) === 0) {
+    await page.locator('[data-settings-toggle]').click()
+    await page.waitForTimeout(350)
+  }
   return page
 }
 

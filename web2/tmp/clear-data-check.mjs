@@ -47,6 +47,12 @@ await page.waitForTimeout(500)
 /* 进「我的」页（底部导航） */
 await page.locator('nav >> text=我的').click()
 await page.waitForTimeout(300)
+/* 2026-10-02 减法：「清除数据」收进了默认收起的「设置」折叠区 → 先展开它。
+   仅动 Test 侧，产品行为不变；断言的是「展开后能找到」而不是「永远平铺」。 */
+if ((await page.locator('[data-settings-body]').count()) === 0) {
+  await page.locator('[data-settings-toggle]').click()
+  await page.waitForTimeout(350)
+}
 t('A1. 我的页有清除入口', await page.locator('[data-clear-entry]').count() === 1)
 
 /* 点开二次确认弹层，检查保留项文案 */

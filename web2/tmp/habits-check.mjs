@@ -25,8 +25,9 @@ await page.addInitScript(() => localStorage.setItem('web2.onboarded', '1'))
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(600)
 
-/* ===== 今日页（精简版） ===== */
-const todaySection = page.locator('section').filter({ has: page.locator('h2', { hasText: '今日打卡' }) }).first()
+/* ===== 今日页（精简版） =====
+   用 data-page 锚点，别用「含 h2 今日打卡的 section」——全部打完时那个 h2 会被收掉。 */
+const todaySection = page.locator('[data-page="today"]')
 t('1. 今日页空态引导去「打卡」页', (await todaySection.locator('p', { hasText: '还没有打卡习惯' }).count()) === 1)
 t('2. 今日页有「管理 ›」入口', (await todaySection.locator('[data-today-habit-more]').count()) === 1)
 
@@ -67,14 +68,44 @@ await page.waitForTimeout(200)
 t('13. 取消后回「未开始」且今日格可再打', (await row1.locator('span', { hasText: '未开始' }).count()) === 1 && (await row1.locator('[data-cell-state="today"]').count()) === 1)
 await row1.locator('button[aria-label="今日打卡"]').click() // 重新打上
 
-/* 14. 今日页那份精简块同步亮起（同一份数据，两个入口） */
+/* 14. 今日页那份精简块同步亮起（同一份数据，两个入口）
+   注意：只打了「背单词」一个 → 还没全部打完，今日页仍是展开列表态 */
 t('14. 今日页精简块同步显示已打卡', (await todaySection.locator('[data-today-habit]').filter({ hasText: '背单词' }).locator('button[aria-label="取消今日打卡"]').count()) === 1)
+
+/* 14b. 减法（2026-10-02）：全部打完 → 今日页打卡区收成一行
+   先切回今日页：上面几步操作都在「打卡」页，且今日页打卡区在「全部完成」态下
+   会把标题 h2 一起收掉，用 h2 定位不稳 —— 一律用 data-page 锚点 + data 属性。 */
+await page.locator('nav button', { hasText: '今日' }).click()
+await page.waitForTimeout(500)
+const todayPane = page.locator('[data-page="today"]')
+await todayPane.locator('[data-today-habit]').filter({ hasText: '晨跑' })
+  .locator('button[aria-label="今日打卡"]').click()
+await page.waitForTimeout(400)
+t('14b. 全部打完 → 收成一行（列表消失、出现已完成摘要）',
+  (await page.locator('[data-today-habit-done]').count()) === 1
+  && (await page.locator('[data-today-habit]').count()) === 0)
+const doneText = await page.locator('[data-today-habit-done]').innerText()
+t('14c. 摘要说明打了几项', doneText.includes('已完成') && doneText.includes('2'), doneText)
+t('14d. 收起态仍有「管理 ›」出口', (await page.locator('[data-today-habit-done] [data-today-habit-more]').count()) === 1)
+
+/* 14e. 收起态的「取消」= 全部撤销，回到展开列表 */
+await page.locator('[data-today-habit-undo]').click()
+await page.waitForTimeout(400)
+t('14e. 点「取消」→ 恢复展开列表且全部未打',
+  (await page.locator('[data-today-habit-done]').count()) === 0
+  && (await page.locator('[data-page="today"] [data-today-habit]').count()) === 2
+  && (await page.locator('[data-page="today"] button[aria-label="今日打卡"]').count()) === 2)
+/* 复原成「背单词已打、晨跑未打」，让后面的断言沿用原前提 */
+await page.locator('[data-page="today"] [data-today-habit]').filter({ hasText: '背单词' })
+  .locator('button[aria-label="今日打卡"]').click()
+await page.waitForTimeout(300)
 
 /* 15. 刷新持久化（reload 后默认落回今日页，查今日页即可） */
 await page.reload({ waitUntil: 'domcontentloaded' })
-await page.waitForTimeout(600)
-const todaySection2 = page.locator('section').filter({ has: page.locator('h2', { hasText: '今日打卡' }) }).first()
-t('15. 刷新后打卡状态保持', (await todaySection2.locator('[data-today-habit]').filter({ hasText: '背单词' }).locator('button[aria-label="取消今日打卡"]').count()) === 1)
+await page.waitForTimeout(700)
+t('15. 刷新后打卡状态保持',
+  (await page.locator('[data-page="today"] [data-today-habit]')
+    .filter({ hasText: '背单词' }).locator('button[aria-label="取消今日打卡"]').count()) === 1)
 
 /* ===== 回打卡页：两段式删除 ===== */
 await page.locator('nav button', { hasText: '打卡' }).click()

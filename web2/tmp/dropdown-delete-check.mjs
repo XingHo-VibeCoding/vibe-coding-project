@@ -32,7 +32,14 @@ try {
   const row = page.locator('li', { hasText: '长按删除我' })
 
   // ---- A. 自建下拉 ----
-  await page.getByRole('button', { name: /课堂纪要/ }).click() // 展开设置区
+  /* 2026-10-02 减法：「课堂纪要」收进了默认收起的「设置」折叠区 → 先展开外层 */
+  if ((await page.locator('[data-settings-body]').count()) === 0) {
+    await page.locator('[data-settings-toggle]').click()
+    await page.waitForTimeout(350)
+  }
+  /* 作用域限定在设置折叠区内部：折叠头的副标题里也有「课堂纪要」四个字（关键词列表），
+     不限定就撞 strict mode。 */
+  await page.locator('[data-settings-body]').getByRole('button', { name: /课堂纪要/ }).click() // 展开纪要服务
   await page.waitForTimeout(200)
   /* 等下拉面板真正离场：面板有 0.16s 离场动效，headless 下这个动效实际耗时明显更长，
      固定 sleep(300) 会在断言时读到「面板还在 DOM 里」而假红（2026-10-01 实测）。
@@ -64,7 +71,7 @@ try {
   // 外点关闭：再展开，点设置区标题（面板外）
   await page.locator('[data-dd="model"] > button').click()
   await page.waitForTimeout(200)
-  await page.getByText('课堂纪要', { exact: true }).first().click()
+  await page.locator('[data-settings-body]').getByText('课堂纪要', { exact: true }).first().click()
   await ddClosed('model')
   t('A7. 点外面收起面板', (await page.locator('[data-dd="model"] ul').count()) === 0)
 
