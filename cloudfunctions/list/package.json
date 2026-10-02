@@ -1,0 +1,6 @@
+{
+  "name": "list",
+  "version": "2.0.0",
+  "description": "Day 17 读接口：GET /api/list 经官方 REST API(PostgREST) 读 semesters / schedules / todos 三张表",
+  "main": "index.js"
+}

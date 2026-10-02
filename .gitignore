@@ -29,3 +29,7 @@ desktop.ini
 # ===== 工具临时目录：测试脚本、故障注入副本、截图对照副本 =====
 # 这些是「检查过程」不是「产品」，不进仓库（脚本本身在 .workbuddy/tmp/）
 .workbuddy/
+
+# ===== 云函数代码包：上传 CloudBase 控制台用的 zip 是构建产物 =====
+# 源码在 cloudfunctions/<函数名>/index.js，zip 随时可以重新打包
+cloudfunctions/*/*.zip
