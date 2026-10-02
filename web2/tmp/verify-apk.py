@@ -69,6 +69,7 @@ print("  shell.js/shell.css 注入:", ("shell.js?v=" in html and "shell.css?v=" 
 print("  SHELL_VER =", set(re.findall(r"shell\.(?:js|css)\?v=([0-9a-z]+)", html)))
 
 print("\n--- APK 内 JS / CSS 特征 ---")
+ok3 = True
 for n in z.namelist():
     if not n.startswith("assets/public/assets/"):
         continue
@@ -76,7 +77,15 @@ for n in z.namelist():
         body = z.read(n).decode("utf-8", "ignore")
         print("  JS %s 版本串=%s" % (n.split("/")[-1], sorted(set(re.findall(r"v1\.\d+", body)))))
         if WANT:
-            print("     含期望版本串 %s: %s" % (WANT, WANT in body))
+            # 界面版本串的口径是「去掉 patch 位」（vite.config.js：1.28.0 → v1.28），
+            # 所以拿 v1.36.0 直接比产物里的 v1.36 会永远 False。
+            # 这里按显示口径归一化，让这条真的能当闸门用（2026-10-02 修）。
+            mver = re.match(r"v(\d+)\.(\d+)", WANT)
+            disp = "v%s.%s" % (mver.group(1), mver.group(2)) if mver else WANT
+            hit = disp in body
+            if not hit:
+                ok3 = False
+            print("     含版本串 %s（传入 %s，按显示口径去 patch 位）: %s" % (disp, WANT, hit))
         print("     含 truncate 修复（input 类串）:", "truncate rounded-lg border border-line bg-card" in body)
         print("     含 min-w-[3rem] 修复:", "min-w-[3rem] flex-1" in body)
     if n.endswith(".css"):
@@ -87,5 +96,7 @@ for n in z.namelist():
                   % (dv, "touch-action:none" in m, "scroll-snap" in m))
         print("  CSS .truncate 定义:", bool(re.search(r"\.truncate\{[^}]*ellipsis", css)))
 
-print("\n结论：dist vs APK =", "一致" if ok else "有差异", "｜ dist vs www =", "一致" if ok2 else "有差异")
-sys.exit(0 if (ok and ok2) else 1)
+print("\n结论：dist vs APK =", "一致" if ok else "有差异",
+      "｜ dist vs www =", "一致" if ok2 else "有差异",
+      "｜ 版本串 =", "命中" if ok3 else "未命中")
+sys.exit(0 if (ok and ok2 and ok3) else 1)
