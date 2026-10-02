@@ -2160,17 +2160,29 @@ function fmtTime(m) {
 /* 从网格位置打开表单：分钟吸附到 5 分钟，整段钳在 08:00–22:00 内
    kind 决定这张表单是「课程」还是「循环日程」——同一个面板两态，字段几乎一样，
    差别只在：循环日程固定每周（不显示单双周）、不占学期课表、落库走 routine 分支 */
+/* 落点 → 表单起点：吸附到 5 分钟，再夹进合法区间 —— 不早于 DAY_START、且加上**该表单自己的
+   默认时长**后不晚于 DAY_END。
+   两处口径要一致：① 不能再出现「菜单说 08:00、表单开 08:30」这种事
+   （旧写法 `Math.max(DAY_START + 30, …)` 会把第 1 节 08:00 抬成 08:30，用户挑的明明是空格，
+   却因为叠加默认时长压到 09:00 的课上，首次提交白吃一条冲突提示）；DAY_START 的注释本来就写着
+   「仍是添加课程表单的合法时间下界」，所以下界就是 DAY_START。
+   ② 上界必须按各自默认时长算：课程 45 分沿用课程口径没问题，但循环日程默认 60 分，
+   仍用 45 会让落点靠后时超 22:00。 */
+function clampStart(min, dur) {
+  return Math.max(DAY_START, Math.min(DAY_END - dur, Math.round(min / 5) * 5))
+}
+/* 添加课程：默认 45 分钟 */
 function openAdd(wd, min) {
-  min = Math.max(DAY_START + 30, Math.min(DAY_END - 45, Math.round(min / 5) * 5))
-  addForm.value = { kind: 'course', weekday: wd, start: fmtTime(min), duration: 45, name: '', place: '', week_rule: 'every', editingId: null }
+  const dur = 45
+  addForm.value = { kind: 'course', weekday: wd, start: fmtTime(clampStart(min, dur)), duration: dur, name: '', place: '', week_rule: 'every', editingId: null }
   addErr.value = ''
   addWarn.value = ''
   addConfirmed.value = false
 }
 /* 循环日程表单：默认 60 分钟（运动/自习这类通常一小时），周次固定每周 */
 function openAddRoutine(wd, min) {
-  min = Math.max(DAY_START + 30, Math.min(DAY_END - 45, Math.round(min / 5) * 5))
-  addForm.value = { kind: 'routine', weekday: wd, start: fmtTime(min), duration: 60, name: '', place: '', week_rule: 'every', editingId: null }
+  const dur = 60
+  addForm.value = { kind: 'routine', weekday: wd, start: fmtTime(clampStart(min, dur)), duration: dur, name: '', place: '', week_rule: 'every', editingId: null }
   addErr.value = ''
   addWarn.value = ''
   addConfirmed.value = false
@@ -3729,7 +3741,7 @@ function gridDbl(e) {
               <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="stepStart(-5)">
                 <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
               </button>
-              <span class="text-sm font-semibold tabular-nums">{{ addForm.start }}</span>
+              <span class="text-sm font-semibold tabular-nums" data-add-start>{{ addForm.start }}</span>
               <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="stepStart(5)">
                 <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
               </button>

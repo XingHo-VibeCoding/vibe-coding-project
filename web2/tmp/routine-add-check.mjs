@@ -132,6 +132,20 @@ await page.waitForTimeout(350)
 t('A6 点取消 → 菜单关掉且不开任何表单',
   (await page.locator('[data-add-pick]').count()) === 0 && (await page.locator('[data-sheet-add]').count()) === 0)
 
+/* A7/A8：菜单承诺的落点时间必须 == 表单实际开出来的起点。
+   特意挑「周一 08:00」这一格 —— 旧钳位（`Math.max(DAY_START + 30, …)`，2026-10-02 已去掉）
+   会把 08:00 抬成 08:30，同一屏两个数字对不上，这就是那个 bug 的现场。 */
+const spot1 = await blankSpot(page, 1)
+await longPress(page, spot1.x, spot1.y)
+const menuStart1 = ((await page.locator('[data-add-pick]').innerText()).match(/\d{2}:\d{2}/) || [''])[0]
+await page.locator('[data-pick-routine]').click()
+await page.waitForTimeout(400)
+const formStart1 = (await page.locator('[data-add-start]').innerText()).trim()
+t('A7 菜单里的落点时间与表单起点一致', menuStart1 === formStart1, `菜单 ${menuStart1} / 表单 ${formStart1}`)
+await page.locator('[data-sheet-add] button', { hasText: '取消' }).click()
+await page.waitForTimeout(350)
+t('A8 取消后表单关闭', (await page.locator('[data-sheet-add]').count()) === 0)
+
 /* ============ B/C. 长按 → 循环日程 → 新建 ============ */
 await longPress(page, spot.x, spot.y)
 await page.locator('[data-pick-routine]').click()
