@@ -61,9 +61,9 @@ t('B2 报错后仍无停止按钮', !(await page.locator('[data-today-rec-stop]'
 t('B3 没有跳去别的 tab', await page.locator('[data-today-rec]').isVisible())
 
 /* C. 「我的」页原录音区共存 */
-await page.locator('nav button').nth(2).click()
+await page.locator('nav button', { hasText: '我的' }).click() // 2026-10-02 加第 4 个 tab「打卡」后序号会变，按文案选
 await page.waitForTimeout(500)
-const mineText = await page.locator('main').nth(2).textContent()
+const mineText = await page.locator('main').nth(3).textContent() // today/week/habit/me
 t('C1 「我的」页录音区仍在', mineText.includes('课堂录音') && mineText.includes('开始录音'))
 t('C2 「我的」页场次说明未丢', mineText.includes('长按场次可删除'))
 

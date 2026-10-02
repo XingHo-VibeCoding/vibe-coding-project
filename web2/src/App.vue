@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, dayScope, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, addRoutine, updateRoutine, removeRoutine, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
+import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, dayScope, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, addRoutine, updateRoutine, removeRoutine, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, isGraceKey, graceKeysOf, isBackfilled, totalDoneOf, weekMondayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
 import { normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt } from './data/periods.js'
 import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange, clampCoursesToSegments } from './data/weekGrid.js'
 import { recorderAvailable, ensureMicPermission, startRecording as recStart, stopRecording as recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning, scheduleAutoStop, consumeAutoStop } from './data/recorder.js'
@@ -25,7 +25,7 @@ const tab = ref('today')
    滑块与内容层都是 CSS transition：快速连点时 transform 直接改道新目标，从当前位置
    平滑续走——动画天然可打断，不需要锁定和「切换中」提示；bounce 用 WAAPI 重触发，
    新动画自动覆盖旧动画，同样可打断。全部前端临时状态，不接数据库。 */
-const TAB_KEYS = ['today', 'week', 'me']
+const TAB_KEYS = ['today', 'week', 'habit', 'me']
 const tabIndex = computed(() => TAB_KEYS.indexOf(tab.value))
 /* 时序编排（用户反馈：header 收缩与内容平移同时发生=斜向甩感）：
    进/出今日时 header 的收缩展开用各自的 transition-delay（模板里 per-element
@@ -456,17 +456,70 @@ function toggleHabit(id) {
   reloadHabits()
 }
 
-/* 本周 7 天的日期键（周一起始）+ 中文单字表头 */
-const habitWeek = computed(() => {
-  const now = new Date()
-  const wd = (now.getDay() + 6) % 7 // 周一=0…周日=6
-  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - wd)
+/* ---------------- 打卡页（三期：宽限期补卡） ----------------
+   与今日页那份的分工：今日页只留「今天打了没」这个高频动作（大圆圈一按），
+   管理（添加 / 删除 / 翻历史周 / 补卡）全部收在这一页，同一个动作不到处各写一遍。
+   宽限期口径见 data/store.js：只能补**本周内、今天之前**的日期，上周及更早锁定。
+   页面加载时把可补日期算成常量集合（habitToday 本身在本次会话里不变，
+   口径与今日页一致：跨午夜不热更新，刷新即最新）。 */
+const habitGrace = new Set(graceKeysOf(habitToday))
+const habitWeekBase = ref(0) // 0=本周，-1=上周…最多往回看 52 周；不允许看未来
+const habitViewDays = computed(() => {
+  const base = new Date(habitToday + 'T00:00:00')
+  const wd = (base.getDay() + 6) % 7
+  base.setDate(base.getDate() - wd + habitWeekBase.value * 7)
   const names = ['一', '二', '三', '四', '五', '六', '日']
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + i)
-    return { key: todayKeyOf(d), name: names[i], isToday: todayKeyOf(d) === habitToday }
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i)
+    const key = todayKeyOf(d)
+    return {
+      key,
+      name: names[i],
+      day: d.getDate(),
+      isToday: key === habitToday,
+      isFuture: key > habitToday, // YYYY-MM-DD 的字典序即时间序
+      canBackfill: habitGrace.has(key),
+    }
   })
 })
+const habitWeekLabel = computed(() => {
+  const days = habitViewDays.value
+  const f = (k) => { const p = k.split('-'); return Number(p[1]) + '月' + Number(p[2]) + '日' }
+  return f(days[0].key) + ' – ' + f(days[6].key)
+})
+function shiftHabitWeek(n) {
+  habitWeekBase.value = Math.min(0, Math.max(-52, habitWeekBase.value + n))
+}
+const habitTodayDone = computed(() => habits.value.filter((h) => h.records[habitToday]).length)
+/* 格子上的一次点击：今天 = 正常打卡；宽限期内 = 补卡（写留痕）；其余不响应 */
+function onHabitCell(id, key) {
+  if (key !== habitToday && !habitGrace.has(key)) return
+  toggleHabitRecord(id, key)
+  reloadHabits()
+}
+/* 格子的视觉态：done 当天打的 / back 事后补的 / today 今天（可打可取消）/
+   open 宽限期内可补 / future 还没到 / locked 已过期锁定。
+   补卡与当天打卡必须一眼可分——这是「区分显示」的落点。
+   注意 isToday 分支必须在 canBackfill 之前：宽限期集合不含今天，
+   不单独分支的话「今天」会掉进 locked，看着像锁死其实能点（首跑截图抓到）。 */
+function habitCellState(h, d) {
+  if (h.records[d.key]) return isBackfilled(h, d.key) ? 'back' : 'done'
+  if (d.isToday) return 'today'
+  if (d.isFuture) return 'future'
+  return d.canBackfill ? 'open' : 'locked'
+}
+const HABIT_CELL_CLS = {
+  done: 'bg-primary-500 text-white',
+  back: 'border border-primary-400 bg-primary-50 text-primary-500',
+  today: 'border-2 border-primary-400 text-primary-500',
+  open: 'border border-dashed border-primary-300 text-primary-500/70',
+  future: 'bg-ink/[0.04] text-ink-dim/30',
+  locked: 'bg-ink/[0.06] text-ink-dim/45',
+}
+const habitTodayText = (() => {
+  const d = new Date(habitToday + 'T00:00:00')
+  return d.getMonth() + 1 + '月' + d.getDate() + '日 周' + ['日', '一', '二', '三', '四', '五', '六'][d.getDay()]
+})()
 
 /* ---------------- 课堂录音（二期 M2，入口 C 第一步：「我的」页独立入口） ----------------
    能力口径见 data/recorder.js：只有 App 平台能录（原生插件），浏览器环境给出就地提示。
@@ -2510,22 +2563,24 @@ function gridDbl(e) {
       </div>
     </header>
 
-    <!-- 内容平移层（Day 11 二轮）：三页并排各占 1/3，translateX 跟随 tab，连点改道可打断。
+    <!-- 内容平移层（Day 11 二轮）：四页并排各占 1/4，translateX 跟随 tab，连点改道可打断。
          2026-10-01 加左右滑动手势：swipeDx 并进 translateX 跟手，swiping 时关 transform
-         过渡（拖动零延迟），松手恢复过渡播放回弹/切换动画；touch-pan-y 把横向手势让给 JS。 -->
+         过渡（拖动零延迟），松手恢复过渡播放回弹/切换动画；touch-pan-y 把横向手势让给 JS。
+         除数用 TAB_KEYS.length 而不是写死——2026-10-02 加第四页「打卡」时，
+         原来写死的 /3 让平移只走四分之三，页面错位（截图实证）。 -->
     <div
       ref="stripRef"
-      class="flex w-[300%] shrink-0 items-start overflow-y-clip touch-pan-y duration-[280ms]"
+      class="flex w-[400%] shrink-0 items-start overflow-y-clip touch-pan-y duration-[280ms]"
       style="transition-property: transform, height; transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
       :style="{
-        transform: `translateX(calc(-${(tabIndex * 100) / 3}% + ${swipeDx}px))`,
+        transform: `translateX(calc(-${(tabIndex * 100) / TAB_KEYS.length}% + ${swipeDx}px))`,
         transitionDelay: stripDelay,
         transitionProperty: swiping ? 'height' : 'transform, height',
         height: stripH ? stripH + 'px' : 'auto',
       }"
     >
     <!-- ===== 今日 ===== -->
-    <main class="w-1/3 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
+    <main class="w-1/4 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
       <!-- 课堂录音入口（M5 第 2 步）：今日页直达，不用每次绕「我的」；
            录音中整卡变红显示计时，停录后自动转写→纪要→作业转待办一路到底 -->
       <section
@@ -2726,59 +2781,29 @@ function gridDbl(e) {
         </button>
       </section>
 
-      <!-- 每日打卡（五期第 3 期 MVP）：高频每日动作跟「今天的课/待办」同住今日页；
-           打卡圆圈直接给足热区 h-11；删除走两段式确认（点 × 变「确认」，3 秒不点自动复位） -->
+      <!-- 今日打卡（三期）：今日页只留「一按即打」这个高频动作——它跟「今天的课/待办」同住一屏，
+           不用为了打个卡先切页。7 格 / 连续 / 累计 / 添加 / 删除 / 补卡都是管理动作（低频），
+           全部收在「打卡」页，同一个动作不到处各写一份。
+           打卡圆圈保留 h-11 热区；aria-label 沿用「今日打卡 / 取消今日打卡」。 -->
       <section>
         <div class="mb-2 flex items-center justify-between px-1">
-          <h2 class="text-sm font-semibold text-ink">每日打卡</h2>
+          <h2 class="text-sm font-semibold text-ink">今日打卡</h2>
           <button
+            type="button"
+            data-today-habit-more
             class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
-            @click="habitInput = !habitInput; habitName = ''"
+            @click="switchTab('habit')"
           >
-            {{ habitInput ? '收起' : '＋ 添加' }}
+            管理 ›
           </button>
         </div>
 
-        <!-- 添加行：行内输入，回车即提交 -->
-        <div v-if="habitInput" class="mb-2 flex gap-2 rounded-2xl border border-line bg-card p-3 shadow-sm">
-          <input
-            v-model="habitName"
-            type="text"
-            maxlength="20"
-            placeholder="习惯名，如：背单词"
-            enterkeyhint="done"
-            class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim/50 focus:border-primary-400"
-          />
-          <button
-            class="shrink-0 rounded-xl bg-primary-500 px-4 text-sm font-medium text-white transition active:scale-95 disabled:opacity-40"
-            :disabled="!habitName.trim()"
-            @click="addHabitConfirm"
-          >
-            确定
-          </button>
-        </div>
-
-        <!-- 习惯列表：名称 + 本周 7 格 + 连续天数 + 打卡圆圈 -->
         <div v-if="habits.length" class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
-          <div v-for="h in habits" :key="h.id" class="flex items-center gap-3 p-3.5">
+          <div v-for="h in habits" :key="h.id" :data-today-habit="h.id" class="flex items-center gap-3 p-3.5">
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm" :class="h.records[habitToday] ? 'text-ink-dim' : 'text-ink'">{{ h.name }}</p>
-              <div class="mt-1.5 flex items-center gap-1">
-                <span
-                  v-for="d in habitWeek"
-                  :key="d.key"
-                  class="flex h-4 w-4 items-center justify-center rounded-full text-[9px]"
-                  :class="[
-                    h.records[d.key] ? 'bg-primary-500 text-white' : 'bg-ink/[0.06] text-ink-dim/60',
-                    d.isToday && !h.records[d.key] ? 'ring-1 ring-primary-400' : '',
-                  ]"
-                >
-                  <svg v-if="h.records[d.key]" viewBox="0 0 10 10" class="h-2 w-2" fill="none"><path d="M2 5.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                  <template v-else>{{ d.name }}</template>
-                </span>
-              </div>
+              <p class="mt-0.5 text-[11px] text-ink-dim/70">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</p>
             </div>
-            <span class="shrink-0 text-[11px] text-ink-dim/70">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</span>
             <!-- 打卡主操作：h-11 = 44px 热区；已打卡实心勾（可点取消） -->
             <button
               type="button"
@@ -2789,20 +2814,10 @@ function gridDbl(e) {
             >
               <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </button>
-            <!-- 删除：两段式确认 -->
-            <button
-              type="button"
-              class="h-8 w-8 shrink-0 text-xs transition active:scale-90"
-              :class="habitDelId === h.id ? 'font-bold text-red-500' : 'text-ink-dim/40'"
-              :aria-label="habitDelId === h.id ? '确认删除该习惯' : '删除习惯'"
-              @click="onHabitDelete(h.id)"
-            >
-              {{ habitDelId === h.id ? '确认' : '✕' }}
-            </button>
           </div>
         </div>
         <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">
-          还没有打卡习惯，点「＋ 添加」建一个
+          还没有打卡习惯，去「打卡」页建一个
         </p>
       </section>
     </main>
@@ -2811,7 +2826,7 @@ function gridDbl(e) {
          pb-16（64px）不是随手写的：网格本来就一屏看完，底部留白只需保证「不被底部导航压住」，
          留 pb-28(112px) 会让文档比屏幕高 44px → 用户能上下滑出一片空白
          （2026-10-01 实测：390×844 下 pb-28 时 maxScroll=44）。 -->
-    <main class="w-1/3 px-4 pt-4 pb-16" :inert="tab !== 'week'">
+    <main class="w-1/4 px-4 pt-4 pb-16" :inert="tab !== 'week'">
       <!-- 周次切换 -->
       <section class="flex items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
         <button
@@ -2952,8 +2967,167 @@ function gridDbl(e) {
       </section>
     </main>
 
+    <!-- ===== 打卡页（三期「每日打卡」）=====
+         分工：今日页只留「一按即打」的高频动作，管理（添加 / 删除 / 翻历史周 / 补卡）收在这一页。
+         宽限期 = 本周内且今天之前（口径见 data/store.js）；过期/未来格子明确画成锁定态，
+         并且**不用 disabled**（那样点下去毫无反馈还挡测试），改由 onHabitCell 静默忽略。 -->
+    <main class="w-1/4 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'habit'">
+      <!-- 今日完成度 -->
+      <section class="rounded-3xl border border-line bg-card p-5 shadow-sm">
+        <div class="flex items-end justify-between">
+          <div>
+            <p class="text-xs text-ink-dim">{{ habitTodayText }}</p>
+            <p class="mt-1 text-2xl font-bold tabular-nums text-ink">
+              {{ habitTodayDone }}<span class="text-base font-semibold text-ink-dim"> / {{ habits.length }}</span>
+            </p>
+          </div>
+          <p class="pb-1 text-xs text-ink-dim">今日已打卡</p>
+        </div>
+        <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
+          <div
+            class="h-full rounded-full bg-primary-500 transition-all duration-300"
+            :style="{ width: habits.length ? (habitTodayDone / habits.length) * 100 + '%' : '0%' }"
+          />
+        </div>
+      </section>
+
+      <!-- 打卡记录：周切换 + 习惯卡片 -->
+      <section>
+        <div class="mb-2 flex items-center justify-between px-1">
+          <h2 class="text-sm font-semibold text-ink">打卡记录</h2>
+          <button
+            class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
+            @click="habitInput = !habitInput; habitName = ''"
+          >
+            {{ habitInput ? '收起' : '＋ 添加' }}
+          </button>
+        </div>
+
+        <!-- 周切换：只能往回看（未来没有记录），最多 52 周 -->
+        <div class="mb-2 flex items-center justify-between rounded-2xl border border-line bg-card px-1.5 py-1.5 shadow-sm">
+          <button
+            type="button"
+            data-habit-prev
+            class="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-ink-dim transition active:scale-90 disabled:opacity-25"
+            :disabled="habitWeekBase <= -52"
+            aria-label="看上一周"
+            @click="shiftHabitWeek(-1)"
+          >‹</button>
+          <div class="text-center">
+            <p class="text-xs font-medium text-ink tabular-nums">{{ habitWeekLabel }}</p>
+            <p class="text-[10px]" :class="habitWeekBase === 0 ? 'text-primary-500' : 'text-ink-dim/70'">
+              {{ habitWeekBase === 0 ? '本周 · 漏卡可补' : (habitWeekBase === -1 ? '上周' : -habitWeekBase + ' 周前') + ' · 已锁定' }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-habit-next
+            class="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-ink-dim transition active:scale-90 disabled:opacity-25"
+            :disabled="habitWeekBase >= 0"
+            aria-label="看下一周"
+            @click="shiftHabitWeek(1)"
+          >›</button>
+        </div>
+
+        <!-- 添加行：行内输入，回车即提交 -->
+        <div v-if="habitInput" class="mb-2 flex gap-2 rounded-2xl border border-line bg-card p-3 shadow-sm">
+          <input
+            v-model="habitName"
+            type="text"
+            maxlength="20"
+            placeholder="习惯名，如：背单词"
+            enterkeyhint="done"
+            class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim/50 focus:border-primary-400"
+            @keyup.enter="addHabitConfirm"
+          />
+          <button
+            class="shrink-0 rounded-xl bg-primary-500 px-4 text-sm font-medium text-white transition active:scale-95 disabled:opacity-40"
+            :disabled="!habitName.trim()"
+            @click="addHabitConfirm"
+          >
+            确定
+          </button>
+        </div>
+
+        <!-- 习惯卡片：名称 + 连续/累计 + 本周格（可补）+ 今日圆圈 + 删除 -->
+        <div v-if="habits.length" class="space-y-2">
+          <div
+            v-for="h in habits"
+            :key="h.id"
+            :data-habit-row="h.id"
+            class="rounded-2xl border border-line bg-card p-3.5 shadow-sm"
+          >
+            <div class="flex items-center gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm" :class="h.records[habitToday] ? 'text-ink-dim' : 'text-ink'">{{ h.name }}</p>
+                <p class="mt-0.5 text-[11px] text-ink-dim">
+                  <span :data-habit-streak="h.id">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</span>
+                  <span class="mx-1 text-ink-dim/40">·</span>
+                  <span :data-habit-total="h.id">共 {{ totalDoneOf(h) }} 天</span>
+                </p>
+              </div>
+              <!-- 今日打卡主操作：h-11 = 44px 热区；已打卡实心勾（可点取消） -->
+              <button
+                type="button"
+                :data-habit-today="h.id"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-90"
+                :class="h.records[habitToday] ? 'bg-primary-500 text-white' : 'border-2 border-ink-dim/30 text-ink-dim/40'"
+                :aria-label="h.records[habitToday] ? '取消今日打卡' : '今日打卡'"
+                @click="toggleHabit(h.id)"
+              >
+                <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </button>
+              <!-- 删除：两段式确认 -->
+              <button
+                type="button"
+                class="h-8 w-8 shrink-0 text-xs transition active:scale-90"
+                :class="habitDelId === h.id ? 'font-bold text-red-500' : 'text-ink-dim/40'"
+                :aria-label="habitDelId === h.id ? '确认删除该习惯' : '删除习惯'"
+                @click="onHabitDelete(h.id)"
+              >
+                {{ habitDelId === h.id ? '确认' : '✕' }}
+              </button>
+            </div>
+
+            <!-- 本周 7 格：实心=当天打的 · 空心勾=事后补的 · 虚线圈=宽限期内可补 · 淡=锁定/未来 -->
+            <div class="mt-3 grid grid-cols-7 gap-1">
+              <button
+                v-for="d in habitViewDays"
+                :key="d.key"
+                type="button"
+                :data-habit-cell="h.id + '@' + d.key"
+                :data-cell-state="habitCellState(h, d)"
+                class="flex flex-col items-center gap-1 rounded-xl py-1.5 transition active:scale-95"
+                @click="onHabitCell(h.id, d.key)"
+              >
+                <span class="text-[10px] leading-none" :class="d.isToday ? 'font-semibold text-primary-500' : 'text-ink-dim/70'">{{ d.name }}</span>
+                <span
+                  class="flex h-6 w-6 items-center justify-center rounded-full text-[10px] tabular-nums"
+                  :class="HABIT_CELL_CLS[habitCellState(h, d)]"
+                >
+                  <svg v-if="h.records[d.key]" viewBox="0 0 10 10" class="h-2.5 w-2.5" fill="none"><path d="M2 5.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  <template v-else>{{ d.day }}</template>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 图例：补卡是这一轮新增的视觉态，不解释一下没人看得懂 -->
+          <p class="px-1 pt-1 text-[11px] leading-relaxed text-ink-dim/80">
+            <span class="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-primary-500 align-[-1px]" />当天打卡
+            <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-primary-400 bg-primary-50 align-[-1px]" />事后补卡
+            <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-dashed border-primary-300 align-[-1px]" />可补
+            <span class="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-ink/[0.06] align-[-1px]" />已锁定
+          </p>
+        </div>
+        <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">
+          还没有打卡习惯，点「＋ 添加」建一个
+        </p>
+      </section>
+    </main>
+
     <!-- ===== 我的 ===== -->
-    <main class="w-1/3 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'me'">
+    <main class="w-1/4 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'me'">
       <section class="flex items-center gap-4 rounded-3xl border border-line bg-card p-5 shadow-sm">
         <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 text-xl font-bold text-white shadow-md shadow-primary-500/25">
           示
@@ -3424,12 +3598,12 @@ function gridDbl(e) {
       class="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card/85 backdrop-blur-lg"
       style="padding-bottom: env(safe-area-inset-bottom)"
     >
-      <div class="relative mx-auto grid max-w-md grid-cols-3 px-6 py-1">
-        <!-- 滑块：一个药丸在三个槽位间连续滑动，连点时 transition 自动改道（可打断） -->
+      <div class="relative mx-auto grid max-w-md grid-cols-4 px-6 py-1">
+        <!-- 滑块：一个药丸在四个槽位间连续滑动，连点时 transition 自动改道（可打断） -->
         <div class="pointer-events-none absolute inset-0 overflow-hidden">
           <div class="absolute inset-y-0 left-6 right-6">
             <div
-              class="flex h-full w-1/3 justify-center transition-transform duration-300"
+              class="flex h-full w-1/4 justify-center transition-transform duration-300"
               style="transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
               :style="{ transform: `translateX(${tabIndex * 100}%)` }"
             >
@@ -3443,6 +3617,7 @@ function gridDbl(e) {
           v-for="t in [
             { key: 'today', label: '今日', icon: 'M8 3a5 5 0 100 10A5 5 0 008 3zM8 1v2M8 13v2M1 8h2M13 8h2' },
             { key: 'week', label: '周课表', icon: 'M2 4h12v11H2zM2 7h12M5.5 2v3M10.5 2v3' },
+            { key: 'habit', label: '打卡', icon: 'M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM5.4 8.3l1.8 1.8 3.6-4' },
             { key: 'me', label: '我的', icon: 'M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4' },
           ]"
           :key="t.key"

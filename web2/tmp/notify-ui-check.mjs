@@ -71,7 +71,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   t('A4 按示例课表排了程（>10 条）', n.scheduled.length > 10)
   t('A5 每条都带渠道 + actionTypeId + 本应用标记', n.scheduled.every((x) => x.channelId === 'class-reminder' && x.actionTypeId === 'class-reminder' && x.extra && x.extra.src === 'web2-m5'))
   t('A6 排程时刻都是未来', n.scheduled.every((x) => new Date(x.schedule.at).getTime() > Date.now() - 60000))
-  await page.click('nav button >> nth=2') // 我的
+  await page.locator('nav button', { hasText: '我的' }).click() // 2026-10-02 加第 4 个 tab 后序号会变，按文案选
   await page.waitForTimeout(400)
   t('A7 设置区出现「课前提醒」且开关为开', (await page.locator('button[aria-label="课前提醒开关"]').count()) === 1)
   const verText = (await page.locator('text=/^v\\d+\\.\\d+$/').first().innerText()).trim()
@@ -110,11 +110,11 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
     cb({ actionId: 'START_REC', notification: { extra: {} } })
   })
   await page.waitForTimeout(800)
-  t('E1 点「开始录音」action 后直接进入录音态', await page.locator('main').nth(2).locator('button:has-text("停止并保存")').isVisible())
+  t('E1 点「开始录音」action 后直接进入录音态', await page.locator('main').nth(3).locator('button:has-text("停止并保存")').isVisible())
   t('E2 录音条出现（在「我的」页可见）', (await page.locator('text=录音中 · 锁屏也会继续录').count()) > 0)
 
   /* ---------- F：点通知本体（tap）→ 只定位不开录 ---------- */
-  await page.locator('main').nth(2).locator('button:has-text("停止并保存")').click() // 先停（限定「我的」页：今日页也有同名按钮）
+  await page.locator('main').nth(3).locator('button:has-text("停止并保存")').click() // 先停（限定「我的」页：今日页也有同名按钮）
   await page.waitForTimeout(500)
   await page.evaluate(() => {
     const cb = window.__notify.listeners[window.__notify.listeners.length - 1]
@@ -148,7 +148,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   const errs = []
   page.on('pageerror', (e) => errs.push(String(e)))
   await page.goto(URL, { waitUntil: 'load' })
-  await page.click('nav button >> nth=2')
+  await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(400)
   t('H1 无桥时开关不渲染（能力不可用）', (await page.locator('button[aria-label="课前提醒开关"]').count()) === 0)
   t('H2 副文案说明仅 App 生效', (await page.locator('text=通知能力仅 App 内生效').count()) > 0)

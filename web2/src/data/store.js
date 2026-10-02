@@ -947,30 +947,44 @@ export function removeLecture(id) {
   return true
 }
 
-/* ---------- 每日打卡习惯（五期第 3 期 MVP）----------
-   口径：习惯 = { id, name, created_at, records: {"YYYY-MM-DD": true} }。
+/* ---------- 每日打卡习惯（五期第 3 期）----------
+   口径：习惯 = { id, name, created_at, records: {"YYYY-MM-DD": true}, backfilled: {"YYYY-MM-DD": true} }。
    records 按日期稀疏记录（只存打过的卡），天然支持连续天数/周热力统计；
    值恒为 true——「没打卡」= 键不存在，不做 false 存量（取消 = 删键）。
+   backfilled 单独记「事后补的卡」：只有宽限期口径（本周内、今天之前）允许，
+   且不覆盖 records——两者分开存而不是把 records 的值改成枚举，是为了让
+   老数据（records 值恒 true、无 backfilled）零迁移继续可用；
+   导出多一个字段，主项目 importAll 读到未知字段安全忽略。
    存储：独立键 web2.habits 作为单一活源（同 lectures 理由：打卡是设备本地
-   的生命记录）；导出时合并进 JSON 的 habits 字段随文件走，主项目 importAll
-   读到未知字段安全忽略。schema_version 不升（口径同 lectures）。 */
+   的生命记录）；导出时合并进 JSON 的 habits 字段随文件走。
+   schema_version 不升（口径同 lectures）。 */
 export const HABITS_KEY = 'web2.habits'
 
-/* 单条习惯整形：name 必须非空，records 只收「YYYY-MM-DD」形键，坏数据剔除 */
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/* 只留「YYYY-MM-DD」形且值为真的键（records 与 backfilled 共用） */
+function pickDateKeys(src) {
+  const out = {}
+  if (src && typeof src === 'object') {
+    for (const k of Object.keys(src)) if (DATE_KEY_RE.test(k) && src[k]) out[k] = true
+  }
+  return out
+}
+
+/* 单条习惯整形：name 必须非空，records/backfilled 只收合法日期键，坏数据剔除 */
 function sanitizeHabit(h) {
   if (!h || typeof h !== 'object') return null
   const name = String(h.name || '').trim()
   if (!name) return null
-  const records = {}
-  if (h.records && typeof h.records === 'object') {
-    for (const k of Object.keys(h.records)) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(k) && h.records[k]) records[k] = true
-    }
-  }
+  const records = pickDateKeys(h.records)
+  const backfilled = pickDateKeys(h.backfilled)
+  /* 一致性地板：backfilled 里的键必须在 records 里也在（records 才是唯一真实来源） */
+  for (const k of Object.keys(backfilled)) if (!records[k]) delete backfilled[k]
   return {
     id: String(h.id || ''),
     name,
     records,
+    backfilled,
     created_at: String(h.created_at || ''),
   }
 }
@@ -1019,19 +1033,25 @@ export function removeHabit(id) {
   return true
 }
 
-/* 打卡/取消：今天（dateKey 形如 2026-09-27，默认今天）已打卡则删键取消，否则置 true。
-   返回该习惯打卡后的最新状态（true=已打）。 */
+/* 打卡/取消：overviewDateKey 形如 2026-09-27（默认今天）。已打卡则删键取消，否则置 true。
+   ——比今天早的日期走「补卡」：写 records 之外再记一笔 backfilled（界面据此画空心勾）。
+   越界守卫：只允许「今天」或「宽限期内的过去日期」（见 isGraceKey），其余返回 null 不写盘——
+   界面本来也只渲染可点的格子，这道守卫是防调用方写脏数据。 */
 export function toggleHabitRecord(id, dateKey) {
-  const key = dateKey || todayKeyOf()
+  const today = todayKeyOf()
+  const key = dateKey || today
+  if (key !== today && !isGraceKey(key, today)) return null
   const list = loadHabits()
   const h = list.find((x) => x.id === id)
   if (!h) return null
   let done
   if (h.records[key]) {
     delete h.records[key]
+    delete h.backfilled[key]
     done = false
   } else {
     h.records[key] = true
+    if (key !== today) h.backfilled[key] = true
     done = true
   }
   saveHabits(list)
@@ -1043,6 +1063,50 @@ export function todayKeyOf(now) {
   const d = now || new Date()
   const p = (n) => String(n).padStart(2, '0')
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+}
+
+/* ---------- 宽限期（三期「宽限期漏卡」）----------
+   口径（用户拍板）：只能补**本周内**（周一起始）且**今天之前**的卡；上周及更早锁定。
+   跨周/跨月的日期一律先转成 Date 再用日期算术，避免手写字符串拼接踩月末。 */
+function dateOfKey(key) {
+  return new Date(key + 'T00:00:00')
+}
+
+/* 某个日期键所在周的周一（isoKey 同周制：周一=本周第 1 天） */
+export function weekMondayKeyOf(dateKey) {
+  const d = dateOfKey(dateKey)
+  const wd = (d.getDay() + 6) % 7 // 周一=0…周日=6
+  d.setDate(d.getDate() - wd)
+  return todayKeyOf(d)
+}
+
+/* 宽限期内可补的日期键数组：本周一 → 昨天（含），今天的卡走正常打卡不算补。
+   今天就是周一时返回空数组（本周还没有可补的过去日期）。 */
+export function graceKeysOf(todayKey) {
+  const today = todayKey || todayKeyOf()
+  const keys = []
+  const cursor = dateOfKey(weekMondayKeyOf(today))
+  const end = dateOfKey(today)
+  while (cursor < end) {
+    keys.push(todayKeyOf(cursor))
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return keys
+}
+
+/* 某日期是否落在宽限期内（不含今天——今天是正常打卡，不是补卡） */
+export function isGraceKey(dateKey, todayKey) {
+  return graceKeysOf(todayKey).includes(dateKey)
+}
+
+/* 该习惯是否「这天是事后补的」 */
+export function isBackfilled(habit, dateKey) {
+  return !!(habit && habit.backfilled && habit.backfilled[dateKey])
+}
+
+/* 累计打卡天数（补的卡也算——它是真打过的，只是补记） */
+export function totalDoneOf(habit) {
+  return habit && habit.records ? Object.keys(habit.records).length : 0
 }
 
 /* 连续打卡天数（含今天或昨天起算：今天还没打时，从昨天往回数不断链） */

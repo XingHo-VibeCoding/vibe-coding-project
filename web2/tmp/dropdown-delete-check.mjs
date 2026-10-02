@@ -26,7 +26,7 @@ try {
   await page.addInitScript(seed)
   await page.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
-  await page.locator('nav button').nth(2).click() // 我的
+  await page.locator('nav button', { hasText: '我的' }).click() // 2026-10-02 加第 4 个 tab 后序号会变，按文案选
   await page.waitForTimeout(400)
 
   const row = page.locator('li', { hasText: '长按删除我' })
