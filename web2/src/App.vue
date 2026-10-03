@@ -4588,17 +4588,18 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
       >{{ frameToast }}</div>
     </Transition>
 
-    <!-- 录音中常驻小条（v1.41.1）：录音卡在今日页最底部，开了录却看不到状态等于没反馈 -->
+    <!-- 录音中常驻小条（v1.41.1）：录音卡在今日页最底部，开了录却看不到状态等于没反馈。
+         放在底部导航正上方（像迷你播放条），不要压顶部——今日页顶部第一行就是日期与问候。 -->
     <Transition name="fade">
       <button
         v-if="recActiveId"
         data-rec-banner
-        class="fixed left-1/2 top-3 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full bg-red-500/95 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg"
+        class="fixed bottom-20 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-red-500/95 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg"
         @click="switchTab('me')"
       >
         <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-white"></span>
         录音中 {{ fmtDur(recElapsed * 1000) }}
-        <span class="font-normal opacity-80">· 点这里去停</span>
+        <span class="font-normal opacity-80">· 去停</span>
       </button>
     </Transition>
 
