@@ -429,6 +429,32 @@ function setFrameMsg(t, bad = false) {
   frameMsg.value = t
   frameMsgBad.value = !!bad
 }
+/* 通知栏按钮按下后，App 这边必须**当场看得见**：
+   设置里那行 frameMsg 藏在「我的」页的折叠里，等于没有反馈——
+   真机第一次验收的教训（按了「开始录音」只跳回今日页、按了「我去听了」什么也没发生）。
+   所以按钮动作一律再播一条浮在最上层的轻提示。 */
+const frameToast = ref('')
+let frameToastTimer = null
+function showFrameToast(text) {
+  if (!text) return
+  frameToast.value = text
+  clearTimeout(frameToastTimer)
+  frameToastTimer = setTimeout(() => { frameToast.value = '' }, 4200)
+}
+/* 领动作的时机：冷启动 / 从后台回前台 / 窗口重新聚焦，外加兜底轮询。
+   为什么不能只靠 visibilitychange：**下拉通知栏不会让 WebView 失焦**——
+   用户最常见的手势（拉下通知栏点按钮）恰好一个事件都不触发，
+   于是原生那边已经记账、App 这边却一直没领（真机验收的第二个现象）。 */
+let frameDrainTimer = null
+function startFrameDrainLoop() {
+  if (frameDrainTimer) return
+  frameDrainTimer = setInterval(() => {
+    if (document.visibilityState === 'visible' && frameIsApp.value) drainFrameActions()
+  }, 6000)
+}
+function stopFrameDrainLoop() {
+  if (frameDrainTimer) { clearInterval(frameDrainTimer); frameDrainTimer = null }
+}
 /* 今天剩余安排压成状态框要的形状：课程/循环日程/独立日程统一成 kind c/r/e */
 function frameTodayItems() {
   return todayCourses.value.map((c) => ({
@@ -481,8 +507,16 @@ function applyFrameActions(list) {
     const type = a && a.type
     const id = a && a.id
     if (type === 'startRec') {
-      startRec()
       touched = true
+      if (recActiveId.value) { showFrameToast('已经在录音了'); continue }
+      showFrameToast('收到「开始录音」，正在开录…')
+      /* startRec 失败时只把原因写进 recMsg，而那张录音卡在今日页最底部、「我的」页才第一屏——
+         通知栏进来的人多半正看着今日页顶部，所以这里必须把原因再播一遍，不能悄悄失败。 */
+      const p = startRec()
+      Promise.resolve(p).then(() => {
+        if (recActiveId.value) showFrameToast('已开始录音 · 到「我的」页可以停止')
+        else if (recMsg.value) showFrameToast('没能开始录音：' + recMsg.value)
+      })
       continue
     }
     if (type === 'classDone') {
@@ -493,6 +527,7 @@ function applyFrameActions(list) {
         if (lec && lec.schedule_id === id) stopRec()
       }
       setFrameMsg('已记下：这节上完了')
+      showFrameToast('已记下：这节上完了')
       touched = true
     }
     if (type === 'listenDone') {
@@ -500,6 +535,7 @@ function applyFrameActions(list) {
       frameMarkListenDone(id)
       const c = listenClips.value.find((x) => x.id === id)
       setFrameMsg(`已记下「我去听了」：今天不再提醒${c ? '「' + c.name + '」' : ''}`)
+      showFrameToast(`已记下「我去听了」${c ? '：' + c.name : ''} · 今天不再提醒它`)
       touched = true
     }
   }
@@ -517,6 +553,7 @@ async function initFrame() {
   const r = await frameRunning()
   if (r.ok && !r.running && frameSettings.value.enabled) setFrameMsg('状态框没能常驻（系统可能限制了后台运行），下拉通知栏看得到吗？', true)
   await drainFrameActions()
+  startFrameDrainLoop()
 }
 async function toggleFrame() {
   const next = saveFrameSettings({ enabled: !frameSettings.value.enabled })
@@ -534,7 +571,19 @@ function onFrameVisible() {
   pushFrameNow()
 }
 document.addEventListener('visibilitychange', onFrameVisible)
-onBeforeUnmount(() => document.removeEventListener('visibilitychange', onFrameVisible))
+/* 窗口重新聚焦也领一次（桌面/平板的多任务切换不走 visibilitychange） */
+window.addEventListener('focus', onFrameVisible)
+/* App 插件的前后台事件是最可靠的一道（真机拉下通知栏点按钮时上面那些可能一个都不响） */
+if (APP_PLUGIN && APP_PLUGIN.addListener) {
+  try { APP_PLUGIN.addListener('appStateChange', (s) => { if (!s || s.isActive !== false) onFrameVisible() }) } catch (_) {}
+  try { APP_PLUGIN.addListener('resume', onFrameVisible) } catch (_) {}
+}
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onFrameVisible)
+  window.removeEventListener('focus', onFrameVisible)
+  stopFrameDrainLoop()
+  clearTimeout(frameToastTimer)
+})
 
 /* ---------------- 初始设定引导页（差距⑦） ----------------
    首次打开（没有导入数据、也没做过选择）出现，二选一：
@@ -4528,6 +4577,29 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         v-if="backHint"
         class="fixed bottom-20 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-black/75 px-4 py-2 text-xs font-medium text-white shadow-lg"
       >{{ backHint }}</div>
+    </Transition>
+
+    <!-- 通知栏状态框的按钮动作回执（v1.41.1：按了按钮必须当场看得见，别只跳回今日页） -->
+    <Transition name="fade">
+      <div
+        v-if="frameToast"
+        data-frame-toast
+        class="fixed bottom-32 left-1/2 z-[60] w-[86%] max-w-sm -translate-x-1/2 rounded-2xl bg-black/80 px-4 py-3 text-center text-xs font-medium leading-relaxed text-white shadow-lg"
+      >{{ frameToast }}</div>
+    </Transition>
+
+    <!-- 录音中常驻小条（v1.41.1）：录音卡在今日页最底部，开了录却看不到状态等于没反馈 -->
+    <Transition name="fade">
+      <button
+        v-if="recActiveId"
+        data-rec-banner
+        class="fixed left-1/2 top-3 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full bg-red-500/95 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg"
+        @click="switchTab('me')"
+      >
+        <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-white"></span>
+        录音中 {{ fmtDur(recElapsed * 1000) }}
+        <span class="font-normal opacity-80">· 点这里去停</span>
+      </button>
     </Transition>
 
     <!-- 底部导航：app 感的核心 -->

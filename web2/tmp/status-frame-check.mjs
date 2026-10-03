@@ -139,10 +139,21 @@ await page.addInitScript((today) => {
       ])
     )
   }
-  window.__frame = { pushes: [], enabled: [], running: false, queue: [], listeners: [] }
+  window.__frame = { pushes: [], enabled: [], running: false, queue: [], listeners: [], cbs: {} }
   window.Capacitor = {
     isNativePlatform: () => true,
     Plugins: {
+      /* 录音桥：真机验过的坑要在这里守住 —— 按了通知栏「开始录音」必须真的开录（而不是只跳回今日页） */
+      VoiceRecorder: {
+        canDeviceVoiceRecord: async () => ({ value: true }),
+        hasAudioRecordingPermission: async () => ({ value: true }),
+        requestAudioRecordingPermission: async () => ({ value: true }),
+        startRecording: async () => {
+          window.__frame.recStarted = (window.__frame.recStarted || 0) + 1
+          return { value: true }
+        },
+        stopRecording: async () => ({ value: { path: 'lectures/rec_frame.aac', mimeType: 'audio/aac', msDuration: 60000 } }),
+      },
       StatusFrame: {
         pushSnapshot: async (o) => {
           window.__frame.pushes.push(o && o.json)
@@ -161,10 +172,16 @@ await page.addInitScript((today) => {
         },
         addListener: async (ev, cb) => {
           window.__frame.listeners.push(ev)
+          window.__frame.cbs[ev] = cb
           return { remove: async () => {} }
         },
       },
     },
+  }
+  /* 模拟原生侧 notifyListeners('frameActions', {actions:[...]})：需要 cb 才做得到 */
+  window.__frame.fire = (payload) => {
+    const cb = window.__frame.cbs.frameActions
+    if (cb) cb({ actions: [payload] })
   }
 }, dkey())
 
@@ -231,6 +248,38 @@ await plainPage.locator('[data-settings-toggle]').click()
 await plainPage.waitForTimeout(300)
 t('B18. 没有原生桥时设置里不出现这一行（网页版零变化）', (await plainPage.locator('[data-frame-row]').count()) === 0)
 t('B19. 没有原生桥时不报错（降级静默）', plainErrors.length === 0, plainErrors.join(' | '))
+
+/* ===== C. 真机验收反馈的回归（v1.41.1）=====
+   用户 m08994 在真机上遇到两件事：
+     ① 点通知栏「开始录音」只跳回今日页，看不到任何反馈（录音卡在今日页最底部，
+        失败原因又只写进「我的」页里那行 frameMsg）；
+     ② 点「我去听了」按钮消失了但 App 没反应 —— 下拉通知栏**不会**触发 visibilitychange，
+        网页一直没领走原生已经记下的动作。
+   这一段就是守这两条：动作到达必须有可见回执、没有事件也必须能领走。 */
+
+/* C1–C4：按「开始录音」（App 在跑 → 走 frameActions 监听那条） */
+await page.evaluate(() => window.__frame.fire({ type: 'startRec' }))
+await page.waitForTimeout(600)
+t('C1. 按「开始录音」当场有可见回执（不再只是跳回今日页）', (await page.locator('[data-frame-toast]').count()) === 1, await page.locator('[data-frame-toast]').innerText().catch(() => '(无)'))
+t('C2. 真的调了原生录音（不是只跳到今日页）', (await page.evaluate(() => window.__frame.recStarted)) === 1, String(await page.evaluate(() => window.__frame.recStarted)))
+t('C3. 录音中页面顶部出现常驻「录音中」小条', (await page.locator('[data-rec-banner]').count()) === 1, await page.locator('[data-rec-banner]').innerText().catch(() => '(无)'))
+await page.locator('[data-rec-banner]').click()
+await page.waitForTimeout(500)
+t('C4. 点小条跳到「我的」页（那里才有停止并保存）', (await page.evaluate(() => document.querySelectorAll('nav button')[2].textContent)).includes('我的') && (await page.locator('text=停止并保存').count()) >= 1, await page.evaluate(() => document.querySelectorAll('nav button')[2].className))
+
+/* C5–C6：另两枚按钮的回执 */
+await page.evaluate(() => window.__frame.fire({ type: 'classDone', id: 'c_x' }))
+await page.waitForTimeout(300)
+t('C5. 「这节上完了」有可见回执', (await page.locator('[data-frame-toast]').innerText().catch(() => '')).includes('上完了'), await page.locator('[data-frame-toast]').innerText().catch(() => '(无)'))
+await page.evaluate(() => window.__frame.fire({ type: 'listenDone', id: 'lis_x' }))
+await page.waitForTimeout(300)
+t('C6. 「我去听了」有可见回执', (await page.locator('[data-frame-toast]').innerText().catch(() => '')).includes('我去听了'), await page.locator('[data-frame-toast]').innerText().catch(() => '(无)'))
+
+/* C7：真机第二个 bug 的回归 —— 一个事件都不派，光靠前台兜底轮询也得领走 */
+await page.evaluate(() => { window.__frame.queue.push({ type: 'listenDone', id: 'lis_auto' }) })
+await page.waitForTimeout(7500)
+const marksAuto = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.frame.marks') || '{}'))
+t('C7. 派发任何事件也能领走原生动作（下拉通知栏不触发 visibilitychange）', Array.isArray(marksAuto.listenDone) && marksAuto.listenDone.includes('lis_auto'), JSON.stringify(marksAuto.listenDone))
 
 t('B20. 全程无报错', errors.length === 0, errors.join(' | '))
 
