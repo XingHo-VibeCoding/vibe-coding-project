@@ -16,6 +16,7 @@ import NumberWheel from './components/NumberWheel.vue'
 import TimeWheel from './components/TimeWheel.vue'
 import DropdownSelect from './components/DropdownSelect.vue'
 import PeriodsEditor from './components/PeriodsEditor.vue'
+import BottomSheet from './components/BottomSheet.vue'
 
 /* 版本串不再手写：由 vite.config.js 从 package.json 的 version 注入（单一来源）。
    改版本号只改 web2/package.json 一处，App 打包脚本读的是同一个文件。 */
@@ -27,8 +28,10 @@ const tab = ref('today')
    滑块与内容层都是 CSS transition：快速连点时 transform 直接改道新目标，从当前位置
    平滑续走——动画天然可打断，不需要锁定和「切换中」提示；bounce 用 WAAPI 重触发，
    新动画自动覆盖旧动画，同样可打断。全部前端临时状态，不接数据库。 */
-const TAB_KEYS = ['today', 'week', 'list', 'habit', 'me']
+const TAB_KEYS = ['today', 'week', 'me']
 const tabIndex = computed(() => TAB_KEYS.indexOf(tab.value))
+const weekSub = ref('week') // 课表页内「周课表 / 日程清单」分段（2026-10-03 方案 C Step 1：日程页并入）
+const habitSheet = ref(false) // 打卡浮层（原「打卡」tab 改底部浮层，2026-10-03）
 /* 时序编排（用户反馈：header 收缩与内容平移同时发生=斜向甩感）：
    进/出今日时 header 的收缩展开用各自的 transition-delay（模板里 per-element
    `tab==='today' ? '110ms' : '0ms'`）与平移错开，每段运动单方向，折线代替斜线。
@@ -47,7 +50,7 @@ function switchTab(key) {
   // 就会撞上：我的页在视口外，用户看到的是空白）。瞬时版不受节流影响。
   window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
   // 周课表锁死文档滚动（页面一屏看完，锁掉任何残余晃动）；切走即恢复。
-  document.body.style.overflow = key === 'week' ? 'hidden' : ''
+  syncBodyScrollLock()
   // 头部收缩动画（280ms）会改变网格顶的位置，动画结束后重校网格高度
   setTimeout(measureGridTop, 320)
   const svg = document.querySelectorAll('nav button svg')[TAB_KEYS.indexOf(key)]
@@ -55,6 +58,14 @@ function switchTab(key) {
     [{ transform: 'scale(1)' }, { transform: 'scale(1.28)', offset: 0.4 }, { transform: 'scale(1)' }],
     { duration: 300, easing: 'ease' }
   )
+}
+
+/* 课表页子视图切换（2026-10-03 方案 C Step 1）：只有「周课表」子视图要锁文档滚动，
+   日程清单是要上下滚的，所以切换时重算一遍 body overflow 与网格顶。 */
+function setWeekSub(v) {
+  weekSub.value = v
+  syncBodyScrollLock()
+  setTimeout(measureGridTop, 320)
 }
 
 /* ---------------- 页高自适应 ----------------
@@ -166,7 +177,7 @@ onMounted(() => {
   }
   // 周课表页锁死文档滚动：页面内容一屏看完，任何残余溢出/WebView 拖拽都表现为「晃动」
   // （v1.32.2 真机仍有轻微晃动）。锁的是 body overflow，切回今日/我的自动恢复滚动。
-  document.body.style.overflow = tab.value === 'week' ? 'hidden' : ''
+  syncBodyScrollLock()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onWinResize)
@@ -187,6 +198,7 @@ const APP_PLUGIN =
   (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) || null
 const backHint = ref('') // 「再按一次返回键退出」提示条（v1.17）
 function closeTopmostLayer() {
+  if (habitSheet.value) { habitSheet.value = false; return true } // 打卡浮层最外层（2026-10-03 方案 C）
   if (picker.value) { picker.value = null; return true }
   if (confirmClear.value) { confirmClear.value = false; return true }
   if (delLecId.value) { delLecId.value = null; return true }
@@ -198,6 +210,11 @@ function closeTopmostLayer() {
   if (addForm.value) { addForm.value = null; return true }
   if (todoForm.value) { todoForm.value = null; return true }
   if (evtForm.value) { evtForm.value = null; return true }
+  // 2026-10-03 方案 C Step 5：二级层一路往回收（练耳设置面板 → 设置折叠 → 课表子视图）
+  // 注意：练耳设置/设置折叠是「我的」页里的就地展开块，切走后看不见——不可见的状态绝不能吞掉返回键
+  if (tab.value === 'me' && listenSettingsOpen.value) { listenSettingsOpen.value = false; return true }
+  if (tab.value === 'me' && settingsOpen.value) { settingsOpen.value = false; return true }
+  if (tab.value === 'week' && weekSub.value === 'list') { setWeekSub('week'); return true }
   return false
 }
 let lastBackTs = 0 // 上次「退出预备」按返回的时间戳（2 秒内再按才真退）
@@ -933,6 +950,8 @@ const listenSuggestions = computed(() => {
 
 /* 今日到期的音频（含"今天刚导入"的第一段）——用于"今天在等听的 N 段"提示 */
 const listenDue = computed(() => dueClips(listenClips.value, todayKey()))
+/* 今天页「今天要听」是否展开到全部（默认只排前 2 段，超过给「还有 N 段」，方案 C Step 3） */
+const listenTodayAll = ref(false)
 
 /* 列表里每条显示「已听 N 次 · 下次复习 X」 */function listenStageLabel(c) {
   const stage = Math.max(0, Number(c.review_stage) || 0)
@@ -2370,6 +2389,21 @@ const headerCourseText = computed(() => {
   return '今日安排已结束'
 })
 
+/* 「接下来」的那一条（2026-10-03 方案 C Step 2）：正在进行的那节优先，否则最近的下一节。
+   都没有（今天的安排全结束 / 今天没课）返回空串——今天页就不给某条打强调。 */
+const nextTodayId = computed(() => {
+  const list = todayCourses.value
+  const now = list.find((c) => courseStatus(c) === 'now')
+  if (now) return now.id
+  const next = list.find((c) => courseStatus(c) === 'future')
+  return next ? next.id : ''
+})
+/* 距某条安排开始还有几分钟（只对未来的条目有意义；用 nowTime 而不是 new Date()，
+   ?t= 时间后门冻结时倒计时也跟着冻结，测试可断言） */
+function minUntil(c) {
+  return minOf(c.start) - nowTime.value
+}
+
 const dateText = `${today.getMonth() + 1} 月 ${today.getDate()} 日`
 const weekDay = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][today.getDay()]
 
@@ -2597,16 +2631,22 @@ function openDetail(c) {
 }
 const WDN = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
-/* ---------------- 日程清单页（三期「日程分类视图」，2026-10-02） ----------------
+/* ---------------- 其他日程页（三期「日程分类视图」，2026-10-02；2026-10-03 大减法） ----------------
    存在理由见模板顶部注释：独立日程此前没有集中入口。
    数据全部来自已就绪的 ref（weekAll / events / routines / todos），不新增任何存储。
    减法（2026-10-02）：筛选 chips / listFilter / listCounts 整组移除。
    分组标题自带数量（「待办 · 3」），chips 提供的计数是重复信息；
-   而 chips 的代价是每次进页都要先做一次「我该选哪个」的判断——这正是不无感。 */
+   而 chips 的代价是每次进页都要先做一次「我该选哪个」的判断——这正是不无感。
 
-const listTotalCount = computed(
-  () => weekAll.value.length + events.value.length + routines.value.length + todos.value.length
-)
+   减法（2026-10-03，方案 C Step 1 并入课表页后）：**课程与循环日程两组从清单里删掉。**
+   它们本来就按「星期 × 节次」整整齐齐画在同一个页面签的周课表网格里，列在这里等于同一份
+   数据说两遍（示例数据一进去 20 项里 16 项是课程）。清单只留**课表放不下的两类**：
+   独立日程（单次日期的事）与待办（任务，不固定占某段时间）。
+   不再列出的固定安排用一行「去周课表」的提示兜住，免得用户以为它们消失了。 */
+
+const listTotalCount = computed(() => events.value.length + todos.value.length)
+/* 被清单省略、但在周课表里看得到的固定安排数（课程 + 循环日程），给提示行用 */
+const listFixedCount = computed(() => weekAll.value.length + routines.value.length)
 
 /* 绝对日期：清单是总览，不跟今日页用「今天 / 明天」那种相对文案 */
 function listDateLabel(d) {
@@ -2614,21 +2654,15 @@ function listDateLabel(d) {
   return m ? Number(m[2]) + '月' + Number(m[3]) + '日' : ''
 }
 
-/* 分组：课程 / 独立日程 / 循环日程 / 待办。
-   排序口径——课程与循环按「星期 → 起始时间」（它们本来就按周重复），
-   独立日程按「日期 → 起始时间」，待办按「未完成优先 → 截止日期」。
+/* 分组：独立日程 / 待办（课程与循环日程已从清单删除，理由见上方注释）。
+   排序口径——独立日程按「日期 → 起始时间」，待办按「未完成优先 → 截止日期」。
    空组不输出（没有内容的组连标题都不出现）。 */
 const listGroups = computed(() => {
-  const byWeek = (a, b) => (a.weekday - b.weekday) || (minOf(a.start) - minOf(b.start))
   const out = []
-  const courses = [...weekAll.value].sort(byWeek)
-  if (courses.length) out.push({ key: 'course', title: '课程', items: courses })
   const evs = [...events.value].sort(
     (a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (minOf(a.start) - minOf(b.start))
   )
   if (evs.length) out.push({ key: 'event', title: '独立日程', items: evs })
-  const rts = [...routines.value].sort(byWeek)
-  if (rts.length) out.push({ key: 'routine', title: '循环日程', items: rts })
   const tds = [...todos.value].sort(
     (a, b) => ((a.done ? 1 : 0) - (b.done ? 1 : 0))
       || String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'))
@@ -2933,6 +2967,21 @@ function gridDbl(e) {
   const at = cellAt({ x: e.clientX, y: e.clientY })
   if (at) openAdd(at.wd, minOf(at.start))
 }
+/* ---------------- 二级层收尾（2026-10-03 方案 C Step 5） ----------------
+   背景滚动锁的唯一真源：任何浮层/二级页开着时，底下的页面不能再滑。
+   （此前只在周课表子视图锁，浮层打开后还能拖动背景页面。）
+   switchTab / setWeekSub / onMounted 都调 syncBodyScrollLock()；
+   函数声明会提升，所以上面几处调用点写在本段之前也安全。 */
+const anySheetOpen = computed(() => !!(
+  onboarding.value || habitSheet.value || detail.value || addPick.value ||
+  addForm.value || todoForm.value || evtForm.value || picker.value ||
+  confirmClear.value || delLecId.value || semForm.value
+))
+function syncBodyScrollLock() {
+  const lock = anySheetOpen.value || (tab.value === 'week' && weekSub.value === 'week')
+  document.body.style.overflow = lock ? 'hidden' : ''
+}
+watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
 </script>
 
 <template>
@@ -2991,7 +3040,9 @@ function gridDbl(e) {
           </svg>
         </button>
       </div>
-      <!-- 今日概要：白色小卡（仅今日页，替代原独立 Hero）。
+      <!-- 今日状态行（2026-10-03 方案 C Step 2 起是**窄条**）：只留一行状态文案
+           （进行中 · X / 下一节 · X HH:MM / 今日安排已结束 / 今天没有课），
+           计数与进度条已搬进今天页顶部的 data-today-strip，不再在卡里重复一遍。
            向上收缩动效：外层 grid-rows 0fr↔1fr 做高度塌缩（无过冲曲线，防布局闪烁），
            卡片本体叠加 -translate-y 上飘+淡出用过冲曲线（Q 弹感来源，transform 过冲不撑布局） -->
       <div
@@ -3002,44 +3053,25 @@ function gridDbl(e) {
       >
         <div class="min-h-0 overflow-hidden">
           <div
-            class="mt-4 rounded-2xl border border-line bg-card px-4 py-3 shadow-sm transition-all duration-[280ms]"
+            class="mt-3 rounded-2xl border border-line bg-card px-4 py-2.5 shadow-sm transition-all duration-[280ms]"
             :class="tab === 'today' ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0'"
             style="transition-timing-function: cubic-bezier(0.34, 1.45, 0.64, 1)"
             :style="{ transitionDelay: tab === 'today' ? '110ms' : '0ms' }"
           >
-            <div class="flex items-center justify-between">
-              <div class="min-w-0">
-                <p class="text-xs text-ink-dim">今天 {{ todayCourses.length }} {{ todayRoutineCount ? '项安排' : '节课' }}</p>
-                <p class="mt-0.5 truncate text-sm font-semibold text-ink">
-                  {{ headerCourseText }}
-                </p>
-              </div>
-              <div class="shrink-0 text-right">
-                <p class="text-xs text-ink-dim">待办</p>
-                <p class="mt-0.5 text-sm font-semibold text-ink">{{ doneCount }}/{{ todos.length }}</p>
-              </div>
-            </div>
-            <div class="mt-2.5">
-              <div class="h-1.5 overflow-hidden rounded-full bg-primary-100">
-                <div
-                  class="h-full rounded-full bg-primary-500 transition-all duration-500"
-                  :style="{ width: todos.length ? (doneCount / todos.length) * 100 + '%' : '0%' }"
-                ></div>
-              </div>
-            </div>
+            <p data-header-status class="truncate text-sm font-semibold text-ink">{{ headerCourseText }}</p>
           </div>
         </div>
       </div>
     </header>
 
-    <!-- 内容平移层（Day 11 二轮）：四页并排各占 1/4，translateX 跟随 tab，连点改道可打断。
+    <!-- 内容平移层（Day 11 二轮）：三页并排各占 1/3，translateX 跟随 tab，连点改道可打断。
          2026-10-01 加左右滑动手势：swipeDx 并进 translateX 跟手，swiping 时关 transform
          过渡（拖动零延迟），松手恢复过渡播放回弹/切换动画；touch-pan-y 把横向手势让给 JS。
          除数用 TAB_KEYS.length 而不是写死——2026-10-02 加第四页「打卡」时，
          原来写死的 /3 让平移只走四分之三，页面错位（截图实证）。 -->
     <div
       ref="stripRef"
-      class="flex w-[500%] shrink-0 items-start overflow-y-clip touch-pan-y duration-[280ms]"
+      class="flex w-[300%] shrink-0 items-start overflow-y-clip touch-pan-y duration-[280ms]"
       style="transition-property: transform, height; transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
       :style="{
         transform: `translateX(calc(-${(tabIndex * 100) / TAB_KEYS.length}% + ${swipeDx}px))`,
@@ -3049,60 +3081,39 @@ function gridDbl(e) {
       }"
     >
     <!-- ===== 今日 ===== -->
-    <main data-page="today" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
-      <!-- 课堂录音入口（M5 第 2 步）：今日页直达，不用每次绕「我的」；
-           录音中整卡变红显示计时，停录后自动转写→纪要→作业转待办一路到底 -->
+    <main data-page="today" class="w-1/3 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
+      <!-- 今天进度窄条（2026-10-03 方案 C Step 2）：原来「今天 N 节课 / 待办 d/t + 进度条」
+           长在顶部问候卡里，占 ~78px 且在**所有 tab 上方**常驻。这里压成一窄条搬进今天页，
+           顶部卡只留一行状态文案（进行中 / 下一节 / 今天没有课）。 -->
       <section
-        class="rounded-2xl border bg-card p-3.5 shadow-sm"
-        :class="recActiveId ? 'border-red-300' : 'border-line'"
-        data-today-rec
+        data-today-strip
+        class="flex items-center gap-3 rounded-2xl border border-line bg-card px-3.5 py-2.5 shadow-sm"
       >
-        <div class="flex items-center gap-3.5">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" :class="recActiveId ? 'bg-red-400/10' : 'bg-primary-50'">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" :class="recActiveId ? 'text-red-400' : 'text-primary-500'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
-          </span>
-          <span class="min-w-0 flex-1">
-            <template v-if="!recActiveId">
-              <span class="block text-sm font-medium">课堂录音</span>
-              <span class="block text-[11px] text-ink-dim/70">下课 2 分钟自动停；停录后自动转写、纪要、作业转待办</span>
-            </template>
-            <template v-else>
-              <span class="flex items-center gap-2">
-                <span class="h-2 w-2 animate-pulse rounded-full bg-red-400"></span>
-                <span class="text-sm font-semibold tabular-nums">{{ fmtDur(recElapsed * 1000) }}</span>
-              </span>
-              <span class="block text-[11px] text-ink-dim/70">录音中 · 锁屏也会继续录</span>
-            </template>
-          </span>
-          <button
-            v-if="!recActiveId"
-            data-today-rec-start
-            class="shrink-0 rounded-full bg-primary-500 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
-            :class="recSupported ? '' : 'opacity-60'"
-            @click="startRec"
-          >
-            开始录音
-          </button>
-          <button
-            v-else
-            data-today-rec-stop
-            class="shrink-0 rounded-full bg-red-400 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
-            @click="stopRec"
-          >
-            停止并保存
-          </button>
+        <p class="min-w-0 flex-1 truncate text-xs text-ink-dim">
+          今天 {{ todayCourses.length }} {{ todayRoutineCount ? '项安排' : '节课' }}
+        </p>
+        <span class="shrink-0 text-[11px] text-ink-dim">待办 {{ doneCount }}/{{ todos.length }}</span>
+        <div class="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-primary-100">
+          <div
+            class="h-full rounded-full bg-primary-500 transition-all duration-500"
+            :style="{ width: todos.length ? (doneCount / todos.length) * 100 + '%' : '0%' }"
+          ></div>
         </div>
-        <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-400' : 'text-primary-500'">{{ recMsg }}</p>
       </section>
 
-      <!-- 今日课程与循环日程：时间线卡片（循环日程带小循环标记 + 专属灰蓝，与课程区分） -->
+      <!-- 接下来：今天剩下的安排（课程 / 循环日程 / 今天的独立日程）。
+           2026-10-03 方案 C Step 2：原「今日课程」改名并提到今天页最前——旧版首页把课藏在一张
+           大录音卡下面，打开第一眼看到的是「开始录音」而不是「我接下来要上什么」。
+           nextTodayId 命中那条（正在进行、否则最近的一节）打 data-today-next，供检查脚本定位。
+           课堂录音卡下沉到页面末尾（它的使用时机是"课已开始"，不该占第一屏）。 -->
       <section>
-        <h2 class="mb-2 px-1 text-sm font-semibold text-ink">今日课程</h2>
+        <h2 class="mb-2 px-1 text-sm font-semibold text-ink">接下来</h2>
         <div v-if="todayCourses.length" class="space-y-2.5">
           <article
             v-for="c in todayCourses"
             :key="c.id"
             data-today-item
+            :data-today-next="c.id === nextTodayId || undefined"
             :data-item-type="c.type || 'course'"
             class="flex cursor-pointer items-center gap-3.5 rounded-2xl border bg-card p-3.5 shadow-sm transition active:scale-[0.98]"
             :class="
@@ -3156,6 +3167,10 @@ function gridDbl(e) {
                 </span>
                 进行中 · 已过 {{ nowPct(c) }}%
               </p>
+              <!-- 下一节（不是进行中的那节）才报倒计时：课前 5 分钟恰好也是「该动身了」的信号 -->
+              <p v-else-if="c.id === nextTodayId" class="mt-1 text-[11px] font-medium text-primary-600">
+                还有 {{ minUntil(c) }} 分钟开始
+              </p>
             </div>
             <span
               v-if="c.tag"
@@ -3179,7 +3194,7 @@ function gridDbl(e) {
 
       <!-- 待办：轻量勾选 -->
       <section>
-        <h2 class="mb-2 px-1 text-sm font-semibold text-ink">待办</h2>
+        <h2 class="mb-2 px-1 text-sm font-semibold text-ink">今天要交 <span class="text-xs font-normal text-ink-dim">· 待办</span></h2>
         <!-- 状态筛选 chips：热区 min-h-11(44px)、选中态走字重+主色、aria-pressed 供读屏；
              一条待办都没有且不在筛选态时不出现（无感易用） -->
         <div
@@ -3276,7 +3291,7 @@ function gridDbl(e) {
       type="button"
       data-today-habit-more
       class="shrink-0 rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
-      @click="switchTab('habit')"
+      @click="habitSheet = true"
     >
       管理 ›
     </button>
@@ -3284,12 +3299,12 @@ function gridDbl(e) {
 
   <template v-else>
     <div class="mb-2 flex items-center justify-between px-1">
-      <h2 class="text-sm font-semibold text-ink">今日打卡</h2>
+      <h2 class="text-sm font-semibold text-ink">今天要坚持 <span class="text-xs font-normal text-ink-dim">· 打卡</span></h2>
       <button
         type="button"
         data-today-habit-more
         class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
-        @click="switchTab('habit')"
+        @click="habitSheet = true"
       >
         管理 ›
       </button>
@@ -3314,19 +3329,144 @@ function gridDbl(e) {
       </div>
     </div>
     <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">
-      还没有打卡习惯，去「打卡」页建一个
+      还没有打卡习惯，点右上「管理」建一个
     </p>
   </template>
 </section>
+
+      <!-- 今天要听（2026-10-03 方案 C Step 3）：到期音频在首页就地排两行、点一下直接放。
+           它的使用时机就是「今天有空 + 今天到期」，不该逼人先切到「我的」去找那张卡。
+           超过 2 段给「还有 N 段」就地展开，不新增页面；没有到期音频时整段不出现。 -->
+      <section v-if="listenDue.length" data-today-listen>
+        <div class="mb-2 flex items-center justify-between px-1">
+          <h2 class="text-sm font-semibold text-ink">今天要听 <span class="text-xs font-normal text-ink-dim">· 练耳</span></h2>
+          <button
+            v-if="listenDue.length > 2"
+            type="button"
+            data-today-listen-more
+            class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
+            @click="listenTodayAll = !listenTodayAll"
+          >
+            {{ listenTodayAll ? '收起' : '还有 ' + (listenDue.length - 2) + ' 段 ›' }}
+          </button>
+        </div>
+        <ul class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
+          <li
+            v-for="c in (listenTodayAll ? listenDue : listenDue.slice(0, 2))"
+            :key="c.id"
+            :data-today-listen-item="c.id"
+            class="flex items-center gap-3 p-3.5"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm text-ink">{{ c.name }}</p>
+              <p class="mt-0.5 text-[11px] text-ink-dim/70">
+                已听 {{ c.played_count }} 次 · {{ fmtSeconds(c.seconds) }}<template v-if="listenPlayId === c.id && listenPlayTotal > 1"> · <span class="font-medium text-primary-500" data-listen-round>第 {{ listenPlayRound }}/{{ listenPlayTotal }} 遍</span></template>
+              </p>
+            </div>
+            <button
+              type="button"
+              :data-today-listen-play="c.id"
+              class="h-11 shrink-0 rounded-full px-4 text-sm font-medium transition active:scale-95"
+              :class="listenPlayId === c.id && !listenPaused ? 'bg-primary-500 text-white' : 'bg-primary-50 text-primary-500'"
+              :aria-label="listenPlayId === c.id && !listenPaused ? '停止播放' : '播放'"
+              @click="onListenPlay(c)"
+            >
+              {{ listenPlayId === c.id ? (listenPaused ? '继续' : '停止') : '播放' }}
+            </button>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 课堂录音入口（M5 第 2 步）：今日页直达，不用每次绕「我的」；
+           录音中整卡变红显示计时，停录后自动转写→纪要→作业转待办一路到底。
+           2026-10-03 方案 C Step 2：由第一屏下沉到今天页末尾——它的使用时机是「课已经开始」，
+           而第一屏该回答的是「我接下来要上什么」（见上方「接下来」段）。 -->
+      <section
+        class="rounded-2xl border bg-card p-3.5 shadow-sm"
+        :class="recActiveId ? 'border-red-300' : 'border-line'"
+        data-today-rec
+      >
+        <div class="flex items-center gap-3.5">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" :class="recActiveId ? 'bg-red-400/10' : 'bg-primary-50'">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" :class="recActiveId ? 'text-red-400' : 'text-primary-500'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <template v-if="!recActiveId">
+              <span class="block text-sm font-medium">课堂录音</span>
+              <span class="block text-[11px] text-ink-dim/70">下课 2 分钟自动停；停录后自动转写、纪要、作业转待办</span>
+            </template>
+            <template v-else>
+              <span class="flex items-center gap-2">
+                <span class="h-2 w-2 animate-pulse rounded-full bg-red-400"></span>
+                <span class="text-sm font-semibold tabular-nums">{{ fmtDur(recElapsed * 1000) }}</span>
+              </span>
+              <span class="block text-[11px] text-ink-dim/70">录音中 · 锁屏也会继续录</span>
+            </template>
+          </span>
+          <button
+            v-if="!recActiveId"
+            data-today-rec-start
+            class="shrink-0 rounded-full bg-primary-500 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
+            :class="recSupported ? '' : 'opacity-60'"
+            @click="startRec"
+          >
+            开始录音
+          </button>
+          <button
+            v-else
+            data-today-rec-stop
+            class="shrink-0 rounded-full bg-red-400 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
+            @click="stopRec"
+          >
+            停止并保存
+          </button>
+        </div>
+        <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-400' : 'text-primary-500'">{{ recMsg }}</p>
+      </section>
     </main>
 
     <!-- ===== 周课表 =====
          pb-16（64px）不是随手写的：网格本来就一屏看完，底部留白只需保证「不被底部导航压住」，
          留 pb-28(112px) 会让文档比屏幕高 44px → 用户能上下滑出一片空白
          （2026-10-01 实测：390×844 下 pb-28 时 maxScroll=44）。 -->
-    <main data-page="week" class="w-1/5 px-4 pt-4 pb-16" :inert="tab !== 'week'">
+    <main data-page="week" class="w-1/3 px-4 pt-4 pb-16" :inert="tab !== 'week'">
+      <!-- 课表 / 日程 分段切换（2026-10-03 方案 C Step 1：原「日程」页并入本页） -->
+      <div class="mb-3 flex items-center gap-2">
+        <div data-week-sub class="grid flex-1 grid-cols-2 gap-1 rounded-2xl border border-line bg-card p-1 shadow-sm">
+          <button
+            type="button"
+            data-week-sub-week
+            class="rounded-xl py-1.5 text-sm font-medium transition"
+            :class="weekSub === 'week' ? 'bg-primary-500 text-white shadow-sm' : 'text-ink-dim'"
+            @click="setWeekSub('week')"
+          >周课表</button>
+          <button
+            type="button"
+            data-week-sub-list
+            class="rounded-xl py-1.5 text-sm font-medium transition"
+            :class="weekSub === 'list' ? 'bg-primary-500 text-white shadow-sm' : 'text-ink-dim'"
+            @click="setWeekSub('list')"
+          >其他日程</button>
+        </div>
+      <!-- 拍课表识别（第三步）：2026-10-03 方案 C Step 4 从「我的」页搬到课表页右上角。
+           仍复用识别页/核对页，用当前学期节次表换算，导入走增量；原锚点保留不动，
+           另给 data-week-add 表明新家。 -->
+      <button
+        v-if="weekSub === 'week'"
+        data-week-add
+        data-mine-rec
+        type="button"
+        title="拍课表识别"
+        aria-label="拍课表识别：截图课表自动加课"
+        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-card text-primary-500 shadow-sm transition active:scale-95"
+        @click="mineRecStart"
+      >
+        <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5v9M3.5 8h9" /></svg>
+      </button>
+      </div>
+
       <!-- 周次切换 -->
-      <section class="flex items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
+      <section v-if="weekSub === 'week'" class="flex items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
         <button
           data-week-prev
           class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
@@ -3349,7 +3489,7 @@ function gridDbl(e) {
 
       <!-- 节次网格：行 = 节次、列 = 星期、课程 = 格子 —— 一屏看完，不用上下左右滑。
            课程卡与格子共用同一套坐标系，所以不存在「平行线对不齐」这回事。 -->
-      <section class="mt-3 overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
+      <section v-if="weekSub === 'week'" class="mt-3 overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
         <!-- 表头：星期 + 日期 -->
         <div class="grid border-b border-line" :style="gridColsStyle">
           <div class="py-1.5"></div>
@@ -3463,21 +3603,26 @@ function gridDbl(e) {
           </article>
         </div>
       </section>
-    </main>
-
-<!-- ===== 日程清单页（三期「日程分类视图」，2026-10-02）=====
-     为什么需要它：独立日程（event）此前没有任何集中入口——加一条「10 月 20 日交材料」，
-     除非翻到那天的今日页，否则根本看不见。这一页把三类日程 + 待办平铺成清单。
-     分组口径：课程（导入态 + 自加）、独立日程、循环日程、待办；课程/循环按星期排，
-     独立日程/待办按日期排。点条目复用 openDetail（同一套详情与编辑），待办直接勾选。
-     减法（2026-10-02）：**砍掉顶部 5 个筛选 chips**——分组标题已经说明一切，
-     chips 只是又一层「先做选择」的门槛；想只看待办时往下滚比先点一下更便宜。 -->
-<main data-page="list" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'list'">
+    
+      <!-- 其他日程（原「日程」页并入课表页，2026-10-03 方案 C Step 1；同日删掉课程/循环日程两组） -->
+      <div v-if="weekSub === 'list'" class="mt-1 space-y-4">
   <section data-list-page>
     <div class="mb-2 flex items-baseline justify-between px-1">
-      <h2 class="text-sm font-semibold text-ink">日程清单</h2>
+      <h2 class="text-sm font-semibold text-ink">其他日程</h2>
       <span class="text-xs text-ink-dim/70">{{ listTotalCount }} 项</span>
     </div>
+
+    <!-- 课表里看得到的固定安排（课程 / 循环日程）不重复列在这里，给一行去课表的指引 -->
+    <button
+      v-if="listFixedCount"
+      type="button"
+      data-list-week-hint
+      class="mb-2 flex w-full items-center justify-between rounded-2xl border border-dashed border-line bg-card/60 px-3.5 py-2.5 text-left transition active:bg-ink/5"
+      @click="setWeekSub('week')"
+    >
+      <span class="min-w-0 truncate text-xs text-ink-dim">还有 {{ listFixedCount }} 项固定安排在周课表里（不在这里重复）</span>
+      <span class="ml-2 shrink-0 text-xs font-medium text-primary-500">去周课表 ›</span>
+    </button>
 
     <!-- 空态：本来就没有 -->
     <p
@@ -3535,169 +3680,12 @@ function gridDbl(e) {
           </div>
         </div>
       </section>
-    </main>
-
-    <!-- ===== 打卡页（三期「每日打卡」）=====
-         分工：今日页只留「一按即打」的高频动作，管理（添加 / 删除 / 翻历史周 / 补卡）收在这一页。
-         宽限期 = 本周内且今天之前（口径见 data/store.js）；过期/未来格子明确画成锁定态，
-         并且**不用 disabled**（那样点下去毫无反馈还挡测试），改由 onHabitCell 静默忽略。 -->
-    <main data-page="habit" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'habit'">
-      <!-- 今日完成度 -->
-      <section class="rounded-3xl border border-line bg-card p-5 shadow-sm">
-        <div class="flex items-end justify-between">
-          <div>
-            <p class="text-xs text-ink-dim">{{ habitTodayText }}</p>
-            <p class="mt-1 text-2xl font-bold tabular-nums text-ink">
-              {{ habitTodayDone }}<span class="text-base font-semibold text-ink-dim"> / {{ habits.length }}</span>
-            </p>
-          </div>
-          <p class="pb-1 text-xs text-ink-dim">今日已打卡</p>
-        </div>
-        <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
-          <div
-            class="h-full rounded-full bg-primary-500 transition-all duration-300"
-            :style="{ width: habits.length ? (habitTodayDone / habits.length) * 100 + '%' : '0%' }"
-          />
-        </div>
-      </section>
-
-      <!-- 打卡记录：周切换 + 习惯卡片 -->
-      <section>
-        <div class="mb-2 flex items-center justify-between px-1">
-          <h2 class="text-sm font-semibold text-ink">打卡记录</h2>
-          <button
-            class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
-            @click="habitInput = !habitInput; habitName = ''"
-          >
-            {{ habitInput ? '收起' : '＋ 添加' }}
-          </button>
-        </div>
-
-        <!-- 周切换：只能往回看（未来没有记录），最多 52 周 -->
-        <div class="mb-2 flex items-center justify-between rounded-2xl border border-line bg-card px-1.5 py-1.5 shadow-sm">
-          <button
-            type="button"
-            data-habit-prev
-            class="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-ink-dim transition active:scale-90 disabled:opacity-25"
-            :disabled="habitWeekBase <= -52"
-            aria-label="看上一周"
-            @click="shiftHabitWeek(-1)"
-          >‹</button>
-          <div class="text-center">
-            <p class="text-xs font-medium text-ink tabular-nums">{{ habitWeekLabel }}</p>
-            <p class="text-[10px]" :class="habitWeekBase === 0 ? 'text-primary-500' : 'text-ink-dim/70'">
-              {{ habitWeekBase === 0 ? '本周 · 漏卡可补' : (habitWeekBase === -1 ? '上周' : -habitWeekBase + ' 周前') + ' · 已锁定' }}
-            </p>
-          </div>
-          <button
-            type="button"
-            data-habit-next
-            class="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-ink-dim transition active:scale-90 disabled:opacity-25"
-            :disabled="habitWeekBase >= 0"
-            aria-label="看下一周"
-            @click="shiftHabitWeek(1)"
-          >›</button>
-        </div>
-
-        <!-- 添加行：行内输入，回车即提交 -->
-        <div v-if="habitInput" class="mb-2 flex gap-2 rounded-2xl border border-line bg-card p-3 shadow-sm">
-          <input
-            v-model="habitName"
-            type="text"
-            maxlength="20"
-            placeholder="习惯名，如：背单词"
-            enterkeyhint="done"
-            class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim/50 focus:border-primary-400"
-            @keyup.enter="addHabitConfirm"
-          />
-          <button
-            class="shrink-0 rounded-xl bg-primary-500 px-4 text-sm font-medium text-white transition active:scale-95 disabled:opacity-40"
-            :disabled="!habitName.trim()"
-            @click="addHabitConfirm"
-          >
-            确定
-          </button>
-        </div>
-
-        <!-- 习惯卡片：名称 + 连续/累计 + 本周格（可补）+ 今日圆圈 + 删除 -->
-        <div v-if="habits.length" class="space-y-2">
-          <div
-            v-for="h in habits"
-            :key="h.id"
-            :data-habit-row="h.id"
-            class="rounded-2xl border border-line bg-card p-3.5 shadow-sm"
-          >
-            <div class="flex items-center gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm" :class="h.records[habitToday] ? 'text-ink-dim' : 'text-ink'">{{ h.name }}</p>
-                <p class="mt-0.5 text-[11px] text-ink-dim">
-                  <span :data-habit-streak="h.id">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</span>
-                  <span class="mx-1 text-ink-dim/40">·</span>
-                  <span :data-habit-total="h.id">共 {{ totalDoneOf(h) }} 天</span>
-                </p>
-              </div>
-              <!-- 今日打卡主操作：h-11 = 44px 热区；已打卡实心勾（可点取消） -->
-              <button
-                type="button"
-                :data-habit-today="h.id"
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-90"
-                :class="h.records[habitToday] ? 'bg-primary-500 text-white' : 'border-2 border-ink-dim/30 text-ink-dim/40'"
-                :aria-label="h.records[habitToday] ? '取消今日打卡' : '今日打卡'"
-                @click="toggleHabit(h.id)"
-              >
-                <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              </button>
-              <!-- 删除：两段式确认 -->
-              <button
-                type="button"
-                class="h-8 w-8 shrink-0 text-xs transition active:scale-90"
-                :class="habitDelId === h.id ? 'font-bold text-red-500' : 'text-ink-dim/40'"
-                :aria-label="habitDelId === h.id ? '确认删除该习惯' : '删除习惯'"
-                @click="onHabitDelete(h.id)"
-              >
-                {{ habitDelId === h.id ? '确认' : '✕' }}
-              </button>
-            </div>
-
-            <!-- 本周 7 格：实心=当天打的 · 空心勾=事后补的 · 虚线圈=宽限期内可补 · 淡=锁定/未来 -->
-            <div class="mt-3 grid grid-cols-7 gap-1">
-              <button
-                v-for="d in habitViewDays"
-                :key="d.key"
-                type="button"
-                :data-habit-cell="h.id + '@' + d.key"
-                :data-cell-state="habitCellState(h, d)"
-                class="flex flex-col items-center gap-1 rounded-xl py-1.5 transition active:scale-95"
-                @click="onHabitCell(h.id, d.key)"
-              >
-                <span class="text-[10px] leading-none" :class="d.isToday ? 'font-semibold text-primary-500' : 'text-ink-dim/70'">{{ d.name }}</span>
-                <span
-                  class="flex h-6 w-6 items-center justify-center rounded-full text-[10px] tabular-nums"
-                  :class="HABIT_CELL_CLS[habitCellState(h, d)]"
-                >
-                  <svg v-if="h.records[d.key]" viewBox="0 0 10 10" class="h-2.5 w-2.5" fill="none"><path d="M2 5.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                  <template v-else>{{ d.day }}</template>
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 图例：补卡是这一轮新增的视觉态，不解释一下没人看得懂 -->
-          <p class="px-1 pt-1 text-[11px] leading-relaxed text-ink-dim/80">
-            <span class="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-primary-500 align-[-1px]" />当天打卡
-            <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-primary-400 bg-primary-50 align-[-1px]" />事后补卡
-            <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-dashed border-primary-300 align-[-1px]" />可补
-            <span class="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-ink/[0.06] align-[-1px]" />已锁定
-          </p>
-        </div>
-        <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">
-          还没有打卡习惯，点「＋ 添加」建一个
-        </p>
-      </section>
+    
+      </div>
     </main>
 
     <!-- ===== 我的 ===== -->
-    <main data-page="me" class="w-1/5 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'me'">
+    <main data-page="me" class="w-1/3 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'me'">
       <section class="flex items-center gap-4 rounded-3xl border border-line bg-card p-5 shadow-sm">
         <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 text-xl font-bold text-white shadow-md shadow-primary-500/25">
           示
@@ -3719,26 +3707,6 @@ function gridDbl(e) {
         </button>
       </section>
       <p v-if="source !== 'import'" class="-mt-2 px-1 text-[11px] text-ink-dim/70">示例数据不能编辑学期信息：导入真实课表或用引导页创建学期后可改</p>
-
-      <!-- 拍课表识别（第三步）：复用识别页/核对页，用当前学期节次表换算，导入走增量 -->
-      <section class="rounded-2xl border border-line bg-card p-4 shadow-sm">
-        <div class="flex items-center gap-3.5">
-          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="4" width="13" height="9.5" rx="1.5" /><path d="M5 4l1-2h4l1 2" /><circle cx="8" cy="8.75" r="2.5" /></svg>
-          </span>
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium">拍课表识别</span>
-            <span class="block text-[11px] text-ink-dim/70">截图课表自动加课；时间按当前学期的节次表换算，先核对再入库</span>
-          </span>
-          <button
-            data-mine-rec
-            class="shrink-0 rounded-full bg-primary-500 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
-            @click="mineRecStart"
-          >
-            开始识别
-          </button>
-        </div>
-      </section>
 
       <!-- 课堂录音（二期 M2）：App 平台可用；浏览器环境点按给就地提示，不做假录音 -->
       <section class="rounded-2xl border border-line bg-card p-4 shadow-sm">
@@ -4071,24 +4039,6 @@ function gridDbl(e) {
       </section>
 
       <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
-        <!-- 配色皮肤：色点即点即换 -->
-        <div class="flex items-center gap-3.5 p-4">
-          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1l2 4 4.5.6-3.2 3.1.8 4.5L8 11l-4.1 2.2.8-4.5L1.5 5.6 6 5z" /></svg>
-          </span>
-          <span class="flex-1 text-sm font-medium">主题配色</span>
-          <div class="flex items-center gap-2.5">
-            <button
-              v-for="a in ACCENTS"
-              :key="a.key"
-              class="h-6 w-6 rounded-full transition active:scale-90"
-              :class="accent === a.key ? 'ring-2 ring-primary-400 ring-offset-2 ring-offset-card' : ''"
-              :style="{ background: a.color }"
-              :title="a.name"
-              @click="setAccent(a.key)"
-            ></button>
-          </div>
-        </div>
 
         <!-- 导入主项目数据 -->
         <label class="flex cursor-pointer items-center gap-3.5 p-4 active:bg-ink/5">
@@ -4181,17 +4131,41 @@ function gridDbl(e) {
 
         <div v-if="settingsOpen" data-settings-body class="divide-y divide-line border-t border-line">
 
-        <!-- 主题外观（明暗） -->
-        <div
-          class="flex cursor-pointer items-center gap-3.5 p-4 active:bg-ink/5"
-          @click="toggleTheme"
-        >
-          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9.5A6 6 0 116.5 2.5a5 5 0 007 7z" /></svg>
-          </span>
-          <span class="flex-1 text-sm font-medium">主题外观</span>
-          <span class="text-xs text-ink-dim/70">{{ isDark ? '当前：深色' : '当前：浅色' }}</span>
-          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-ink-dim/50" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+        <!-- 主题外观 + 主题配色（2026-10-03 方案 C Step 4：原「我的」页常显的「主题配色」
+             并进这里 —— 此前有两个主题入口，现在一个入口管全部外观）。 -->
+        <div class="p-4">
+          <div class="flex items-center gap-3.5">
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
+              <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9.5A6 6 0 116.5 2.5a5 5 0 007 7z" /></svg>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium">主题外观</span>
+              <span class="block text-[11px] text-ink-dim/70">{{ isDark ? '当前：深色' : '当前：浅色' }}</span>
+            </span>
+            <button
+              type="button"
+              data-theme-toggle
+              class="flex shrink-0 items-center gap-1.5 rounded-full bg-ink/5 px-3 py-2 text-xs font-medium text-ink-dim transition active:scale-95"
+              @click="toggleTheme"
+            >
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h9M9.5 2.5L12 5l-2.5 2.5M13 11H4M6.5 8.5L4 11l2.5 2.5" /></svg>
+              {{ isDark ? '切浅色' : '切深色' }}
+            </button>
+          </div>
+          <div class="mt-3 flex items-center gap-3 border-t border-line pt-3">
+            <span class="text-[11px] text-ink-dim/80">主题配色</span>
+            <div class="flex items-center gap-2.5">
+              <button
+                v-for="a in ACCENTS"
+                :key="a.key"
+                class="h-6 w-6 rounded-full transition active:scale-90"
+                :class="accent === a.key ? 'ring-2 ring-primary-400 ring-offset-2 ring-offset-card' : ''"
+                :style="{ background: a.color }"
+                :title="a.name"
+                @click="setAccent(a.key)"
+              ></button>
+            </div>
+          </div>
         </div>
 
         <!-- 课堂纪要（M4）：LLM 配置。key 只存本机 localStorage，不进导出、不经手上传 -->
@@ -4390,12 +4364,12 @@ function gridDbl(e) {
       class="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card/85 backdrop-blur-lg"
       style="padding-bottom: env(safe-area-inset-bottom)"
     >
-      <div class="relative mx-auto grid max-w-md grid-cols-5 px-6 py-1">
+      <div class="relative mx-auto grid max-w-md grid-cols-3 px-6 py-1">
         <!-- 滑块：一个药丸在四个槽位间连续滑动，连点时 transition 自动改道（可打断） -->
         <div class="pointer-events-none absolute inset-0 overflow-hidden">
           <div class="absolute inset-y-0 left-6 right-6">
             <div
-              class="flex h-full w-1/5 justify-center transition-transform duration-300"
+              class="flex h-full w-1/3 justify-center transition-transform duration-300"
               style="transition-timing-function: cubic-bezier(0.32, 0.72, 0.35, 1)"
               :style="{ transform: `translateX(${tabIndex * 100}%)` }"
             >
@@ -4409,8 +4383,6 @@ function gridDbl(e) {
           v-for="t in [
             { key: 'today', label: '今日', icon: 'M8 3a5 5 0 100 10A5 5 0 008 3zM8 1v2M8 13v2M1 8h2M13 8h2' },
             { key: 'week', label: '周课表', icon: 'M2 4h12v11H2zM2 7h12M5.5 2v3M10.5 2v3' },
-            { key: 'list', label: '日程', icon: 'M2.5 4h1.2M6 4h7.5M2.5 8h1.2M6 8h7.5M2.5 12h1.2M6 12h4.5' },
-            { key: 'habit', label: '打卡', icon: 'M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM5.4 8.3l1.8 1.8 3.6-4' },
             { key: 'me', label: '我的', icon: 'M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4' },
           ]"
           :key="t.key"
@@ -4435,107 +4407,277 @@ function gridDbl(e) {
       </div>
     </nav>
 
-    <!-- 课程详情弹层：点课卡弹出 -->
-    <Transition name="fade">
-      <div v-if="detail" class="fixed inset-0 z-20 bg-black/40" @click="detail = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="detail"
-        data-sheet-detail
-        class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <!-- 顶部小把手（暗示可下滑关闭） -->
-        <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"></div>
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <!-- 循环日程在详情里也挂同一枚小循环标记 + 一行类型说明（点开也能确认这不是课） -->
-            <p class="flex items-center gap-1.5 text-lg font-bold">
-              <svg
-                v-if="isRoutine(detail)"
-                data-routine-mark
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-                class="h-4 w-4 shrink-0 text-ink-dim"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.9"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M13 8a5 5 0 11-1.9-3.9" />
-                <path d="M13 2.2V5h-2.8" />
-              </svg>
-              <span class="truncate">{{ detail.name }}</span>
-            </p>
-            <p class="mt-1 text-xs text-ink-dim">
-              <span v-if="isRoutine(detail)" class="mr-1">循环日程 ·</span>
-              {{ detail.type === 'event' ? detail.date : WDN[(detail.weekday || 1) - 1] }}
-              <span v-if="detail.tag" class="ml-1.5 rounded-full bg-primary-50 px-2 py-0.5 text-primary-600">{{ detail.tag }}</span>
-            </p>
-          </div>
-          <button
-            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/5 text-ink-dim transition active:scale-90"
-            @click="detail = null"
-          >
-            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
-          </button>
+    <!-- 打卡浮层（2026-10-03 方案 C Step 1：原「打卡」tab 改为底部浮层）
+         宽限期 = 本周内且今天之前（口径见 data/store.js）；过期/未来格子画成锁定态，
+         但**不用 disabled**（那样点下去毫无反馈还挡测试），改由 onHabitCell 静默忽略。 -->
+    <BottomSheet
+      :open="!!habitSheet"
+      sheet-attr="data-habit-sheet"
+      mask-attr="data-habit-sheet-mask"
+      panel-class="px-4 pt-3 pb-10"
+      @close="habitSheet = false"
+    >
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-lg font-bold text-ink">打卡</h2>
+        <button
+          type="button"
+          data-habit-sheet-close
+          class="rounded-full bg-ink/5 px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
+          @click="habitSheet = false"
+        >关闭</button>
+      </div>
+      <div class="space-y-4">
+    <!-- 今日完成度 -->
+    <section class="rounded-3xl border border-line bg-card p-5 shadow-sm">
+      <div class="flex items-end justify-between">
+        <div>
+          <p class="text-xs text-ink-dim">{{ habitTodayText }}</p>
+          <p class="mt-1 text-2xl font-bold tabular-nums text-ink">
+            {{ habitTodayDone }}<span class="text-base font-semibold text-ink-dim"> / {{ habits.length }}</span>
+          </p>
         </div>
-        <div class="mt-4 space-y-2.5">
-          <div class="flex items-center gap-3 rounded-xl bg-primary-50/60 px-3.5 py-3">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 shrink-0 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.5 1.5" /></svg>
-            <div class="min-w-0">
-              <p class="text-sm font-medium">{{ detail.start }} – {{ detail.end }}</p>
-              <p class="text-[11px] text-ink-dim">
-                共 {{ minOf(detail.end) - minOf(detail.start) }} 分钟
-                <span v-if="periodSpan(detail)" class="ml-1 rounded-full bg-primary-500/10 px-1.5 py-0.5 text-primary-600">{{ periodSpan(detail) }}</span>
+        <p class="pb-1 text-xs text-ink-dim">今日已打卡</p>
+      </div>
+      <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
+        <div
+          class="h-full rounded-full bg-primary-500 transition-all duration-300"
+          :style="{ width: habits.length ? (habitTodayDone / habits.length) * 100 + '%' : '0%' }"
+        />
+      </div>
+    </section>
+
+    <!-- 打卡记录：周切换 + 习惯卡片 -->
+    <section>
+      <div class="mb-2 flex items-center justify-between px-1">
+        <h2 class="text-sm font-semibold text-ink">打卡记录</h2>
+        <button
+          class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
+          @click="habitInput = !habitInput; habitName = ''"
+        >
+          {{ habitInput ? '收起' : '＋ 添加' }}
+        </button>
+      </div>
+
+      <!-- 周切换：只能往回看（未来没有记录），最多 52 周 -->
+      <div class="mb-2 flex items-center justify-between rounded-2xl border border-line bg-card px-1.5 py-1.5 shadow-sm">
+        <button
+          type="button"
+          data-habit-prev
+          class="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-ink-dim transition active:scale-90 disabled:opacity-25"
+          :disabled="habitWeekBase <= -52"
+          aria-label="看上一周"
+          @click="shiftHabitWeek(-1)"
+        >‹</button>
+        <div class="text-center">
+          <p class="text-xs font-medium text-ink tabular-nums">{{ habitWeekLabel }}</p>
+          <p class="text-[10px]" :class="habitWeekBase === 0 ? 'text-primary-500' : 'text-ink-dim/70'">
+            {{ habitWeekBase === 0 ? '本周 · 漏卡可补' : (habitWeekBase === -1 ? '上周' : -habitWeekBase + ' 周前') + ' · 已锁定' }}
+          </p>
+        </div>
+        <button
+          type="button"
+          data-habit-next
+          class="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-ink-dim transition active:scale-90 disabled:opacity-25"
+          :disabled="habitWeekBase >= 0"
+          aria-label="看下一周"
+          @click="shiftHabitWeek(1)"
+        >›</button>
+      </div>
+
+      <!-- 添加行：行内输入，回车即提交 -->
+      <div v-if="habitInput" class="mb-2 flex gap-2 rounded-2xl border border-line bg-card p-3 shadow-sm">
+        <input
+          v-model="habitName"
+          type="text"
+          maxlength="20"
+          placeholder="习惯名，如：背单词"
+          enterkeyhint="done"
+          class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim/50 focus:border-primary-400"
+          @keyup.enter="addHabitConfirm"
+        />
+        <button
+          class="shrink-0 rounded-xl bg-primary-500 px-4 text-sm font-medium text-white transition active:scale-95 disabled:opacity-40"
+          :disabled="!habitName.trim()"
+          @click="addHabitConfirm"
+        >
+          确定
+        </button>
+      </div>
+
+      <!-- 习惯卡片：名称 + 连续/累计 + 本周格（可补）+ 今日圆圈 + 删除 -->
+      <div v-if="habits.length" class="space-y-2">
+        <div
+          v-for="h in habits"
+          :key="h.id"
+          :data-habit-row="h.id"
+          class="rounded-2xl border border-line bg-card p-3.5 shadow-sm"
+        >
+          <div class="flex items-center gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm" :class="h.records[habitToday] ? 'text-ink-dim' : 'text-ink'">{{ h.name }}</p>
+              <p class="mt-0.5 text-[11px] text-ink-dim">
+                <span :data-habit-streak="h.id">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</span>
+                <span class="mx-1 text-ink-dim/40">·</span>
+                <span :data-habit-total="h.id">共 {{ totalDoneOf(h) }} 天</span>
               </p>
             </div>
+            <!-- 今日打卡主操作：h-11 = 44px 热区；已打卡实心勾（可点取消） -->
+            <button
+              type="button"
+              :data-habit-today="h.id"
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-90"
+              :class="h.records[habitToday] ? 'bg-primary-500 text-white' : 'border-2 border-ink-dim/30 text-ink-dim/40'"
+              :aria-label="h.records[habitToday] ? '取消今日打卡' : '今日打卡'"
+              @click="toggleHabit(h.id)"
+            >
+              <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </button>
+            <!-- 删除：两段式确认 -->
+            <button
+              type="button"
+              class="h-8 w-8 shrink-0 text-xs transition active:scale-90"
+              :class="habitDelId === h.id ? 'font-bold text-red-500' : 'text-ink-dim/40'"
+              :aria-label="habitDelId === h.id ? '确认删除该习惯' : '删除习惯'"
+              @click="onHabitDelete(h.id)"
+            >
+              {{ habitDelId === h.id ? '确认' : '✕' }}
+            </button>
           </div>
-          <div class="flex items-center gap-3 rounded-xl bg-ink/[0.04] px-3.5 py-3">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 shrink-0 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-11A.5.5 0 012 14z" /><path d="M6 14.5V9h4v5.5" /></svg>
-            <div class="min-w-0">
-              <p class="text-sm font-medium">{{ detail.place || '未填写地点' }}</p>
-              <p class="text-[11px] text-ink-dim">地点</p>
-            </div>
+
+          <!-- 本周 7 格：实心=当天打的 · 空心勾=事后补的 · 虚线圈=宽限期内可补 · 淡=锁定/未来 -->
+          <div class="mt-3 grid grid-cols-7 gap-1">
+            <button
+              v-for="d in habitViewDays"
+              :key="d.key"
+              type="button"
+              :data-habit-cell="h.id + '@' + d.key"
+              :data-cell-state="habitCellState(h, d)"
+              class="flex flex-col items-center gap-1 rounded-xl py-1.5 transition active:scale-95"
+              @click="onHabitCell(h.id, d.key)"
+            >
+              <span class="text-[10px] leading-none" :class="d.isToday ? 'font-semibold text-primary-500' : 'text-ink-dim/70'">{{ d.name }}</span>
+              <span
+                class="flex h-6 w-6 items-center justify-center rounded-full text-[10px] tabular-nums"
+                :class="HABIT_CELL_CLS[habitCellState(h, d)]"
+              >
+                <svg v-if="h.records[d.key]" viewBox="0 0 10 10" class="h-2.5 w-2.5" fill="none"><path d="M2 5.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                <template v-else>{{ d.day }}</template>
+              </span>
+            </button>
           </div>
         </div>
-        <!-- 所有课程都可编辑/删除：自加课改覆盖层，导入课改原始导出文本（随回写带回主项目），mock 课改示例覆盖层 -->
-        <div v-if="detail.type === 'course'" class="mt-4 grid grid-cols-2 gap-2.5">
-          <button
-            class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="editCourseFromDetail"
-          >
-            编辑
-          </button>
-          <button
-            class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
-            :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
-            @click="onDelCourse"
-          >
-            {{ confirmDel ? '再点一次确认' : '删除' }}
-          </button>
+
+        <!-- 图例：补卡是这一轮新增的视觉态，不解释一下没人看得懂 -->
+        <p class="px-1 pt-1 text-[11px] leading-relaxed text-ink-dim/80">
+          <span class="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-primary-500 align-[-1px]" />当天打卡
+          <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-primary-400 bg-primary-50 align-[-1px]" />事后补卡
+          <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-dashed border-primary-300 align-[-1px]" />可补
+          <span class="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-ink/[0.06] align-[-1px]" />已锁定
+        </p>
+      </div>
+      <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">
+        还没有打卡习惯，点「＋ 添加」建一个
+      </p>
+    </section>
+  
+      </div>
+    </BottomSheet>
+
+    <!-- 课程详情弹层：点课卡弹出 -->
+    <BottomSheet
+      :open="!!detail"
+      sheet-attr="data-sheet-detail"
+      handle-class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"
+      @close="detail = null"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <!-- 循环日程在详情里也挂同一枚小循环标记 + 一行类型说明（点开也能确认这不是课） -->
+          <p class="flex items-center gap-1.5 text-lg font-bold">
+            <svg
+              v-if="isRoutine(detail)"
+              data-routine-mark
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              class="h-4 w-4 shrink-0 text-ink-dim"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.9"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M13 8a5 5 0 11-1.9-3.9" />
+              <path d="M13 2.2V5h-2.8" />
+            </svg>
+            <span class="truncate">{{ detail.name }}</span>
+          </p>
+          <p class="mt-1 text-xs text-ink-dim">
+            <span v-if="isRoutine(detail)" class="mr-1">循环日程 ·</span>
+            {{ detail.type === 'event' ? detail.date : WDN[(detail.weekday || 1) - 1] }}
+            <span v-if="detail.tag" class="ml-1.5 rounded-full bg-primary-50 px-2 py-0.5 text-primary-600">{{ detail.tag }}</span>
+          </p>
         </div>
-        <!-- 循环日程：编辑与删除，版式与课程一致；二次确认共用同一个 confirmDel -->
-        <div v-else-if="detail.type === 'routine'" class="mt-4 grid grid-cols-2 gap-2.5">
-          <button
-            data-routine-edit
-            class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="editRoutineFromDetail"
-          >
-            编辑
-          </button>
-          <button
-            data-routine-del
-            class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
-            :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
-            @click="onDelRoutine"
-          >
-            {{ confirmDel ? '再点一次确认' : '删除' }}
-          </button>
+        <button
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/5 text-ink-dim transition active:scale-90"
+          @click="detail = null"
+        >
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+        </button>
+      </div>
+      <div class="mt-4 space-y-2.5">
+        <div class="flex items-center gap-3 rounded-xl bg-primary-50/60 px-3.5 py-3">
+          <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 shrink-0 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.5 1.5" /></svg>
+          <div class="min-w-0">
+            <p class="text-sm font-medium">{{ detail.start }} – {{ detail.end }}</p>
+            <p class="text-[11px] text-ink-dim">
+              共 {{ minOf(detail.end) - minOf(detail.start) }} 分钟
+              <span v-if="periodSpan(detail)" class="ml-1 rounded-full bg-primary-500/10 px-1.5 py-0.5 text-primary-600">{{ periodSpan(detail) }}</span>
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 rounded-xl bg-ink/[0.04] px-3.5 py-3">
+          <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 shrink-0 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-11A.5.5 0 012 14z" /><path d="M6 14.5V9h4v5.5" /></svg>
+          <div class="min-w-0">
+            <p class="text-sm font-medium">{{ detail.place || '未填写地点' }}</p>
+            <p class="text-[11px] text-ink-dim">地点</p>
+          </div>
         </div>
       </div>
-    </Transition>
+      <!-- 所有课程都可编辑/删除：自加课改覆盖层，导入课改原始导出文本（随回写带回主项目），mock 课改示例覆盖层 -->
+      <div v-if="detail.type === 'course'" class="mt-4 grid grid-cols-2 gap-2.5">
+        <button
+          class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+          @click="editCourseFromDetail"
+        >
+          编辑
+        </button>
+        <button
+          class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
+          :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
+          @click="onDelCourse"
+        >
+          {{ confirmDel ? '再点一次确认' : '删除' }}
+        </button>
+      </div>
+      <!-- 循环日程：编辑与删除，版式与课程一致；二次确认共用同一个 confirmDel -->
+      <div v-else-if="detail.type === 'routine'" class="mt-4 grid grid-cols-2 gap-2.5">
+        <button
+          data-routine-edit
+          class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+          @click="editRoutineFromDetail"
+        >
+          编辑
+        </button>
+        <button
+          data-routine-del
+          class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
+          :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
+          @click="onDelRoutine"
+        >
+          {{ confirmDel ? '再点一次确认' : '删除' }}
+        </button>
+      </div>
+    </BottomSheet>
 
     <!-- 核对页预览的格子弹层：点空格=加课、点课块=改课（同一个面板两态）。
          位置由点中的格子定好，默认只问课名与地点；「位置与节次」要用时才展开 -->
@@ -4638,334 +4780,307 @@ function gridDbl(e) {
 
     <!-- 长按空白处弹出的类型菜单：加课程 / 加循环日程（用户拍板：长按弹菜单、双击直接加课）。
          与下面的表单面板同为 z-20/z-30 层，二者互斥（选完立刻关菜单再开表单）。 -->
-    <Transition name="fade">
-      <div v-if="addPick" data-add-pick-mask class="fixed inset-0 z-20 bg-black/40" @click="addPick = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="addPick"
-        data-add-pick
-        class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
+    <BottomSheet
+      :open="!!addPick"
+      sheet-attr="data-add-pick"
+      mask-attr="data-add-pick-mask"
+      @close="addPick = null"
+    >
+      <p class="text-base font-bold">在 {{ WDN[addPick.wd - 1] }} {{ addPick.start }} 添加</p>
+      <p class="mt-1 text-xs text-ink-dim">选一个类型</p>
+      <div class="mt-4 space-y-2.5">
+        <button
+          data-pick-course
+          class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.98]"
+          @click="pickKind('course')"
+        >
+          <span class="text-sm font-semibold">课程</span>
+          <span class="text-xs text-ink-dim">按周重复 · 计入学期课表</span>
+        </button>
+        <button
+          data-pick-routine
+          class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.98]"
+          @click="pickKind('routine')"
+        >
+          <span class="flex items-center gap-1.5 text-sm font-semibold">
+            <!-- 小循环箭头，与周视图卡片上的标记同款，选的时候就认得出 -->
+            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0" fill="none" stroke="#5b6b8c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4M13.5 8a5.5 5.5 0 0 1-9.3 4" />
+              <path d="M11.5 1.6v2.6h-2.6M4.5 14.4v-2.6h2.6" />
+            </svg>
+            循环日程
+          </span>
+          <span class="text-xs text-ink-dim">每周固定 · 不占课表</span>
+        </button>
+      </div>
+      <button
+        data-pick-cancel
+        class="mt-3 w-full rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+        @click="addPick = null"
       >
-        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
-        <p class="text-base font-bold">在 {{ WDN[addPick.wd - 1] }} {{ addPick.start }} 添加</p>
-        <p class="mt-1 text-xs text-ink-dim">选一个类型</p>
-        <div class="mt-4 space-y-2.5">
+        取消
+      </button>
+    </BottomSheet>
+
+    <!-- 添加/编辑面板：长按菜单或双击周网格空白处唤起；同一个面板两态，靠 addForm.kind 分流 -->
+    <BottomSheet
+      :open="!!addForm"
+      sheet-attr="data-sheet-add"
+      @close="addForm = null"
+    >
+      <p class="text-base font-bold" data-add-title>{{ addForm.editingId ? (addForm.kind === 'routine' ? '编辑循环日程' : '编辑课程') : (addForm.kind === 'routine' ? '添加循环日程' : '添加课程') }} · {{ WDN[addForm.weekday - 1] }}</p>
+      <div class="mt-4 space-y-3">
+        <input
+          v-model="addForm.name"
+          :placeholder="addForm.kind === 'routine' ? '日程名称（必填）' : '课程名称（必填）'"
+          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+        />
+        <!-- 时间：点哪填哪，左右微调 -->
+        <div class="flex items-center gap-2.5">
+          <div class="flex flex-1 items-center justify-between rounded-xl border border-line bg-canvas px-2 py-1.5">
+            <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="stepStart(-5)">
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
+            </button>
+            <span class="text-sm font-semibold tabular-nums" data-add-start>{{ addForm.start }}</span>
+            <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="stepStart(5)">
+              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+            </button>
+          </div>
           <button
-            data-pick-course
-            class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.98]"
-            @click="pickKind('course')"
+            v-for="d in DURATIONS"
+            :key="d"
+            class="rounded-full px-2.5 py-1.5 text-xs font-medium transition active:scale-95"
+            :class="addForm.duration === d ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
+            @click="addForm.duration = d"
           >
-            <span class="text-sm font-semibold">课程</span>
-            <span class="text-xs text-ink-dim">按周重复 · 计入学期课表</span>
-          </button>
-          <button
-            data-pick-routine
-            class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.98]"
-            @click="pickKind('routine')"
-          >
-            <span class="flex items-center gap-1.5 text-sm font-semibold">
-              <!-- 小循环箭头，与周视图卡片上的标记同款，选的时候就认得出 -->
-              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0" fill="none" stroke="#5b6b8c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4M13.5 8a5.5 5.5 0 0 1-9.3 4" />
-                <path d="M11.5 1.6v2.6h-2.6M4.5 14.4v-2.6h2.6" />
-              </svg>
-              循环日程
-            </span>
-            <span class="text-xs text-ink-dim">每周固定 · 不占课表</span>
+            {{ d }}分
           </button>
         </div>
+        <input
+          v-model="addForm.place"
+          placeholder="地点（选填）"
+          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+        />
+        <!-- 周次规则：循环日程固定每周，不显示单双周（2026-10-01 用户拍板口径） -->
+        <div v-if="addForm.kind !== 'routine'" class="flex gap-2">
+          <button
+            v-for="r in [{ k: 'every', n: '每周' }, { k: 'odd', n: '单周' }, { k: 'even', n: '双周' }]"
+            :key="r.k"
+            class="flex-1 rounded-xl border py-2 text-xs font-medium transition active:scale-[0.97]"
+            :class="addForm.week_rule === r.k ? 'border-primary-400 bg-primary-50 text-primary-600' : 'border-line text-ink-dim'"
+            @click="addForm.week_rule = r.k"
+          >
+            {{ r.n }}
+          </button>
+        </div>
+        <!-- 编辑导入进来的单/双周循环日程时如实说明：表单不给这个选项，但也不会把它改掉 -->
+        <p v-else class="rounded-xl border border-line bg-canvas px-3 py-2 text-xs leading-relaxed text-ink-dim">
+          {{ addForm.week_rule === 'every'
+            ? '循环日程每周重复，不占学期课表。'
+            : '这条原本是' + ({ odd: '单周', even: '双周' }[addForm.week_rule] || '每周') + '，保存后保持原样（循环日程表单不提供单双周选项）。' }}
+        </p>
+      </div>
+      <p v-if="addWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-500">{{ addWarn }}</p>
+      <p v-if="addErr" class="mt-2.5 text-xs text-red-400">{{ addErr }}</p>
+      <div class="mt-4 flex gap-2.5">
         <button
-          data-pick-cancel
-          class="mt-3 w-full rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-          @click="addPick = null"
+          class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+          @click="addForm = null"
         >
           取消
         </button>
+        <button
+          class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+          @click="submitAdd"
+        >
+          {{ addForm.editingId ? '保存修改' : (addForm.kind === 'routine' ? '添加日程' : '添加') }}
+        </button>
       </div>
-    </Transition>
-
-    <!-- 添加/编辑面板：长按菜单或双击周网格空白处唤起；同一个面板两态，靠 addForm.kind 分流 -->
-    <Transition name="fade">
-      <div v-if="addForm" class="fixed inset-0 z-20 bg-black/40" @click="addForm = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="addForm"
-        data-sheet-add
-        class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
-        <p class="text-base font-bold" data-add-title>{{ addForm.editingId ? (addForm.kind === 'routine' ? '编辑循环日程' : '编辑课程') : (addForm.kind === 'routine' ? '添加循环日程' : '添加课程') }} · {{ WDN[addForm.weekday - 1] }}</p>
-        <div class="mt-4 space-y-3">
-          <input
-            v-model="addForm.name"
-            :placeholder="addForm.kind === 'routine' ? '日程名称（必填）' : '课程名称（必填）'"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-          />
-          <!-- 时间：点哪填哪，左右微调 -->
-          <div class="flex items-center gap-2.5">
-            <div class="flex flex-1 items-center justify-between rounded-xl border border-line bg-canvas px-2 py-1.5">
-              <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="stepStart(-5)">
-                <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
-              </button>
-              <span class="text-sm font-semibold tabular-nums" data-add-start>{{ addForm.start }}</span>
-              <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="stepStart(5)">
-                <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
-              </button>
-            </div>
-            <button
-              v-for="d in DURATIONS"
-              :key="d"
-              class="rounded-full px-2.5 py-1.5 text-xs font-medium transition active:scale-95"
-              :class="addForm.duration === d ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
-              @click="addForm.duration = d"
-            >
-              {{ d }}分
-            </button>
-          </div>
-          <input
-            v-model="addForm.place"
-            placeholder="地点（选填）"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-          />
-          <!-- 周次规则：循环日程固定每周，不显示单双周（2026-10-01 用户拍板口径） -->
-          <div v-if="addForm.kind !== 'routine'" class="flex gap-2">
-            <button
-              v-for="r in [{ k: 'every', n: '每周' }, { k: 'odd', n: '单周' }, { k: 'even', n: '双周' }]"
-              :key="r.k"
-              class="flex-1 rounded-xl border py-2 text-xs font-medium transition active:scale-[0.97]"
-              :class="addForm.week_rule === r.k ? 'border-primary-400 bg-primary-50 text-primary-600' : 'border-line text-ink-dim'"
-              @click="addForm.week_rule = r.k"
-            >
-              {{ r.n }}
-            </button>
-          </div>
-          <!-- 编辑导入进来的单/双周循环日程时如实说明：表单不给这个选项，但也不会把它改掉 -->
-          <p v-else class="rounded-xl border border-line bg-canvas px-3 py-2 text-xs leading-relaxed text-ink-dim">
-            {{ addForm.week_rule === 'every'
-              ? '循环日程每周重复，不占学期课表。'
-              : '这条原本是' + ({ odd: '单周', even: '双周' }[addForm.week_rule] || '每周') + '，保存后保持原样（循环日程表单不提供单双周选项）。' }}
-          </p>
-        </div>
-        <p v-if="addWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-500">{{ addWarn }}</p>
-        <p v-if="addErr" class="mt-2.5 text-xs text-red-400">{{ addErr }}</p>
-        <div class="mt-4 flex gap-2.5">
-          <button
-            class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="addForm = null"
-          >
-            取消
-          </button>
-          <button
-            class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
-            @click="submitAdd"
-          >
-            {{ addForm.editingId ? '保存修改' : (addForm.kind === 'routine' ? '添加日程' : '添加') }}
-          </button>
-        </div>
-      </div>
-    </Transition>
+    </BottomSheet>
 
     <!-- 待办增删改面板：点待办文字编辑，＋添加待办新增 -->
-    <Transition name="fade">
-      <div v-if="todoForm" class="fixed inset-0 z-20 bg-black/40" @click="todoForm = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="todoForm"
-        class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
-        <p class="text-base font-bold">{{ todoForm.id ? '编辑待办' : '添加待办' }}</p>
-        <div class="mt-4 space-y-3">
-          <input
-            v-model="todoForm.title"
-            placeholder="要做什么？（必填）"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-          />
+    <BottomSheet
+      :open="!!todoForm"
+      sheet-attr="data-sheet-todo"
+      @close="todoForm = null"
+    >
+      <p class="text-base font-bold">{{ todoForm.id ? '编辑待办' : '添加待办' }}</p>
+      <div class="mt-4 space-y-3">
+        <input
+          v-model="todoForm.title"
+          placeholder="要做什么？（必填）"
+          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+        />
+        <button
+          type="button"
+          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
+          :class="todoForm.due_date ? 'text-ink' : 'text-ink-dim/50'"
+          @click="openDateField({ value: todoForm.due_date, onDone: (v) => (todoForm.due_date = v) })"
+        >
+          {{ todoForm.due_date || '哪天前做完？（可选）' }}
+        </button>
+      </div>
+      <p v-if="todoErr" class="mt-2.5 text-xs text-red-400">{{ todoErr }}</p>
+      <div class="mt-4 flex gap-2.5">
+        <button
+          v-if="todoForm.id"
+          class="rounded-xl border py-2.5 px-4 text-sm font-medium transition active:scale-[0.98]"
+          :class="confirmDelTodo ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
+          @click="onDeleteTodo"
+        >
+          {{ confirmDelTodo ? '再点一次确认' : '删除' }}
+        </button>
+        <button
+          class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+          @click="todoForm = null"
+        >
+          取消
+        </button>
+        <button
+          class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+          @click="submitTodo"
+        >
+          {{ todoForm.id ? '保存修改' : '添加' }}
+        </button>
+      </div>
+    </BottomSheet>
+
+    <!-- 独立日程添加面板：今日视图「＋ 添加日程」唤起 -->
+    <BottomSheet
+      :open="!!evtForm"
+      sheet-attr="data-sheet-evt"
+      @close="evtForm = null"
+    >
+      <p class="text-base font-bold">添加日程</p>
+      <div class="mt-4 space-y-3">
+        <input
+          v-model="evtForm.title"
+          placeholder="日程名称，如：班会（必填）"
+          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+        />
+        <div class="flex gap-2.5">
+          <button
+            type="button"
+            class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
+            :class="evtForm.date ? 'text-ink' : 'text-ink-dim/50'"
+            @click="openDateField({ value: evtForm.date, onDone: (v) => (evtForm.date = v) })"
+          >
+            {{ evtForm.date || '日期' }}
+          </button>
+          <button
+            type="button"
+            class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
+            :class="evtForm.start ? 'text-ink' : 'text-ink-dim/50'"
+            @click="openTimeField({ value: evtForm.start, onDone: (v) => (evtForm.start = v) })"
+          >
+            {{ evtForm.start || '几点开始' }}
+          </button>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <button
+            v-for="d in DURATIONS"
+            :key="d"
+            class="flex-1 rounded-full py-1.5 text-xs font-medium transition active:scale-95"
+            :class="evtForm.duration === d ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
+            @click="evtForm.duration = d"
+          >
+            {{ d }}分
+          </button>
+        </div>
+        <input
+          v-model="evtForm.place"
+          placeholder="地点（选填）"
+          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+        />
+      </div>
+      <p v-if="evtWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-500">{{ evtWarn }}</p>
+      <p v-if="evtErr" class="mt-2.5 text-xs text-red-400">{{ evtErr }}</p>
+      <div class="mt-4 flex gap-2.5">
+        <button
+          class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+          @click="evtForm = null"
+        >
+          取消
+        </button>
+        <button
+          class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+          @click="submitEvent"
+        >
+          添加
+        </button>
+      </div>
+    </BottomSheet>
+
+    <!-- 学期信息/节次表编辑弹层 -->
+    <BottomSheet
+      :open="!!semForm"
+      sheet-attr="data-sheet-sem"
+      @close="semForm = null"
+    >
+      <p class="text-base font-bold">编辑学期</p>
+
+      <div class="mt-4 space-y-3">
+        <input
+          v-model="semForm.name"
+          placeholder="学期名称"
+          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+        />
+        <label class="block">
+          <span class="mb-1 block text-xs text-ink-dim">第一周的周一（决定「第几周」怎么算）</span>
           <button
             type="button"
             class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
-            :class="todoForm.due_date ? 'text-ink' : 'text-ink-dim/50'"
-            @click="openDateField({ value: todoForm.due_date, onDone: (v) => (todoForm.due_date = v) })"
+            :class="semForm.first_monday ? 'text-ink' : 'text-ink-dim/50'"
+            @click="openDateField({ value: semForm.first_monday, restrictMonday: true, onDone: (v) => (semForm.first_monday = v) })"
           >
-            {{ todoForm.due_date || '哪天前做完？（可选）' }}
+            {{ semForm.first_monday || '选一个周一' }}
           </button>
-        </div>
-        <p v-if="todoErr" class="mt-2.5 text-xs text-red-400">{{ todoErr }}</p>
-        <div class="mt-4 flex gap-2.5">
-          <button
-            v-if="todoForm.id"
-            class="rounded-xl border py-2.5 px-4 text-sm font-medium transition active:scale-[0.98]"
-            :class="confirmDelTodo ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
-            @click="onDeleteTodo"
-          >
-            {{ confirmDelTodo ? '再点一次确认' : '删除' }}
-          </button>
-          <button
-            class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="todoForm = null"
-          >
-            取消
-          </button>
-          <button
-            class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
-            @click="submitTodo"
-          >
-            {{ todoForm.id ? '保存修改' : '添加' }}
-          </button>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 独立日程添加面板：今日视图「＋ 添加日程」唤起 -->
-    <Transition name="fade">
-      <div v-if="evtForm" class="fixed inset-0 z-20 bg-black/40" @click="evtForm = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="evtForm"
-        data-sheet-evt
-        class="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
-        <p class="text-base font-bold">添加日程</p>
-        <div class="mt-4 space-y-3">
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-xs text-ink-dim">总周数（1–30）</span>
           <input
-            v-model="evtForm.title"
-            placeholder="日程名称，如：班会（必填）"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
+            v-model.number="semForm.total_weeks"
+            type="number"
+            min="1"
+            max="30"
+            step="1"
+            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm tabular-nums outline-none focus:border-primary-400"
           />
-          <div class="flex gap-2.5">
-            <button
-              type="button"
-              class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
-              :class="evtForm.date ? 'text-ink' : 'text-ink-dim/50'"
-              @click="openDateField({ value: evtForm.date, onDone: (v) => (evtForm.date = v) })"
-            >
-              {{ evtForm.date || '日期' }}
-            </button>
-            <button
-              type="button"
-              class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
-              :class="evtForm.start ? 'text-ink' : 'text-ink-dim/50'"
-              @click="openTimeField({ value: evtForm.start, onDone: (v) => (evtForm.start = v) })"
-            >
-              {{ evtForm.start || '几点开始' }}
-            </button>
-          </div>
-          <div class="flex items-center gap-2.5">
-            <button
-              v-for="d in DURATIONS"
-              :key="d"
-              class="flex-1 rounded-full py-1.5 text-xs font-medium transition active:scale-95"
-              :class="evtForm.duration === d ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
-              @click="evtForm.duration = d"
-            >
-              {{ d }}分
-            </button>
-          </div>
-          <input
-            v-model="evtForm.place"
-            placeholder="地点（选填）"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-          />
-        </div>
-        <p v-if="evtWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-500">{{ evtWarn }}</p>
-        <p v-if="evtErr" class="mt-2.5 text-xs text-red-400">{{ evtErr }}</p>
-        <div class="mt-4 flex gap-2.5">
-          <button
-            class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="evtForm = null"
-          >
-            取消
-          </button>
-          <button
-            class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
-            @click="submitEvent"
-          >
-            添加
-          </button>
-        </div>
+        </label>
       </div>
-    </Transition>
 
-    <!-- 学期信息/节次表编辑弹层 -->
-    <Transition name="fade">
-      <div v-if="semForm" class="fixed inset-0 z-20 bg-black/40" @click="semForm = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="semForm"
-        class="fixed inset-x-0 bottom-0 z-30 mx-auto max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
-        <p class="text-base font-bold">编辑学期</p>
-
-        <div class="mt-4 space-y-3">
-          <input
-            v-model="semForm.name"
-            placeholder="学期名称"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-          />
-          <label class="block">
-            <span class="mb-1 block text-xs text-ink-dim">第一周的周一（决定「第几周」怎么算）</span>
-            <button
-              type="button"
-              class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
-              :class="semForm.first_monday ? 'text-ink' : 'text-ink-dim/50'"
-              @click="openDateField({ value: semForm.first_monday, restrictMonday: true, onDone: (v) => (semForm.first_monday = v) })"
-            >
-              {{ semForm.first_monday || '选一个周一' }}
-            </button>
-          </label>
-          <label class="block">
-            <span class="mb-1 block text-xs text-ink-dim">总周数（1–30）</span>
-            <input
-              v-model.number="semForm.total_weeks"
-              type="number"
-              min="1"
-              max="30"
-              step="1"
-              class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm tabular-nums outline-none focus:border-primary-400"
-            />
-          </label>
-        </div>
-
-        <!-- 节次表（分段式：段内改参数只重排本段，午休/大课间原样保留） -->
-        <p class="mt-5 text-sm font-semibold">节次时间表</p>
-        <p class="mt-1 text-[11px] text-ink-dim">改「每节 / 课间」只重排本段（午休、大课间不动）；改某节开始时间本段后面整体顺移；全部删掉 = 不设置节次（周视图回落默认节次表）</p>
-        <div class="mt-2">
-          <PeriodsEditor
-            v-model="semForm.periods"
-            :open-time="openTimeField"
-            :fallback="DEFAULT_PERIODS"
-            @error="(m) => (semErr = m)"
-          />
-        </div>
-
-        <p v-if="semErr" class="mt-3 text-xs text-red-400">{{ semErr }}</p>
-        <div class="mt-4 flex gap-2.5">
-          <button
-            class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="semForm = null"
-          >
-            取消
-          </button>
-          <button
-            class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
-            @click="saveSemEdit"
-          >
-            保存
-          </button>
-        </div>
+      <!-- 节次表（分段式：段内改参数只重排本段，午休/大课间原样保留） -->
+      <p class="mt-5 text-sm font-semibold">节次时间表</p>
+      <p class="mt-1 text-[11px] text-ink-dim">改「每节 / 课间」只重排本段（午休、大课间不动）；改某节开始时间本段后面整体顺移；全部删掉 = 不设置节次（周视图回落默认节次表）</p>
+      <div class="mt-2">
+        <PeriodsEditor
+          v-model="semForm.periods"
+          :open-time="openTimeField"
+          :fallback="DEFAULT_PERIODS"
+          @error="(m) => (semErr = m)"
+        />
       </div>
-    </Transition>
+
+      <p v-if="semErr" class="mt-3 text-xs text-red-400">{{ semErr }}</p>
+      <div class="mt-4 flex gap-2.5">
+        <button
+          class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
+          @click="semForm = null"
+        >
+          取消
+        </button>
+        <button
+          class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+          @click="saveSemEdit"
+        >
+          保存
+        </button>
+      </div>
+    </BottomSheet>
 
     <!-- 共享 picker 弹层：日期月历 / 时间滚轮（叠在表单 sheet 之上） -->
     <Transition name="fade">
-      <div v-if="picker" class="fixed inset-0 z-40 bg-black/40" @click="picker = null"></div>
+      <div v-if="picker" data-picker-mask class="fixed inset-0 z-40 bg-black/40" @click="picker = null"></div>
     </Transition>
     <Transition name="slide">
       <div

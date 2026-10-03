@@ -37,11 +37,11 @@ await page.addInitScript(([mon]) => {
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(600)
 
-/* 入口 A：今日页「管理 ›」直达打卡页 */
+/* 入口：今日页「管理 ›」打开打卡浮层（2026-10-03 方案 C：原「打卡」页已并成底部浮层，不再有该 tab） */
 await page.locator('[data-today-habit-more]').click()
 await page.waitForTimeout(500)
-const card = page.locator('[data-page="habit"]')
-t('1. 「管理 ›」跳到打卡页', (await card.locator('h2', { hasText: '打卡记录' }).count()) === 1)
+const card = page.locator('[data-habit-sheet]')
+t('1. 「管理 ›」打开打卡浮层', (await card.locator('h2', { hasText: '打卡记录' }).count()) === 1)
 
 const row = card.locator('[data-habit-row]').filter({ hasText: '宽限测试' })
 const states = () => row.locator('[data-habit-cell]').evaluateAll((els) => els.map((e) => e.dataset.cellState))

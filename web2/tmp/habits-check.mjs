@@ -1,6 +1,8 @@
 /* 打卡交互测试（playwright，走 dist 静态服务）
    2026-10-02 三期改版后口径：今日页只留「一按即打」的圆圈（＋连续天数），
-   管理（添加 / 7 格 / 删除 / 导入接管）全部在独立的「打卡」页（第 4 个 tab）。
+   管理（添加 / 7 格 / 删除 / 导入接管）全在独立的打卡二级层里。
+   2026-10-03 方案 C：底部 tab 5→3，「打卡」页并进今日页的底部浮层（data-habit-sheet），
+   入口是今日页的「管理 ›」（data-today-habit-more）——不再有「打卡」tab（脚本随之改走浮层）。
    覆盖：空态 / 添加 / 7 格 / 打卡与取消 / 刷新持久化 / 两段式删除 /
    web2.habits 落盘 / 导入整体接管与坏数据剔除 / streak 昨天回溯 / 桌面宽度冒烟 */
 const { chromium } = await import('file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs')
@@ -21,6 +23,22 @@ page.on('pageerror', (e) => errors.push(String(e)))
    环境噪音（构建产物不受影响），改用 response 事件拿 URL 后排除 */
 page.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('favicon')) errors.push('HTTP ' + r.status() + ' ' + r.url()) })
 
+/* 2026-10-03 方案 C：打卡从「第 4 个 tab」搬成了今日页的底部浮层。
+   打开：点今日页「管理 ›」（全部打完的收起态里它仍在 data-today-habit-done 内）；
+   关闭：浮层自带 data-habit-sheet-close，或点遮罩。 */
+const openHabitSheet = async (pg = page, wait = 500) => {
+  if ((await pg.locator('[data-habit-sheet]').count()) === 0) {
+    await pg.locator('[data-today-habit-more]').first().click()
+    await pg.waitForTimeout(wait)
+  }
+}
+const closeHabitSheet = async (pg = page) => {
+  if ((await pg.locator('[data-habit-sheet]').count()) === 1) {
+    await pg.locator('[data-habit-sheet-close]').click()
+    await pg.waitForTimeout(450)
+  }
+}
+
 await page.addInitScript(() => localStorage.setItem('web2.onboarded', '1'))
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(600)
@@ -31,12 +49,11 @@ const todaySection = page.locator('[data-page="today"]')
 t('1. 今日页空态引导去「打卡」页', (await todaySection.locator('p', { hasText: '还没有打卡习惯' }).count()) === 1)
 t('2. 今日页有「管理 ›」入口', (await todaySection.locator('[data-today-habit-more]').count()) === 1)
 
-/* ===== 切到打卡页 ===== */
-await page.locator('nav button', { hasText: '打卡' }).click()
-await page.waitForTimeout(500)
-const card = page.locator('[data-page="habit"]') // 平移层第 3 页 = 打卡页（today/week/habit/me）
-t('3. 打卡页有「打卡记录」标题', (await card.locator('h2', { hasText: '打卡记录' }).count()) === 1)
-t('4. 打卡页初始空态', (await card.locator('p', { hasText: '还没有打卡习惯' }).count()) === 1)
+/* ===== 打开打卡浮层（原「打卡」tab 的位置） ===== */
+await openHabitSheet()
+const card = page.locator('[data-habit-sheet]')
+t('3. 打卡浮层有「打卡记录」标题', (await card.locator('h2', { hasText: '打卡记录' }).count()) === 1)
+t('4. 打卡浮层初始空态', (await card.locator('p', { hasText: '还没有打卡习惯' }).count()) === 1)
 
 /* 5-7. 添加两个习惯 */
 await card.locator('button', { hasText: '＋ 添加' }).click()
@@ -73,10 +90,10 @@ await row1.locator('button[aria-label="今日打卡"]').click() // 重新打上
 t('14. 今日页精简块同步显示已打卡', (await todaySection.locator('[data-today-habit]').filter({ hasText: '背单词' }).locator('button[aria-label="取消今日打卡"]').count()) === 1)
 
 /* 14b. 减法（2026-10-02）：全部打完 → 今日页打卡区收成一行
-   先切回今日页：上面几步操作都在「打卡」页，且今日页打卡区在「全部完成」态下
-   会把标题 h2 一起收掉，用 h2 定位不稳 —— 一律用 data-page 锚点 + data 属性。 */
-await page.locator('nav button', { hasText: '今日' }).click()
-await page.waitForTimeout(500)
+   先收起打卡浮层（浮层遮罩盖着页面，收起来才能在今日页上点）。
+   注意：今日页打卡区在「全部完成」态下会把标题 h2 一起收掉，用 h2 定位不稳
+   —— 一律用 data-page 锚点 + data 属性。 */
+await closeHabitSheet()
 const todayPane = page.locator('[data-page="today"]')
 await todayPane.locator('[data-today-habit]').filter({ hasText: '晨跑' })
   .locator('button[aria-label="今日打卡"]').click()
@@ -107,10 +124,9 @@ t('15. 刷新后打卡状态保持',
   (await page.locator('[data-page="today"] [data-today-habit]')
     .filter({ hasText: '背单词' }).locator('button[aria-label="取消今日打卡"]').count()) === 1)
 
-/* ===== 回打卡页：两段式删除 ===== */
-await page.locator('nav button', { hasText: '打卡' }).click()
-await page.waitForTimeout(500)
-const card2 = page.locator('[data-page="habit"]')
+/* ===== 回打卡浮层：两段式删除 ===== */
+await openHabitSheet()
+const card2 = page.locator('[data-habit-sheet]')
 const row2 = card2.locator('[data-habit-row]').filter({ hasText: '晨跑' })
 await row2.locator('button[aria-label="删除习惯"]').click()
 await page.waitForTimeout(150)
@@ -154,7 +170,7 @@ await page.locator('input[type="file"]').first().setInputFiles({ name: 'backup.j
 await page.waitForTimeout(600)
 /* 导入成功走 reloadDataset 统一刷新（含 habits），就地更新，无需切页/刷新 */
 await page.waitForTimeout(300)
-const card3 = page.locator('[data-page="habit"]')
+const card3 = page.locator('[data-habit-sheet]')
 t('20. 导入整体接管（旧习惯不在）', (await card3.locator('[data-habit-row]').filter({ hasText: '背单词' }).count()) === 0)
 t('21. 导入的习惯出现', (await card3.locator('[data-habit-row]').filter({ hasText: '导入的习惯甲' }).count()) === 1)
 t('22. 坏数据（空名）被剔除', (await card3.locator('[data-habit-row]').count()) === 1)
@@ -167,9 +183,8 @@ const p2 = await ctx.browser().newContext({ viewport: { width: 1280, height: 800
 await p2.addInitScript(() => localStorage.setItem('web2.onboarded', '1'))
 await p2.goto(BASE, { waitUntil: 'domcontentloaded' })
 await p2.waitForTimeout(500)
-await p2.locator('nav button', { hasText: '打卡' }).click()
-await p2.waitForTimeout(400)
-t('24. 桌面 1280 正常渲染打卡页', (await p2.locator('[data-page="habit"]').locator('h2', { hasText: '打卡记录' }).count()) === 1)
+await openHabitSheet(p2, 400)
+t('24. 桌面 1280 正常渲染打卡浮层', (await p2.locator('[data-habit-sheet]').locator('h2', { hasText: '打卡记录' }).count()) === 1)
 await p2.close()
 
 t('全程无页面报错', errors.length === 0)

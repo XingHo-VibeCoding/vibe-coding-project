@@ -140,15 +140,15 @@ try {
   await page.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
   await page.goto(URL, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
-  await page.locator('nav button', { hasText: '我的' }).click()
+  await page.locator('nav button', { hasText: '周课表' }).click()
   await page.waitForTimeout(400)
   await page.locator('[data-mine-rec]').click()
   await page.waitForTimeout(400)
-  t('I1. 我的页识别入口、缺 Key → 落到配置页（不再只给红字）', await page.locator('[data-ob-ai-key]').isVisible())
+  t('I1. 课表页识别入口、缺 Key → 落到配置页（不再只给红字）', await page.locator('[data-ob-ai-key]').isVisible())
   t('I2. mine 模式下配置页给「取消识别」出口', await page.locator('[data-mine-rec-cancel]').isVisible())
   await page.locator('[data-mine-rec-cancel]').click()
   await page.waitForTimeout(400)
-  t('I3. 取消后整层关掉、回到我的页', await page.locator('[data-mine-rec]').isVisible())
+  t('I3. 取消后整层关掉、回到课表页', await page.locator('[data-mine-rec]').isVisible())
   await ctx.close()
 
   /* ============ ⑩ 识别页被兜底拦进配置页 → 配好滑回识别页（反向动画） ============ */

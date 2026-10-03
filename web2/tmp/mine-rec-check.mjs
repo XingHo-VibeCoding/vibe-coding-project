@@ -77,10 +77,10 @@ try {
 
   // 1. 入口
   t('A1. 已引导用户直接进应用（无引导层）', !(await page.locator('text=欢迎来到日程助手').isVisible().catch(() => false)))
-  const mineNav = page.locator('nav button', { hasText: '我的' })
+  const mineNav = page.locator('nav button', { hasText: '周课表' })
   await mineNav.click()
   await page.waitForTimeout(400)
-  t('A2. 「我的」页有识别入口', await page.locator('[data-mine-rec]').isVisible())
+  t('A2. 课表页右上「＋」有识别入口', await page.locator('[data-mine-rec]').isVisible())
 
   // 2. 点开 → 识别页：换算表用当前学期的
   await page.locator('[data-mine-rec]').click()
@@ -95,7 +95,7 @@ try {
   // 3. 取消识别
   await page.locator('[data-mine-rec-cancel]').click()
   await page.waitForTimeout(400)
-  t('C1. 取消后回到应用（我的页可见）', await page.locator('[data-mine-rec]').isVisible())
+  t('C1. 取消后回到应用（课表页可见）', await page.locator('[data-mine-rec]').isVisible())
   t('C2. 引导层已关闭', !(await page.locator('[data-ob-summary]').isVisible().catch(() => false)))
 
   // 4. 再进 → 识别 → 确认页

@@ -97,6 +97,17 @@ try {
   t('4e. 再按返回键关掉编辑弹层', (await masks()) === 0)
   t('4f. 仍未退出', (await exits()) === 1)
 
+  // 4g/4h. 「我的」页里的就地展开块（设置折叠）也吃返回键；但切到别的 tab 后它看不见，不能再吞返回键
+  //        （2026-10-03 方案 C Step 5：closeTopmostLayer 的两处就地展开分支加了 tab === 'me' 守卫）
+  t('4g-pre. 设置折叠此刻还开着（第 3 步展开后没收）', (await page.locator('[data-settings-body]').count()) === 1)
+  await fire()
+  await page.waitForTimeout(400)
+  t('4g. 我的页里返回键先收起「设置」折叠（不退 app、不切页）',
+    (await page.locator('[data-settings-body]').count()) === 0 && (await exits()) === 1 && (await activeTab()).includes('我的'))
+  await page.locator('[data-settings-toggle]').click()
+  await page.waitForTimeout(350)
+  t('4h. 重新展开设置折叠（下一步检验：切走后的隐藏状态不许吞返回键）', (await page.locator('[data-settings-body]').count()) === 1)
+
   // 5. 今日页：退出预备窗口过期后，重新走「提示 → 再按退出」
   await page.locator('nav button', { hasText: '今日' }).click()
   await page.waitForTimeout(2300) // 等 2 秒退出预备窗口过期
