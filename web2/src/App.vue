@@ -541,19 +541,39 @@ function applyFrameActions(list) {
   }
   if (touched) pushFrameNow()
 }
+let frameDrainErr = ''
 async function drainFrameActions() {
   const r = await consumeFrameActions()
-  if (r.ok && r.actions && r.actions.length) applyFrameActions(r.actions)
+  if (!r.ok) {
+    /* 领不到也必须当场看得见：v1.41.1 真机上原生只回一个 {}，动作被取走清空、
+       网页什么都没收到，而这份错误原来只写进返回值、没人看——静默失败就是这么来的。 */
+    if (r.error && r.error !== frameDrainErr) {
+      frameDrainErr = r.error
+      setFrameMsg('状态框动作领取失败：' + r.error, true)
+      showFrameToast('状态框动作领取失败：' + r.error)
+    }
+    return
+  }
+  frameDrainErr = ''
+  if (r.actions.length) applyFrameActions(r.actions)
 }
 async function initFrame() {
   frameIsApp.value = frameAvailable()
   if (!frameIsApp.value) return
-  await pushFrameNow() // 先把本地开关与今天的快照同步给原生（原生据此决定起不起服务）
+  /* 顺序要紧：先把「收动作」的通道挂上（监听 + 轮询），再去推快照。
+     推快照是一次原生往返，万一卡住/超时，原来会把后面的注册一起拖死——
+     动作通道根本没建立，用户按按钮就永远是「原生有反应、App 毫无动静」。 */
   onFrameActions(applyFrameActions) // App 在跑时按按钮走这条，不用等下次冷启动
-  const r = await frameRunning()
-  if (r.ok && !r.running && frameSettings.value.enabled) setFrameMsg('状态框没能常驻（系统可能限制了后台运行），下拉通知栏看得到吗？', true)
-  await drainFrameActions()
   startFrameDrainLoop()
+  await drainFrameActions() // 冷启动：原生那侧可能已经攒下了动作
+  try {
+    await pushFrameNow() // 再把本地开关与今天的快照同步给原生（原生据此决定起不起服务）
+    const r = await frameRunning()
+    if (r.ok && !r.running && frameSettings.value.enabled) setFrameMsg('状态框没能常驻（系统可能限制了后台运行），下拉通知栏看得到吗？', true)
+    await drainFrameActions() // 推快照时原生可能又补发了事件，再领一次
+  } catch (_) {
+    /* 推送失败不许影响领动作 */
+  }
 }
 async function toggleFrame() {
   const next = saveFrameSettings({ enabled: !frameSettings.value.enabled })

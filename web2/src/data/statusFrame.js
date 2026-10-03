@@ -173,8 +173,11 @@ export async function consumeFrameActions() {
   if (!svc || !svc.consumeActions) return { ok: true, actions: [] }
   try {
     const r = await svc.consumeActions()
-    const list = (r && r.actions) || []
-    return { ok: true, actions: Array.isArray(list) ? list : [] }
+    /* 「看起来成功、其实动作被吞」是这里最危险的失败：v1.41.1 真机上原生用了
+       JSArray.from(JSONArray)（恒返回 null，put 进去会把 key 整个删掉），于是
+       consumeActions 只回一个 {}——动作已被原生取走并清空，网页却什么都没收到。 */
+    if (!r || !Array.isArray(r.actions)) return { ok: false, actions: [], error: '原生没回传 actions' }
+    return { ok: true, actions: r.actions }
   } catch (e) {
     return { ok: false, actions: [], error: String((e && e.message) || e) }
   }
