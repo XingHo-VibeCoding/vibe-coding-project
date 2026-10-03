@@ -37,6 +37,42 @@ export function clampRepeatTimes(n) {
   return Math.min(DEFAULTS.repeatTimesMax, Math.max(DEFAULTS.repeatTimesMin, v))
 }
 
+/* ------------------------------------------------------------------
+   设置界面的输入解析（纯函数，好单测）——界面上手输的东西一律先过这里，
+   非法输入绝不写进设置（宁可保留原值）
+   ------------------------------------------------------------------ */
+
+/* 复习间隔输入框：'1,2,4,7,15,30' → [1,2,4,7,15,30]。
+   宽容解析：逗号/中文逗号/空白都算分隔；丢掉非数字、≤0、>365、重复项；
+   一个都没解析出来 → 用 fallback（调用方传当前值，等于"没改"）。
+   最多 12 档，防手抖贴一大串。 */
+export function parseIntervals(text, fallback) {
+  const fb = Array.isArray(fallback) && fallback.length
+    ? [...new Set(fallback.map(Number).filter((n) => Number.isFinite(n) && n > 0))]
+    : DEFAULTS.reviewIntervals.slice()
+  const out = []
+  for (const part of String(text == null ? '' : text).split(/[,，、\s]+/)) {
+    if (!part) continue
+    const n = Math.round(Number(part))
+    if (Number.isFinite(n) && n >= 1 && n <= 365 && !out.includes(n)) out.push(n)
+    if (out.length >= 12) break
+  }
+  return out.length ? out : (fb.length ? fb : DEFAULTS.reviewIntervals.slice())
+}
+
+/* 数组 → 输入框里的文本（用半角逗号，能原样再被 parseIntervals 吃回去） */
+export function formatIntervals(list) {
+  const arr = Array.isArray(list) ? list.map(Number).filter((n) => Number.isFinite(n) && n > 0) : []
+  return arr.join(',')
+}
+
+/* 数字输入框：取整并钳到 [min, max]；解析不出来 → fallback（= 原值，等于"没改"） */
+export function intInRange(text, fallback, min, max) {
+  const n = Math.round(Number(text))
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(max, Math.max(min, n))
+}
+
 /* 一段音频实际要连放几遍（会话内重复）：
    本条 repeat_times 优先；null / 非法 → 跟随全局设置；全局也没有 → 1（宁可少放，不凭空多放）。
    注意 clampRepeatTimes 会把非法值兜成默认 3，所以这里先自己判合法再交给它。 */

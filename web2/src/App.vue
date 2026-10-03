@@ -9,7 +9,7 @@ import { loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable,
 import { compressImageForRecognize, recognizeScheduleImage, recognizerAvailable } from './data/recognizer.js'
 import { buildIcs, downloadText } from './data/ics.js'
 import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL } from './data/notify.js'
-import { loadClips, saveClips, loadSettings as loadListenSettings, saveSettings as saveListenSettings, reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey, minOf as minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices } from './data/listen.js'
+import { loadClips, saveClips, loadSettings as loadListenSettings, saveSettings as saveListenSettings, reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey, minOf as minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices, parseIntervals, formatIntervals, intInRange, isTimeStr, DEFAULTS as LISTEN_DEFAULTS } from './data/listen.js'
 import { fileToBase64, writeClipBytes, resolveListenUri, makeClipBlobUrl, statClipFile } from './data/listenStore.js'
 import MonthCalendar from './components/MonthCalendar.vue'
 import NumberWheel from './components/NumberWheel.vue'
@@ -1010,6 +1010,62 @@ function toggleListenNotify() {
     ? '已开启到点提醒：到复习日合并成一条通知（记得允许通知权限）。'
     : '已关掉练耳提醒（课前提醒不受影响）。')
   applyListenSchedule()
+}
+
+/* ------------------------------------------------------------------
+   练耳设置面板（2026-10-03 补：repeatTimes / reviewIntervals / 勿扰 / 两个阈值
+   原来只能改代码里的 DEFAULTS，真机上没法自己调，连"改勿扰验 L5"都做不到）。
+   面板里的输入一律先过 listen.js 的纯函数解析（parseIntervals / intInRange / isTimeStr），
+   非法值**不写库**、界面回退成当前值；写库后 applyListenSchedule() 重排通知。
+   ------------------------------------------------------------------ */
+const listenSettingsOpen = ref(false)
+function patchListenSettings(patch, msg) {
+  listenSettings.value = saveListenSettings(patch)
+  if (msg) setListenMsg(msg)
+  applyListenSchedule()
+}
+/* 连放遍数：3–5（点一下直接落库，不用再点保存） */
+function onListenRepeat(n) {
+  const v = intInRange(n, listenSettings.value.repeatTimes, LISTEN_DEFAULTS.repeatTimesMin, LISTEN_DEFAULTS.repeatTimesMax)
+  patchListenSettings({ repeatTimes: v }, `连放遍数已改成 ${v} 遍。`)
+}
+/* 复习间隔：手输 '1,2,4,7,15,30'；解析不出来就保留原值并把输入框回退 */
+function onListenIntervals(e) {
+  const el = e && e.target
+  const iv = parseIntervals(el ? el.value : '', listenSettings.value.reviewIntervals)
+  if (el) el.value = formatIntervals(iv)
+  patchListenSettings({ reviewIntervals: iv }, `复习间隔已改成 ${formatIntervals(iv)} 天。`)
+}
+/* 勿扰时段：支持跨零点（start > end 就是跨夜） */
+function onListenDnd(kind, e) {
+  const el = e && e.target
+  const cur = kind === 'start' ? listenSettings.value.dndStart : listenSettings.value.dndEnd
+  const t = String((el && el.value) || '')
+  if (!isTimeStr(t)) { if (el) el.value = cur; return }
+  const next = kind === 'start' ? { dndStart: t } : { dndEnd: t }
+  const s = kind === 'start' ? t : listenSettings.value.dndStart
+  const en = kind === 'start' ? listenSettings.value.dndEnd : t
+  patchListenSettings(next, `勿扰时段已改成 ${s}–${en}${minOfTime(en) <= minOfTime(s) ? '（跨夜）' : ''}，这段时间不发提醒。`)
+}
+/* 两个分钟阈值：短槽上限 / 最短空档（都 ≥1 分钟） */
+function onListenNum(key, e) {
+  const el = e && e.target
+  const v = intInRange(el ? el.value : '', listenSettings.value[key], 1, 120)
+  if (el) el.value = String(v)
+  patchListenSettings({ [key]: v }, key === 'shortGapMaxMin'
+    ? `短槽上限已改成 ${v} 分钟（${v} 分钟以内的空档按短槽算，只放 1 段）。`
+    : `最短空档已改成 ${v} 分钟（比这更碎的空档不排）。`)
+}
+/* 一键回到 DEFAULTS（只改练耳这几项，不动课程提醒的设置） */
+function resetListenSettings() {
+  patchListenSettings({
+    repeatTimes: LISTEN_DEFAULTS.repeatTimes,
+    reviewIntervals: LISTEN_DEFAULTS.reviewIntervals.slice(),
+    dndStart: LISTEN_DEFAULTS.dndStart,
+    dndEnd: LISTEN_DEFAULTS.dndEnd,
+    shortGapMaxMin: LISTEN_DEFAULTS.shortGapMaxMin,
+    slotMinMin: LISTEN_DEFAULTS.slotMinMin,
+  }, '练耳设置已恢复默认。')
 }
 
 /* ------------------------------------------------------------------
@@ -3870,6 +3926,95 @@ function gridDbl(e) {
           <p v-if="listenSettings.enabled && !notifyOk" class="mt-1.5 text-[11px] leading-relaxed text-amber-500">
             这个环境没有通知能力（浏览器里收不到）——装到手机 App 里才生效。
           </p>
+
+          <!-- 练耳设置面板（2026-10-03 补：这几项原来只能改代码里的 DEFAULTS） -->
+          <button
+            class="mt-2.5 flex w-full items-center justify-between rounded-xl bg-ink/[0.03] px-3 py-2 text-[12px] font-medium text-ink-dim transition active:scale-[0.99]"
+            data-listen-settings-toggle
+            :aria-expanded="listenSettingsOpen ? 'true' : 'false'"
+            @click="listenSettingsOpen = !listenSettingsOpen"
+          >
+            <span>练耳设置（遍数 / 复习间隔 / 勿扰 / 空档）</span>
+            <span class="text-[11px] text-ink-dim/70">{{ listenSettingsOpen ? '收起' : '展开' }}</span>
+          </button>
+
+          <div v-if="listenSettingsOpen" data-listen-settings class="mt-2 space-y-2.5 rounded-xl bg-ink/[0.04] px-3 py-3">
+            <div class="flex items-center gap-2">
+              <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">连放遍数</span>
+              <div class="flex gap-1.5">
+                <button
+                  v-for="n in [3, 4, 5]"
+                  :key="n"
+                  class="h-7 rounded-lg px-2.5 text-[12px] font-medium transition active:scale-95"
+                  :class="listenSettings.repeatTimes === n ? 'bg-primary-500 text-white' : 'bg-ink/[0.06] text-ink-dim'"
+                  :data-listen-repeat="n"
+                  @click="onListenRepeat(n)"
+                >{{ n }} 遍</button>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">复习间隔</span>
+              <input
+                type="text"
+                inputmode="numeric"
+                data-listen-intervals
+                class="min-w-0 flex-1 rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
+                :value="formatIntervals(listenSettings.reviewIntervals)"
+                @change="onListenIntervals"
+              />
+              <span class="shrink-0 text-[11px] text-ink-dim/70">天</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">勿扰时段</span>
+              <input
+                type="time"
+                data-listen-dnd-start
+                class="rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
+                :value="listenSettings.dndStart"
+                @change="onListenDnd('start', $event)"
+              />
+              <span class="text-[11px] text-ink-dim/60">至</span>
+              <input
+                type="time"
+                data-listen-dnd-end
+                class="rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
+                :value="listenSettings.dndEnd"
+                @change="onListenDnd('end', $event)"
+              />
+            </div>
+            <p class="text-[11px] leading-relaxed text-ink-dim/70">结束时间早于开始时间 = 跨夜（默认 23:00–07:00），这段时间不发提醒。</p>
+            <div class="flex items-center gap-2">
+              <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">短槽上限</span>
+              <input
+                type="number"
+                min="1"
+                max="120"
+                data-listen-short-gap
+                class="w-16 rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
+                :value="listenSettings.shortGapMaxMin"
+                @change="onListenNum('shortGapMaxMin', $event)"
+              />
+              <span class="text-[11px] text-ink-dim/70">分钟以内算短槽（只放 1 段）</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">最短空档</span>
+              <input
+                type="number"
+                min="1"
+                max="120"
+                data-listen-slot-min
+                class="w-16 rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
+                :value="listenSettings.slotMinMin"
+                @change="onListenNum('slotMinMin', $event)"
+              />
+              <span class="text-[11px] text-ink-dim/70">分钟以下不排（太碎听不完）</span>
+            </div>
+            <button
+              class="w-full rounded-lg bg-ink/[0.06] py-2 text-[12px] font-medium text-ink-dim transition active:scale-[0.99]"
+              data-listen-settings-reset
+              @click="resetListenSettings"
+            >恢复默认</button>
+          </div>
 
           <label class="mt-3.5 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-primary-400/50 bg-primary-50/40 px-3 py-3 text-xs font-medium text-primary-500 transition active:scale-[0.99]">
             <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V3M4.5 6.5L8 3l3.5 3.5" /><path d="M3 11.5V13a1 1 0 001 1h8a1 1 0 001-1v-1.5" /></svg>

@@ -1,7 +1,8 @@
 /* 碎片练耳 UI 检查（playwright，走 dist 静态服务）
    四期 Day 18：覆盖 L1（导入 + 列表 + 刷新不丢）、放满遍数**自动**记一次已听（2026-10-03 用户决策，
    手工「已听」按钮已去掉）、暂停/继续保留遍数与断点、
-   会话内连放（repeatTimes），以及 L3/L4（复习到点提醒排练程 + 到点提醒开关 + 点通知只提醒不自动播放）。
+   会话内连放（repeatTimes），以及 L3/L4（复习到点提醒排练程 + 到点提醒开关 + 点通知只提醒不自动播放），
+   另有 M 段：练耳设置面板（连放遍数 / 复习间隔 / 勿扰跨零点 / 两个空档阈值 / 非法输入不写库 / 恢复默认）。
    跑法：先起 dist 静态服务（默认 4177，可用 TW_URL 覆盖）再 node tmp/listen-ui-check.mjs
    注意：playwright 会 spawn Chrome，沙箱下会被拦（EPERM），需要 danger-full-access。 */
 const { chromium } = await import('file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs')
@@ -81,6 +82,66 @@ const stored0 = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.
 t('C1. 种子记录的复习排期原样未动（stage=1 / 已听 2 次）',
   stored0.review_stage === 1 && stored0.played_count === 2, JSON.stringify({ stage: stored0.review_stage, played: stored0.played_count }))
 t('C2. next_due_date 仍是原值 2026-10-01', stored0.next_due_date === '2026-10-01', String(stored0.next_due_date))
+
+/* ===== M. 练耳设置面板（遍数 / 复习间隔 / 勿扰 / 空档阈值） ===== */
+const setOf = () => page.evaluate(() => JSON.parse(localStorage.getItem('web2.listen.set') || '{}'))
+const openSettings = async () => {
+  if ((await ME.locator('[data-listen-settings]').count()) === 0) {
+    await ME.locator('[data-listen-settings-toggle]').first().click()
+    await page.waitForTimeout(250)
+  }
+}
+t('M1. 有「练耳设置」展开入口', (await ME.locator('[data-listen-settings-toggle]').count()) === 1)
+await openSettings()
+t('M2. 展开后有设置区', (await ME.locator('[data-listen-settings]').count()) === 1)
+t('M3. 连放遍数默认 3 遍高亮',
+  ((await ME.locator('[data-listen-repeat="3"]').first().getAttribute('class')) || '').includes('bg-primary-500'))
+await ME.locator('[data-listen-repeat="5"]').first().click()
+await page.waitForTimeout(250)
+t('M4. 选 5 遍后落库 repeatTimes=5', (await setOf()).repeatTimes === 5, JSON.stringify(await setOf()))
+t('M5. 5 遍按钮接管高亮',
+  ((await ME.locator('[data-listen-repeat="5"]').first().getAttribute('class')) || '').includes('bg-primary-500'))
+const ivEl = ME.locator('[data-listen-intervals]').first()
+t('M6. 复习间隔回显默认 6 档', (await ivEl.inputValue()) === '1,2,4,7,15,30', await ivEl.inputValue())
+await ivEl.fill('1,3')
+await ivEl.dispatchEvent('change')
+await page.waitForTimeout(250)
+t('M7. 改成 1,3 后落库', JSON.stringify((await setOf()).reviewIntervals) === '[1,3]', JSON.stringify((await setOf()).reviewIntervals))
+await ivEl.fill('全是垃圾abc')
+await ivEl.dispatchEvent('change')
+await page.waitForTimeout(250)
+t('M8. 非法间隔不写库（仍是 1,3）', JSON.stringify((await setOf()).reviewIntervals) === '[1,3]')
+t('M9. 非法输入被回退成当前值', (await ivEl.inputValue()) === '1,3', await ivEl.inputValue())
+const dndS = ME.locator('[data-listen-dnd-start]').first()
+const dndE = ME.locator('[data-listen-dnd-end]').first()
+t('M10. 勿扰回显默认 23:00–07:00',
+  (await dndS.inputValue()) === '23:00' && (await dndE.inputValue()) === '07:00',
+  `${await dndS.inputValue()}–${await dndE.inputValue()}`)
+await dndS.fill('22:00'); await dndS.dispatchEvent('change'); await page.waitForTimeout(200)
+await dndE.fill('06:30'); await dndE.dispatchEvent('change'); await page.waitForTimeout(200)
+const dndSet = await setOf()
+t('M11. 勿扰跨零点改动落库（22:00–06:30）', dndSet.dndStart === '22:00' && dndSet.dndEnd === '06:30', JSON.stringify({ s: dndSet.dndStart, e: dndSet.dndEnd }))
+const sg = ME.locator('[data-listen-short-gap]').first()
+const sm = ME.locator('[data-listen-slot-min]').first()
+t('M12. 两个阈值回显默认 10 / 5',
+  (await sg.inputValue()) === '10' && (await sm.inputValue()) === '5',
+  `${await sg.inputValue()}/${await sm.inputValue()}`)
+await sg.fill('15'); await sg.dispatchEvent('change'); await page.waitForTimeout(200)
+await sm.fill('8'); await sm.dispatchEvent('change'); await page.waitForTimeout(200)
+const numSet = await setOf()
+t('M13. 阈值改动落库 15 / 8', numSet.shortGapMaxMin === 15 && numSet.slotMinMin === 8, JSON.stringify({ g: numSet.shortGapMaxMin, s: numSet.slotMinMin }))
+await ME.locator('[data-listen-settings-reset]').first().click()
+await page.waitForTimeout(300)
+const resetSet = await setOf()
+t('M14. 恢复默认：遍数 3 / 间隔 6 档 / 勿扰 23:00–07:00 / 阈值 10-5',
+  resetSet.repeatTimes === 3 && JSON.stringify(resetSet.reviewIntervals) === '[1,2,4,7,15,30]'
+  && resetSet.dndStart === '23:00' && resetSet.dndEnd === '07:00'
+  && resetSet.shortGapMaxMin === 10 && resetSet.slotMinMin === 5,
+  JSON.stringify(resetSet))
+t('M15. 恢复默认后输入框也回显默认值',
+  (await ivEl.inputValue()) === '1,2,4,7,15,30' && (await dndS.inputValue()) === '23:00'
+  && (await sg.inputValue()) === '10',
+  `${await ivEl.inputValue()} / ${await dndS.inputValue()} / ${await sg.inputValue()}`)
 
 /* ===== D. 导入（L1） ===== */
 await ME.locator('[data-listen-import]').setInputFiles({ name: '我的听力材料.wav', mimeType: 'audio/wav', buffer: wavBuffer() })

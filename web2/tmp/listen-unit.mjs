@@ -12,6 +12,7 @@ import {
   isDateStr, isTimeStr, minOf, hhmm, dateKeyOf, todayKey, addDaysKey, compareDateKey, fmtSeconds, audioMimeOf,
   sanitizeClip, newClip, newClipId, clampRepeatTimes, clipNameFromFile, newClipFromImport, clipDuration,
   repeatTimesOf, nextPlayRound,
+  parseIntervals, formatIntervals, intInRange,
   sanitizeSettings, loadClips, saveClips, loadSettings, saveSettings,
   nextDueDate, reviewAdvance, countPlayed, dueClips,
   freeSlots, slotPlan, buildListenItems, toBusy,
@@ -127,6 +128,25 @@ eq('countPlayed 保留其它字段', [counted.id, counted.name, counted.file, co
 const neverDue = countPlayed(mk('fresh', base, { next_due_date: null }))
 eq('countPlayed 对没排期的也 +1', neverDue.played_count, 1)
 eq('countPlayed 对没排期的仍不排期', neverDue.next_due_date == null, true)
+
+/* ---------------- 5c. 设置面板的输入解析（非法输入绝不写库） ---------------- */
+eq('间隔解析：标准串', parseIntervals('1,2,4,7,15,30', []), [1, 2, 4, 7, 15, 30])
+eq('间隔解析：中文逗号/顿号/空格都算分隔', parseIntervals(' 1，2、3 4 ', []), [1, 2, 3, 4])
+eq('间隔解析：重复项去重', parseIntervals('3,3,3', []), [3])
+eq('间隔解析：全非法 → 回退到原值', parseIntervals('abc', [9, 9]), [9])
+eq('间隔解析：0 / 负数 / 超 365 都丢掉', parseIntervals('0,-3,999', [7]), [7])
+eq('间隔解析：小数四舍五入', parseIntervals('1.4,2.6', []), [1, 3])
+eq('间隔解析：最多 12 档（防手抖贴一大串）', parseIntervals('1 2 3 4 5 6 7 8 9 10 11 12 13 14', []).length, 12)
+eq('间隔解析：没给 fallback 就用默认数组', parseIntervals('', null), DEFAULTS.reviewIntervals)
+eq('间隔格式化：正常数组', formatIntervals([1, 2, 4]), '1,2,4')
+eq('间隔格式化：空 / 非数组 → 空串', [formatIntervals([]), formatIntervals(null)], ['', ''])
+eq('间隔格式化：丢掉非正数', formatIntervals([1, 'x', 0, 2]), '1,2')
+eq('间隔格式化 ↔ 解析：往返不变', formatIntervals(parseIntervals('1,2,4,7', [])), '1,2,4,7')
+eq('数字钳位：区间内原样', intInRange('4', 3, 3, 5), 4)
+eq('数字钳位：超上限收到上限', intInRange('9', 3, 3, 5), 5)
+eq('数字钳位：低于下限抬到下限', intInRange('2', 3, 3, 5), 3)
+eq('数字钳位：解析不出来 → 原值（等于没改）', intInRange('x', 3, 3, 5), 3)
+eq('数字钳位：四舍五入后钳位', intInRange('5.6', 3, 3, 5), 5)
 
 /* ---------------- 6. 空闲槽与阈值边界 ---------------- */
 const day = (h, m = 0) => new Date(2026, 9, 3, h, m)
