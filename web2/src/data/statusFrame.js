@@ -84,6 +84,16 @@ export function markListenDone(id) {
    纯函数（可单测）：把 App 侧的数据压成原生要的那几个字段。
    今天的时间一律转成「当日分钟数」（06:30 → 390），原生自己跟当前时间比。
    kind: c=课程 / r=循环日程 / e=一次性日程；id 用于按钮回传。 */
+/* 勿扰时段：'HH:MM' → 当日分钟数（原生用 JSONObject.optInt 读这两个字段，
+   字符串会让 Integer.valueOf('07:00') 抛异常、optInt 悄悄回落到它自己的默认值 23:00/07:00，
+   于是用户在「练耳设置」里改的勿扰时段根本传不过去）。拿不到就**省掉这个键**——
+   省掉 ≠ 0：0 是"00:00 起勿扰"这个有效值，别把它误当无效。 */
+function dndMin(v) {
+  if (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1440) return Math.round(v)
+  const m = minOf(v)
+  return m >= 0 ? m : null
+}
+
 export function buildFrameSnapshot(input) {
   const s = input && typeof input === 'object' ? input : {}
   const marks = sanitizeMarks(s.marks || null)
@@ -103,11 +113,13 @@ export function buildFrameSnapshot(input) {
     .map((x) => ({ id: String(x.id == null ? '' : x.id), name: String(x.name == null ? '' : x.name) }))
     .filter((x) => x.id && x.name && marks.listenDone.indexOf(x.id) === -1)
   const tf = s.tomorrowFirst
-  return {
+  const dndStart = dndMin(s.dndStart)
+  const dndEnd = dndMin(s.dndEnd)
+  const snap = {
     enabled: s.enabled === undefined ? true : !!s.enabled,
     updatedAt: Date.now(),
-    dndStart: typeof s.dndStart === 'string' ? s.dndStart : '',
-    dndEnd: typeof s.dndEnd === 'string' ? s.dndEnd : '',
+    dndStart,
+    dndEnd,
     todosDue: Math.max(0, Number(s.todosDue) || 0),
     classDone: marks.classDone.slice(),
     listen,
@@ -115,6 +127,10 @@ export function buildFrameSnapshot(input) {
     tomorrowFirst: tf && tf.name ? { name: String(tf.name), start: minOf(tf.start) } : null,
     recTitle: typeof s.recTitle === 'string' ? s.recTitle : '',
   }
+  /* 拿不到就整个删掉这个键，让原生用它的默认值（别留 undefined —— 序列化后是 null，原生一样读不到） */
+  if (snap.dndStart === null) delete snap.dndStart
+  if (snap.dndEnd === null) delete snap.dndEnd
+  return snap
 }
 
 /* ── 原生桥 ──────────────────────────────────────────────────────────── */
