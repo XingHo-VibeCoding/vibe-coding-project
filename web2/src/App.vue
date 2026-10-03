@@ -11,6 +11,21 @@ import { buildIcs, downloadText } from './data/ics.js'
 import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL } from './data/notify.js'
 import { loadClips, saveClips, loadSettings as loadListenSettings, saveSettings as saveListenSettings, reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey, minOf as minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices, parseIntervals, formatIntervals, intInRange, isTimeStr, DEFAULTS as LISTEN_DEFAULTS } from './data/listen.js'
 import { fileToBase64, writeClipBytes, resolveListenUri, makeClipBlobUrl, statClipFile } from './data/listenStore.js'
+/* Day 19 状态框：只依赖 listen.js 的两个小工具（todayKey / minOf），没有循环依赖 */
+import {
+  frameAvailable,
+  loadFrameSettings,
+  saveFrameSettings,
+  loadFrameMarks as loadFrameMarksNow,
+  markClassDone as frameMarkClassDone,
+  markListenDone as frameMarkListenDone,
+  buildFrameSnapshot,
+  pushFrame,
+  setFrameEnabled,
+  frameRunning,
+  consumeFrameActions,
+  onFrameActions,
+} from './data/statusFrame.js'
 import MonthCalendar from './components/MonthCalendar.vue'
 import NumberWheel from './components/NumberWheel.vue'
 import TimeWheel from './components/TimeWheel.vue'
@@ -162,6 +177,7 @@ onMounted(() => {
   trSupported.value = transcriberAvailable() // 重算：App 手工桥此时必已挂好
   reconcileKeepAlive() // M2.5：清掉上次异常退出残留的保活通知
   initNotify() // M5：通知渠道/权限 + 首次排程 + action 监听（异步，不阻塞首屏）
+  initFrame() // Day 19：常驻状态框（推快照 + 领按钮动作；无原生桥则整个失效）
   initBackButton() // Android 返回键分级处理（App 内生效；浏览器无桥不注册）
   window.addEventListener('resize', onWinResize) // 周课表高度按视口重算（一屏看完的保证）
   measureNavH() // 底部导航实测高度（含系统手势条安全区），网格高度要用它
@@ -399,6 +415,126 @@ async function initNotify() {
   await applyNotifySchedule()
   await applyListenSchedule()
 }
+
+/* ---------------- 常驻通知栏状态框（Day 19，路线 3：原生前台服务 specialUse） ----------------
+   为什么用原生前台服务而不是 LocalNotifications 预排：通知栏那条要一直是「现在/下一节」，
+   而网页切后台就被冻结，预排的静态文案几分钟后就过期了。原生服务自己每 30 秒重画，
+   网页被冻结、进程被回收都不影响；网页只负责把「今天剩余安排」压成快照推过去（见
+   web2/src/data/statusFrame.js）。用户按通知栏按钮时原生就地记账，网页起来后领回来落地。 */
+const frameSettings = ref(loadFrameSettings())
+const frameIsApp = ref(false) // 只在 App 内为 true（决定设置里那行要不要出现）
+const frameMsg = ref('')
+const frameMsgBad = ref(false)
+function setFrameMsg(t, bad = false) {
+  frameMsg.value = t
+  frameMsgBad.value = !!bad
+}
+/* 今天剩余安排压成状态框要的形状：课程/循环日程/独立日程统一成 kind c/r/e */
+function frameTodayItems() {
+  return todayCourses.value.map((c) => ({
+    kind: c.type === 'routine' ? 'r' : c.type === 'event' ? 'e' : 'c',
+    id: c.id,
+    name: entryName(c),
+    place: c.place || '',
+    start: c.start,
+    end: c.end,
+  }))
+}
+/* 明天第一节（今天结束后状态框显示「明天 HH:MM 有 X」）。
+   明天属于第几周用 store 的 dayScope 算（与冲突检测同一份口径），算不出来就不显示。 */
+function frameTomorrowFirst() {
+  const t = new Date()
+  t.setDate(t.getDate() + 1)
+  const wd = t.getDay() === 0 ? 7 : t.getDay()
+  const key = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+  const sc = dayScope(key, semester.value)
+  const list = []
+  for (const c of weekAll.value) if (c.weekday === wd && (!sc || matchWeek(c, sc.weekNo))) list.push(c)
+  for (const r of routines.value) if (r.weekday === wd && (!sc || matchWeek(r, sc.weekNo))) list.push(r)
+  for (const ev of events.value) if (ev.date === key) list.push(ev)
+  if (!list.length) return null
+  const first = list.sort((a, b) => minOf(a.start) - minOf(b.start))[0]
+  return { name: entryName(first), start: first.start }
+}
+/* 推快照：静默失败（没有原生桥就什么都不做，浏览器零变化） */
+async function pushFrameNow() {
+  if (!frameIsApp.value) return
+  const snap = buildFrameSnapshot({
+    enabled: frameSettings.value.enabled,
+    dndStart: listenSettings.value.dndStart,
+    dndEnd: listenSettings.value.dndEnd,
+    todosDue: undoneCount.value,
+    today: frameTodayItems(),
+    tomorrowFirst: frameTomorrowFirst(),
+    listen: listenDue.value.map((c) => ({ id: c.id, name: c.name })),
+    marks: loadFrameMarksNow(),
+  })
+  const r = await pushFrame(snap)
+  if (!r.ok && r.error) setFrameMsg('状态框同步失败：' + r.error, true)
+}
+/* 落地原生记下的按钮动作。
+   注意「我去听了」**不替用户记账**：只把这段从状态框撤下（今天不再提醒），
+   已听次数与复习档位仍由 App 内「放满设定遍数」自动记 —— 通知栏那一下不该冒充已听。 */
+function applyFrameActions(list) {
+  let touched = false
+  for (const a of list || []) {
+    const type = a && a.type
+    const id = a && a.id
+    if (type === 'startRec') {
+      startRec()
+      touched = true
+      continue
+    }
+    if (type === 'classDone') {
+      if (id) frameMarkClassDone(id)
+      /* 「这节上完了」= 这节课真的结束：正为这节课录音就顺手停掉，不等下课自动停 */
+      if (id && recActiveId.value) {
+        const lec = lectures.value.find((l) => l.id === recActiveId.value)
+        if (lec && lec.schedule_id === id) stopRec()
+      }
+      setFrameMsg('已记下：这节上完了')
+      touched = true
+    }
+    if (type === 'listenDone') {
+      if (!id) continue
+      frameMarkListenDone(id)
+      const c = listenClips.value.find((x) => x.id === id)
+      setFrameMsg(`已记下「我去听了」：今天不再提醒${c ? '「' + c.name + '」' : ''}`)
+      touched = true
+    }
+  }
+  if (touched) pushFrameNow()
+}
+async function drainFrameActions() {
+  const r = await consumeFrameActions()
+  if (r.ok && r.actions && r.actions.length) applyFrameActions(r.actions)
+}
+async function initFrame() {
+  frameIsApp.value = frameAvailable()
+  if (!frameIsApp.value) return
+  await pushFrameNow() // 先把本地开关与今天的快照同步给原生（原生据此决定起不起服务）
+  onFrameActions(applyFrameActions) // App 在跑时按按钮走这条，不用等下次冷启动
+  const r = await frameRunning()
+  if (r.ok && !r.running && frameSettings.value.enabled) setFrameMsg('状态框没能常驻（系统可能限制了后台运行），下拉通知栏看得到吗？', true)
+  await drainFrameActions()
+}
+async function toggleFrame() {
+  const next = saveFrameSettings({ enabled: !frameSettings.value.enabled })
+  frameSettings.value = next
+  await setFrameEnabled(next.enabled)
+  await pushFrameNow()
+  setFrameMsg(next.enabled ? '状态框已打开：下拉通知栏就能看到现在/下一节。' : '状态框已关掉（不影响课前提醒）。')
+}
+/* 数据一变就推：注册放在下面（今天剩余安排 / 待办数 / 练耳到期 这几个 computed 都在后面声明，
+   在这里 watch 会撞上 TDZ），见「状态框：数据变动 → 重推快照」那处。 */
+/* 从后台回来：先领走冻结期间按下的按钮，再补推一次快照（数据可能已经变了） */
+function onFrameVisible() {
+  if (document.visibilityState !== 'visible') return
+  drainFrameActions()
+  pushFrameNow()
+}
+document.addEventListener('visibilitychange', onFrameVisible)
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onFrameVisible))
 
 /* ---------------- 初始设定引导页（差距⑦） ----------------
    首次打开（没有导入数据、也没做过选择）出现，二选一：
@@ -2623,6 +2759,11 @@ function nowPct(c) {
 
 const undoneCount = computed(() => todos.value.filter((t) => !t.done).length)
 
+/* 状态框（Day 19）：数据变动 → 重推快照。注册点必须在 todayCourses(2431) / listenDue(1088) /
+   undoneCount(2760) 之后 —— 这三个 computed 在 setup 里是 const，提前 watch 会撞 TDZ
+   （实测：提前注册会让整个 setup 抛 "Cannot access 'ya' before initialization"）。 */
+watch([todayCourses, listenDue, undoneCount, frameSettings, recActiveId], () => { pushFrameNow() })
+
 /* 详情弹层：点任意课卡弹出，点遮罩/×关闭 */
 const detail = ref(null)
 function openDetail(c) {
@@ -4311,6 +4452,36 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </div>
           <p v-if="notifyPerm === false" class="mt-2 text-[11px] text-red-400">通知权限被拒绝了：请在系统设置里允许本应用发通知，否则提醒收不到。</p>
           <p v-if="notifyMsg" class="mt-2 text-[11px]" :class="notifyMsgBad ? 'text-red-400' : 'text-primary-500'">{{ notifyMsg }}</p>
+        </div>
+
+        <!-- 常驻状态框（Day 19）：通知栏里一条常驻的「现在在上什么 / 还有多久 / 待办几项」，
+             带「开始录音 / 上完了 / 我去听了」三个按钮；录音时它变身成录音态（只留一条常驻通知）。
+             能力仅 App 内生效（原生前台服务），浏览器上整行不出现。 -->
+        <div v-if="frameIsApp" data-frame-row class="p-4">
+          <div class="flex items-center gap-3.5">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+              <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="9" rx="1.6" /><path d="M5 5.5h6M5 8h4M8 13.5v-2" /></svg>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium">常驻状态框</span>
+              <span class="block text-[11px] leading-relaxed text-ink-dim/70">
+                通知栏常驻一条「现在 · 课名 / 还有多久」，可直接开始录音、标记「这节上完了」「我去听了」；录音时变身成录音态，全程只有一条常驻通知。
+              </span>
+            </span>
+            <button
+              data-frame-toggle
+              class="relative h-6 w-11 shrink-0 rounded-full transition"
+              :class="frameSettings.enabled ? 'bg-primary-500' : 'bg-ink/15'"
+              aria-label="常驻状态框开关"
+              @click="toggleFrame"
+            >
+              <span
+                class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all"
+                :class="frameSettings.enabled ? 'left-[22px]' : 'left-0.5'"
+              ></span>
+            </button>
+          </div>
+          <p v-if="frameMsg" data-frame-msg class="mt-2 text-[11px]" :class="frameMsgBad ? 'text-red-400' : 'text-primary-500'">{{ frameMsg }}</p>
         </div>
 
         <!-- 数据清理：多次导入叠加的重复课程（有重复才显示，干净的数据不摆这个入口） -->
