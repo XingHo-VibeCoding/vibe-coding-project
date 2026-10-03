@@ -9,11 +9,11 @@
 
 import {
   DEFAULTS, LISTEN_KEY, LISTEN_SET_KEY,
-  isDateStr, isTimeStr, minOf, hhmm, dateKeyOf, todayKey, addDaysKey, compareDateKey, fmtSeconds,
+  isDateStr, isTimeStr, minOf, hhmm, dateKeyOf, todayKey, addDaysKey, compareDateKey, fmtSeconds, audioMimeOf,
   sanitizeClip, newClip, newClipId, clampRepeatTimes, clipNameFromFile, newClipFromImport, clipDuration,
   repeatTimesOf, nextPlayRound,
   sanitizeSettings, loadClips, saveClips, loadSettings, saveSettings,
-  nextDueDate, reviewAdvance, dueClips,
+  nextDueDate, reviewAdvance, countPlayed, dueClips,
   freeSlots, slotPlan, buildListenItems, toBusy,
   dndOf, inDndMin, buildListenNotices,
 } from '../src/data/listen.js'
@@ -114,6 +114,19 @@ eq('第三次之后（三档全过）next_due_date', cur.next_due_date, null)
 eq('四次推进 played_count', cur.played_count, 4)
 const doneStage = reviewAdvance(cur, { fromDateKey: '2026-10-20', intervals: iv })
 eq('已学完再点不复活（stage 超出）→ null', doneStage.next_due_date, null)
+
+/* ---------------- 5b. 还没到复习日就听了：只记次数，不动排期 ---------------- */
+const notDue = mk('nd', base, { review_stage: 1, next_due_date: '2026-10-09', played_count: 2 })
+const counted = countPlayed(notDue)
+eq('countPlayed 只 +1 次数', counted.played_count, 3)
+eq('countPlayed 不动 stage', counted.review_stage, 1)
+eq('countPlayed 不动 next_due_date', counted.next_due_date, '2026-10-09')
+eq('countPlayed 写 last_played_at（ISO 串）', /^\d{4}-\d{2}-\d{2}T/.test(String(counted.last_played_at)), true)
+eq('countPlayed 不改原对象', notDue.played_count, 2)
+eq('countPlayed 保留其它字段', [counted.id, counted.name, counted.file, counted.archived], [notDue.id, notDue.name, notDue.file, notDue.archived])
+const neverDue = countPlayed(mk('fresh', base, { next_due_date: null }))
+eq('countPlayed 对没排期的也 +1', neverDue.played_count, 1)
+eq('countPlayed 对没排期的仍不排期', neverDue.next_due_date == null, true)
 
 /* ---------------- 6. 空闲槽与阈值边界 ---------------- */
 const day = (h, m = 0) => new Date(2026, 9, 3, h, m)
@@ -309,6 +322,17 @@ eq('跨零点勿扰 → 当天放弃', buildListenNotices({
 const multi = buildListenNotices({ clips: [clipDue(D0)], settings: SET_U, now: NOW_EARLY, itemsOfDay: NOITEMS, durationOf: durOf, horizonDays: 3 })
 eq('三天各一条', multi.map((n) => n.key), ['l_2026-10-03', 'l_2026-10-04', 'l_2026-10-05'])
 eq('horizonDays 0 → 空', buildListenNotices({ clips: [clipDue(D0)], settings: SET_U, now: NOW_EARLY, itemsOfDay: NOITEMS, durationOf: durOf, horizonDays: 0 }).length, 0)
+
+/* ---------------- L. Blob 播放用的 MIME 推断（真机播放修复，2026-10-03） ----------------
+   背景：真机 <audio> 加载 _capacitor_file_ 地址报 "no supported source was found"，
+   改成「读盘 → Blob URL」。Blob 必须带 MIME，否则 Android WebView 判成不支持的源。 */
+eq('audioMimeOf: mp3', audioMimeOf('英语听力.mp3'), 'audio/mpeg')
+eq('audioMimeOf: m4a', audioMimeOf('a.m4a'), 'audio/mp4')
+eq('audioMimeOf: wav', audioMimeOf('b.WAV'), 'audio/wav')
+eq('audioMimeOf: ogg', audioMimeOf('c.ogg'), 'audio/ogg')
+eq('audioMimeOf: flac', audioMimeOf('d.flac'), 'audio/flac')
+eq('audioMimeOf: 认不出 → 回落 audio/mpeg', audioMimeOf('e.xyz'), 'audio/mpeg')
+eq('audioMimeOf: 空/无扩展名 → 回落 audio/mpeg', [audioMimeOf(''), audioMimeOf('noext')], ['audio/mpeg', 'audio/mpeg'])
 
 /* ---------------- 汇总 ---------------- */
 console.log(`\n碎片练耳单测：${pass} 项通过 / ${fail} 项失败`)

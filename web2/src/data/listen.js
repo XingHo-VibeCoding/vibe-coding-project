@@ -114,6 +114,28 @@ export function fmtSeconds(sec) {
   return m + ':' + String(s % 60).padStart(2, '0')
 }
 
+/* 扩展名 → MIME。落盘读回来的字节是「裸数据」，Blob 要带类型才让 <audio> 认
+   （不带类型时 Android WebView 会直接判成「不支持的源」）。
+   认不出的扩展名回落到 audio/mpeg：比空类型强，HTTP/媒体栈至少不会当场拒绝。 */
+const AUDIO_MIME = {
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  mp4: 'audio/mp4',
+  aac: 'audio/aac',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  opus: 'audio/ogg',
+  flac: 'audio/flac',
+  webm: 'audio/webm',
+  amr: 'audio/amr',
+  '3gp': 'audio/3gpp',
+}
+export function audioMimeOf(fileName) {
+  const ext = String(fileName || '').split('.').pop().toLowerCase()
+  return AUDIO_MIME[ext] || 'audio/mpeg'
+}
+
 /* ------------------------------------------------------------------
    数据形状 / 校验（§3.5 字段表）
    ------------------------------------------------------------------ */
@@ -218,7 +240,9 @@ export function clipDuration(file) {
     ? o.reviewIntervals.map(Number).filter((n) => Number.isFinite(n) && n > 0).map((n) => Math.round(n))
     : []
   return {
-    enabled: o.enabled === undefined ? false : !!o.enabled,
+    /* 到点提醒默认**开**（2026-10-03 用户真机反馈"手机通知栏没通知"——
+       功能就是提醒，默认关着等于坏了；不想被打扰的人自己关掉即可）。 */
+    enabled: o.enabled === undefined ? true : !!o.enabled,
     repeatTimes: clampRepeatTimes(o.repeatTimes === undefined ? DEFAULTS.repeatTimes : o.repeatTimes),
     reviewIntervals: iv.length ? iv : DEFAULTS.reviewIntervals.slice(),
     dndStart: isTimeStr(o.dndStart) ? String(o.dndStart) : DEFAULTS.dndStart,
@@ -304,6 +328,19 @@ export function reviewAdvance(clip, { fromDateKey, intervals } = {}) {
     last_played_at: new Date().toISOString(),
     review_stage: stage,
     next_due_date: nextDueDate(stage, intervals, base),
+  }
+}
+
+/* 还没到复习日就听了（提前听/已学完）→ 只记「听了一次」，不动复习排期。
+   免得提前听几次就把艾宾浩斯的档位一路推到底，节奏被打乱。
+   2026-10-03 用户决策：去掉手工「已听」按钮，改为放满设定遍数自动记账，故与 reviewAdvance 并列。 */
+export function countPlayed(clip) {
+  const c = sanitizeClip(clip)
+  if (!c) return null
+  return {
+    ...c,
+    played_count: c.played_count + 1,
+    last_played_at: new Date().toISOString(),
   }
 }
 

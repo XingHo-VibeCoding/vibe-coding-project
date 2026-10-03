@@ -1,6 +1,7 @@
 /* 碎片练耳 UI 检查（playwright，走 dist 静态服务）
-   四期 Day 18：覆盖 L1（导入 + 列表 + 刷新不丢）、「已听」手动确认推进艾宾浩斯排期、
-   会话内连放（repeatTimes），以及 L3/L4（复习到点提醒排练程 + 点通知只提醒不自动播放）。
+   四期 Day 18：覆盖 L1（导入 + 列表 + 刷新不丢）、放满遍数**自动**记一次已听（2026-10-03 用户决策，
+   手工「已听」按钮已去掉）、暂停/继续保留遍数与断点、
+   会话内连放（repeatTimes），以及 L3/L4（复习到点提醒排练程 + 到点提醒开关 + 点通知只提醒不自动播放）。
    跑法：先起 dist 静态服务（默认 4177，可用 TW_URL 覆盖）再 node tmp/listen-ui-check.mjs
    注意：playwright 会 spawn Chrome，沙箱下会被拦（EPERM），需要 danger-full-access。 */
 const { chromium } = await import('file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs')
@@ -70,21 +71,16 @@ const seedText = await seedRow.innerText()
 t('B2. 显示已听次数 2 次', seedText.includes('已听 2 次'), seedText)
 t('B3. 显示时长 0:45', seedText.includes('0:45'), seedText)
 t('B4. 拖期提示', seedText.includes('拖了'), seedText)
-t('B5. 「已听」按钮可点（拖期→今天就能补）', await seedRow.locator('button', { hasText: '已听' }).isEnabled())
+t('B5. 手工「已听」按钮已去掉（改为放满遍数自动记账）', (await seedRow.locator('button', { hasText: '已听' }).count()) === 0)
 const slotsText = await ME.locator('[data-listen-slots]').first().innerText()
 t('B6. 显示今日空闲槽建议（L2）', slotsText.includes('今天可听'), slotsText)
 t('B7. 建议含时段与段数', /\d{2}:\d{2}–\d{2}:\d{2} · \d+ 分钟 · .+ → 放 \d+ 段/.test(slotsText), slotsText)
 
-/* ===== C. 已听 = 手动确认推进（艾宾浩斯） ===== */
-await seedRow.locator('button', { hasText: '已听' }).click()
-await page.waitForTimeout(300)
-const afterText = await ME.locator('li', { hasText: '种子音频' }).first().innerText()
-t('C1. 已听次数 +1（2 → 3）', afterText.includes('已听 3 次'), afterText)
-t('C2. 状态推进到下一档（stage=2 → 今天 + intervals[1]=2 天）', afterText.includes('下次复习 ' + dkey(2)), afterText)
-const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.listen') || '[]')[0])
-t('C3. next_due_date = 今天 + 2 天（第 2 档间隔）', stored.next_due_date === dkey(2), stored.next_due_date + ' vs ' + dkey(2))
-t('C4. review_stage 推进到 2', stored.review_stage === 2, stored.review_stage)
-t('C5. 按钮转为不可点（还没到复习日）', await ME.locator('li', { hasText: '种子音频' }).first().locator('button', { hasText: '已听' }).isDisabled())
+/* ===== C. 自动记账：没有手工入口时，记录一动不动 ===== */
+const stored0 = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.listen') || '[]')[0])
+t('C1. 种子记录的复习排期原样未动（stage=1 / 已听 2 次）',
+  stored0.review_stage === 1 && stored0.played_count === 2, JSON.stringify({ stage: stored0.review_stage, played: stored0.played_count }))
+t('C2. next_due_date 仍是原值 2026-10-01', stored0.next_due_date === '2026-10-01', String(stored0.next_due_date))
 
 /* ===== D. 导入（L1） ===== */
 await ME.locator('[data-listen-import]').setInputFiles({ name: '我的听力材料.wav', mimeType: 'audio/wav', buffer: wavBuffer() })
@@ -94,7 +90,7 @@ t('D1. 导入后列表出现该音频（文件名去掉扩展名）', (await new
 const newText = await newRow.first().innerText()
 t('D2. 新导入记录「今天该听」', newText.includes('今天该听'), newText)
 t('D3. 新导入已听 0 次', newText.includes('已听 0 次'), newText)
-t('D4. 新导入就能点「已听」', await newRow.first().locator('button', { hasText: '已听' }).isEnabled())
+t('D4. 新导入有「播放」按钮（不再需要先点「已听」）', (await newRow.first().locator('[data-listen-play]').count()) === 1)
 t('D5. 落盘 2 条记录', (await page.evaluate(() => JSON.parse(localStorage.getItem('web2.listen') || '[]').length)) === 2)
 t('D6. 浏览器提示「刷新后要重新导入」', (await ME.locator('p', { hasText: '刷新后要重新导入' }).count()) === 1)
 
@@ -107,7 +103,7 @@ await ME.locator('button', { hasText: '打开' }).first().click()
 await page.waitForTimeout(300)
 const reloadText = await ME.locator('li', { hasText: '种子音频' }).first().innerText()
 t('E1. 刷新后列表仍在', (await ME.locator('li', { hasText: '种子音频' }).count()) === 1)
-t('E2. 刷新后已听次数仍是 3', reloadText.includes('已听 3 次'), reloadText)
+t('E2. 刷新后已听次数仍是 2（自动记账没被触发过）', reloadText.includes('已听 2 次'), reloadText)
 
 /* ===== F. 无到期音频时的空态（L2 的另一种分支） ===== */
 await page.evaluate((seed) => {
@@ -139,16 +135,55 @@ const appErrors = []
 appPage.on('pageerror', (e) => appErrors.push(String(e)))
 appPage.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('favicon')) appErrors.push('HTTP ' + r.status() + ' ' + r.url()) })
 await appPage.addInitScript(() => {
-  window.__listenFs = { writes: [], mkdirs: [], getUris: [], deletes: [] }
+  /* 假 Filesystem 桥 —— **按真插件语义建模**（2026-10-03 真机 bug 的教训）：
+     插件定义原文：writeFile.encoding "If not provided, data is written as base64 encoded.
+     Pass Encoding.UTF8 to write data as string"；readFile 同理（不传 = 二进制、回 base64）。
+     所以这里：**不传 encoding → 按 base64 解码成字节**；**传了 encoding → 当字符串写**。
+     上一版假桥是「看到 encoding==='base64' 就解码」——等于替代码把错误圆过去了，
+     真机上照样写坏（大小 4/3）。假桥必须和真插件一样"不配合"。 */
+  const files = new Map()
+  const bytesOf = (data, encoding) => {
+    const s = String(data == null ? '' : data)
+    if (encoding) return new TextEncoder().encode(s)   // 当字符串写（UTF-8）
+    const bin = atob(s)                                // 不传 encoding：按 base64 解码
+    const out = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+    return out
+  }
+  const b64Of = (bytes) => {
+    let s = ''
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i])
+    return btoa(s)
+  }
+  window.__listenFs = { writes: [], mkdirs: [], getUris: [], deletes: [], reads: [], stats: [] }
   window.Capacitor = {
     isNativePlatform: () => true,
     convertFileSrc: (p) => 'https://localhost/_capacitor_file_' + p,
     Plugins: {
       Filesystem: {
         mkdir: async (o) => { window.__listenFs.mkdirs.push(o) },
-        writeFile: async (o) => { window.__listenFs.writes.push(o) },
+        writeFile: async (o) => {
+          const bytes = bytesOf(o.data, o.encoding)
+          files.set(o.path, bytes)
+          window.__listenFs.writes.push(Object.assign({}, o, { _bytes: bytes.length }))
+        },
         getUri: async (o) => { window.__listenFs.getUris.push(o); return { uri: 'file:///data/user/0/app/files/' + o.path } },
-        deleteFile: async (o) => { window.__listenFs.deletes.push(o) },
+        /* 真的从"盘"上回吐：不传 encoding 回 base64（与真插件一致）。
+           这样「写进去的字节」和「读出来的字节」必须自己兜得上——
+           上一版直接回吐注入的 cfg.b64，等于不管写坏没写坏都说"读得到"。 */
+        readFile: async (o) => {
+          window.__listenFs.reads.push(o)
+          const bytes = files.get(o.path)
+          if (!bytes) { const e = new Error('File does not exist'); e.code = 'NOT_FOUND'; throw e }
+          return { data: o.encoding ? new TextDecoder().decode(bytes) : b64Of(bytes) }
+        },
+        stat: async (o) => {
+          window.__listenFs.stats.push(o)
+          const bytes = files.get(o.path)
+          if (!bytes) { const e = new Error('File does not exist'); e.code = 'NOT_FOUND'; throw e }
+          return { size: bytes.length }
+        },
+        deleteFile: async (o) => { window.__listenFs.deletes.push(o); files.delete(o.path) },
       },
     },
   }
@@ -171,15 +206,24 @@ const w0 = fsLog.writes[0]
 t('H2. 触发了一次 writeFile', fsLog.writes.length === 1, JSON.stringify(fsLog.writes.map((w) => w.path)))
 t('H3. 落盘路径 = listen/<文件名>', w0 && w0.path === 'listen/真机材料.wav', w0 && w0.path)
 t('H4. 目录 = DATA（应用私有目录，同课堂录音）', w0 && w0.directory === 'DATA', w0 && w0.directory)
-t('H5. 编码 = base64 且字节与原文件一致', !!w0 && w0.encoding === 'base64' && w0.data === wavBuffer().toString('base64'), w0 && ((w0.data || '').length + ' chars'))
+t('H5. 落盘**不传** encoding（传了会被当字符串写）且落盘字节数 = 原文件字节数',
+  !!w0 && w0.encoding === undefined && w0._bytes === wavBuffer().length && w0.data === wavBuffer().toString('base64'),
+  'encoding=' + (w0 && w0.encoding) + ' 落盘字节=' + (w0 && w0._bytes) + ' 原文件字节=' + wavBuffer().length)
 t('H6. 先建了 listen 子目录', fsLog.mkdirs.some((m) => m.path === 'listen'))
 t('H7. 记录仍落 localStorage（本机数据）', (await appPage.evaluate(() => JSON.parse(localStorage.getItem('web2.listen') || '[]').length)) === 1)
 t('H8. 成功文案写明已存到本机', (await APP_ME.locator('p', { hasText: '存到本机' }).count()) >= 1)
-/* 点「播放」→ 应拿 listen/<file> 去问插件要地址（真机上这个地址才播得响；这里只验"问对了"） */
+/* 点「播放」→ 修复后的主路径：读盘拿字节 → 自造 Blob URL → 播（不再走 _capacitor_file_） */
 await APP_ME.locator('li', { hasText: '真机材料' }).first().locator('[data-listen-play]').click()
 await appPage.waitForTimeout(700)
-const uris = await appPage.evaluate(() => window.__listenFs.getUris)
-t('H10. App 模式点播放 → 按 listen/<file> 解析本机地址', uris.length === 1 && uris[0].path === 'listen/真机材料.wav' && uris[0].directory === 'DATA', JSON.stringify(uris))
+const fsLog2 = await appPage.evaluate(() => ({ reads: window.__listenFs.reads, uris: window.__listenFs.getUris, stats: window.__listenFs.stats }))
+const rd0 = fsLog2.reads[0]
+t('H10. App 模式点播放 → 按 listen/<file> 读字节（DATA、不传 encoding）', fsLog2.reads.length === 1 && !!rd0 && rd0.path === 'listen/真机材料.wav' && rd0.directory === 'DATA' && rd0.encoding === undefined, JSON.stringify(fsLog2.reads))
+t('H11. 播放不再依赖 getUri + convertFileSrc（真机上就是它报不支持的源）', fsLog2.uris.length === 0, JSON.stringify(fsLog2.uris))
+t('H12. 读到字节后真的播起来（按钮变「停止」）', (await APP_ME.locator('li', { hasText: '真机材料' }).first().locator('[data-listen-play]').innerText()).trim() === '停止')
+t('H13. 导入后回读大小核对**通过**（stat 被调用，且没报「大小对不上」）',
+  fsLog2.stats.length >= 1 && (await APP_ME.locator('p', { hasText: '大小对不上' }).count()) === 0,
+  JSON.stringify(fsLog2.stats))
+t('H14. 没有出现「播不了」红字', (await APP_ME.locator('p', { hasText: '播不了' }).count()) === 0)
 t('H9. App 模式无页面报错', appErrors.length === 0, appErrors.slice(0, 3).join(' | '))
 
 /* ===== I. 播放（浏览器模式：导入后当次会话内可播，且不推进进度） ===== */
@@ -206,7 +250,10 @@ t('I3. 点后变「停止」（正在播）', (await prow.locator('[data-listen-
 t('I4. 播放**不**推进已听次数（仍 0 次）', (await prow.innerText()).includes('已听 0 次'), await prow.innerText())
 await prow.locator('[data-listen-play]').click()
 await ppage.waitForTimeout(300)
-t('I5. 再点变回「播放」（已停）', (await prow.locator('[data-listen-play]').innerText()).trim() === '播放')
+t('I5. 再点变「继续」（停止=暂停，遍数与断点都留着）', (await prow.locator('[data-listen-play]').innerText()).trim() === '继续')
+await prow.locator('[data-listen-play]').click()
+await ppage.waitForTimeout(300)
+t('I5b. 点「继续」又变回「停止」（真的接着放了）', (await prow.locator('[data-listen-play]').innerText()).trim() === '停止')
 t('I6. 浏览器模式无页面报错', pErrors.length === 0, pErrors.slice(0, 3).join(' | '))
 
 /* ===== J. 会话内重复（repeatTimes 默认 3）：连放 3 遍、放完自停、且不推进进度 ===== */
@@ -244,8 +291,26 @@ t('J3. 再放完接上第 3/3 遍', await waitRound('第 3/3 遍', 4000))
 t('J4. 放满 3 遍后自停（按钮回「播放」、轮次提示消失）',
   (await waitRound('', 6000)) && (await rrow.locator('[data-listen-play]').innerText()).trim() === '播放',
   await rrow.innerText())
-t('J5. 连放 3 遍仍**不**推进已听次数（人工确认前进度不动）', (await rrow.innerText()).includes('已听 0 次'), await rrow.innerText())
+await rpage.waitForTimeout(400)
+t('J5. 放满 3 遍 → **自动**记一次已听（2 遍不算，放满才算）', (await rrow.innerText()).includes('已听 1 次'), await rrow.innerText())
+const jStored = await rpage.evaluate(() => JSON.parse(localStorage.getItem('web2.listen') || '[]').find((x) => x.name === '连放测试'))
+t('J5b. 到复习日 → 档位推进到 1、下次复习 = 今天 + intervals[0]=1 天',
+  !!jStored && jStored.review_stage === 1 && jStored.next_due_date === dkey(1), JSON.stringify(jStored))
+t('J5c. 行里不再有手工「已听」按钮', (await rrow.locator('button', { hasText: '已听' }).count()) === 0)
 t('J6. 无页面报错', rErrors.length === 0, rErrors.slice(0, 3).join(' | '))
+
+/* ===== L. 修 bug：停止 = 暂停（遍数与断点保留），再点「继续」接着放 ===== */
+await rrow.locator('[data-listen-play]').click()
+await rpage.waitForTimeout(400)
+t('L1. 重新播放从第 1/3 遍开始', (await roundOf()) === '第 1/3 遍', await roundOf())
+await rrow.locator('[data-listen-play]').click()
+await rpage.waitForTimeout(300)
+t('L2. 点「停止」后按钮变「继续」', (await rrow.locator('[data-listen-play]').innerText()).trim() === '继续')
+t('L3. 停止后遍数提示**不清空**（用户反馈的 bug：原来说"播放次数会清空"）', (await roundOf()) === '第 1/3 遍', await roundOf())
+await rrow.locator('[data-listen-play]').click()
+await rpage.waitForTimeout(300)
+t('L4. 点「继续」回到「停止」（从断点接着放）', (await rrow.locator('[data-listen-play]').innerText()).trim() === '停止', await rrow.locator('[data-listen-play]').innerText())
+t('L5. 暂停/继续期间不重复记账（仍 1 次）', (await rrow.innerText()).includes('已听 1 次'), await rrow.innerText())
 
 /* ===== K. 复习到点提醒（L4）与通知（L3）：App 模式排练耳通知，与课前提醒互不干扰 =====
    注入假 LocalNotifications 桥（同 notify-ui-check 的范式）。验三件事：
@@ -320,6 +385,21 @@ t('K10. 点练耳通知后停在「我的」页', !(await K_ME.evaluate((el) => 
 t('K11. 练耳卡自动展开（通知即入口）', (await K_ME.locator('[data-listen-import]').count()) === 1)
 t('K12. 点通知**不出声**（没有任何一条在播）', (await K_ME.locator('button', { hasText: '停止' }).count()) === 0)
 t('K12b. 通知链路无页面报错 / 无 4xx-5xx 资源', nErrors.length === 0, nErrors.slice(0, 3).join(' | '))
+
+/* K16–K18：卡上「到点提醒我去听」开关（2026-10-03 补 bug——此前 enabled 默认 false 且界面上没有开关，
+   于是练耳通知永远排不出来；这三条把"开关真的写进设置"钉住）。 */
+const tog = K_ME.locator('[data-listen-notify-toggle]')
+t('K16. 练耳卡上有「到点提醒我去听」开关，且反映"已开启"',
+  (await tog.count()) === 1 && (await tog.getAttribute('aria-pressed')) === 'true',
+  String(await tog.count()) + '/' + String(await tog.getAttribute('aria-pressed')))
+await tog.click()
+await npage.waitForTimeout(400)
+const setOff = await npage.evaluate(() => JSON.parse(localStorage.getItem('web2.listen.set') || '{}'))
+t('K17. 点一下 → enabled:false 落盘', setOff.enabled === false, JSON.stringify(setOff))
+await tog.click()
+await npage.waitForTimeout(400)
+const setOn = await npage.evaluate(() => JSON.parse(localStorage.getItem('web2.listen.set') || '{}'))
+t('K18. 再点一下 → enabled:true 落盘（能自己关掉，也能自己开回来）', setOn.enabled === true, JSON.stringify(setOn))
 
 /* 练耳开关关着（开屏即禁用）→ 不排练耳通知；课程提醒照旧排。
    这里刻意用「开屏即禁用」而不是「开着再关」：假桥的内存状态会在 reload 时重置，

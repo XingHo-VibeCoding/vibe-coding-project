@@ -12,7 +12,7 @@
        决定降级文案（当前：提示"刷新后要重新导入"，次数与排期仍保留）。
    本文件不依赖 listen.js 的纯逻辑，也不写 localStorage。 */
 
-import { LISTEN_DIR, LISTEN_SUB_DIR } from './listen.js'
+import { LISTEN_DIR, LISTEN_SUB_DIR, audioMimeOf } from './listen.js'
 
 const NOT_APP = '这个能力要在 App 里用（当前环境没有本机文件能力）。'
 
@@ -65,11 +65,19 @@ export async function writeClipBytes(fileName, base64) {
         await fs.mkdir({ directory: LISTEN_DIR, path: LISTEN_SUB_DIR, recursive: true })
       } catch { /* 目录已存在：正常情况 */ }
     }
+    /* ⚠️ 这里**故意不传 encoding**（2026-10-03 真机实测踩坑）：
+       插件定义 WriteFileOptions.encoding 写的是
+         "The encoding to write the file in. If not provided, data is written as base64 encoded.
+          Pass Encoding.UTF8 to write data as string"
+       —— 即「不传 = 按 base64 解码后写二进制；传了 = 当字符串写」。
+       Encoding 枚举只有 utf8/ascii/utf16，**根本没有 base64 这个值**；
+       我曾传 encoding:'base64'，结果整段 base64 文本被原样写成文件
+       （大小正好是原字节的 4/3，被导入后的回读核对当场抓出来）。
+       所以：写二进制一律不传 encoding。 */
     await fs.writeFile({
       directory: LISTEN_DIR,
       path,
       data: String(base64 || ''),
-      encoding: 'base64',
       recursive: true,
     })
     return { ok: true, path }
@@ -91,6 +99,58 @@ export async function resolveListenUri(fileName) {
     if (!raw) return { ok: false, error: '拿不到音频地址。' }
     const src = cap && typeof cap.convertFileSrc === 'function' ? cap.convertFileSrc(raw) : raw
     return { ok: true, uri: src, raw }
+  } catch (e) {
+    return { ok: false, error: errText(e) }
+  }
+}
+
+/* ---- 真机播放：读盘 → Blob URL（2026-10-03 真机实测后的主路径）----
+   为什么不用 file:// / convertFileSrc：真机上 <audio> 去加载 _capacitor_file_ 地址会报
+   "Failed to load because no supported source was found."（MediaError）；而导入时读时长走的是
+   URL.createObjectURL(File) 那条路，是通的 —— 所以播放也改成「读字节、自己造 Blob」，
+   与能用的那条解码路径对齐，绕开 WebView 的本地文件 URL 方案。
+   代价：整段读进内存。产品形态是 20s–1min 的短音频（单文件上限 20MB），这个代价可以接受。 */
+export async function readClipBase64(fileName) {
+  const hit = fsPlugin()
+  if (!hit) return { ok: false, error: NOT_APP }
+  const { fs } = hit
+  if (typeof fs.readFile !== 'function') return { ok: false, error: '本机文件能力不完整（缺 readFile），换个版本的 App 再试。' }
+  try {
+    /* 同样**不传 encoding**：定义写 "The encoding to read the file in, if not provided,
+       data is read as binary and returned as base64 encoded."（传了 = 当字符串读） */
+    const r = await fs.readFile({ directory: LISTEN_DIR, path: clipRelPath(fileName) })
+    const b64 = r && r.data ? String(r.data) : ''
+    if (!b64) return { ok: false, error: '本机上的音频是 0 字节（当初没写进去），重新导入一次。' }
+    return { ok: true, base64: b64 }
+  } catch (e) {
+    return { ok: false, error: errText(e) }
+  }
+}
+
+/* base64 → 带正确 MIME 的 Blob URL。调用方负责在换源/删除时 URL.revokeObjectURL */
+export async function makeClipBlobUrl(fileName) {
+  const r = await readClipBase64(fileName)
+  if (!r || !r.ok) return r || { ok: false, error: '读不到音频。' }
+  try {
+    const bin = atob(r.base64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    const blob = new Blob([bytes], { type: audioMimeOf(fileName) })
+    return { ok: true, url: URL.createObjectURL(blob), bytes: bytes.length }
+  } catch (e) {
+    return { ok: false, error: '音频解码失败：' + (e && e.message ? e.message : String(e)) }
+  }
+}
+
+/* 探测音频是否真在盘上、多大（导入落盘后核对写入是否完整；与 recorder.statClip 同口径） */
+export async function statClipFile(fileName) {
+  const hit = fsPlugin()
+  if (!hit) return { ok: false, error: NOT_APP }
+  const { fs } = hit
+  if (typeof fs.stat !== 'function') return { ok: false, unsupported: true }
+  try {
+    const r = await fs.stat({ directory: LISTEN_DIR, path: clipRelPath(fileName) })
+    return { ok: true, size: Number(r && r.size) || 0 }
   } catch (e) {
     return { ok: false, error: errText(e) }
   }

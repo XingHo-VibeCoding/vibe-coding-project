@@ -9,8 +9,8 @@ import { loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable,
 import { compressImageForRecognize, recognizeScheduleImage, recognizerAvailable } from './data/recognizer.js'
 import { buildIcs, downloadText } from './data/ics.js'
 import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL } from './data/notify.js'
-import { loadClips, saveClips, loadSettings as loadListenSettings, reviewAdvance, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey, minOf as minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices } from './data/listen.js'
-import { fileToBase64, writeClipBytes, resolveListenUri } from './data/listenStore.js'
+import { loadClips, saveClips, loadSettings as loadListenSettings, saveSettings as saveListenSettings, reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey, minOf as minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices } from './data/listen.js'
+import { fileToBase64, writeClipBytes, resolveListenUri, makeClipBlobUrl, statClipFile } from './data/listenStore.js'
 import MonthCalendar from './components/MonthCalendar.vue'
 import NumberWheel from './components/NumberWheel.vue'
 import TimeWheel from './components/TimeWheel.vue'
@@ -962,6 +962,11 @@ async function onListenPick(e) {
       if (!r || !r.ok) {
         return setListenMsg('音频没能存到本机：' + ((r && r.error) || '未知原因') + '。请重试一次。', true)
       }
+      /* 写成功 ≠ 写对了：回读一次大小核对（真机播放报「不支持的源」时，最该先排除的就是没写全） */
+      const st = await statClipFile(clip.file)
+      if (st && st.ok && Number(st.size) !== Number(file.size)) {
+        return setListenMsg('音频存到本机后大小对不上（原 ' + file.size + ' 字节 / 本机 ' + st.size + ' 字节）：请重试一次，或换个文件。', true)
+      }
     } catch (err) {
       return setListenMsg('音频没能存到本机：' + (err && err.message ? err.message : String(err)) + '。请重试一次。', true)
     }
@@ -977,14 +982,34 @@ async function onListenPick(e) {
     ? `已导入「${clip.name}」${durText}并存到本机——刷新或重开都不会丢。`
     : `已导入「${clip.name}」${durText}——今天就可以听。`)
 }
-/* 「已听」= 唯一的手动确认入口：已听次数 +1、复习档位 +1、按艾宾浩斯重算下次复习日 */
-function listenMark(p) {
+/* 自动记账（2026-10-03 用户决策：去掉手工「已听」按钮，放满设定遍数自动加）。
+   到复习日（或刚导入当天）→ 走 reviewAdvance：已听次数 +1、复习档位 +1、按艾宾浩斯重算下次复习日；
+   还没到复习日 → 只加已听次数（countPlayed），排期不动。
+   为什么去掉手工确认：用户说"听完次数自动加上去就好了"；代价是中途停掉不算，
+   只有真放满设定遍数才算一次（仍然不会自动播放，"点通知不出声"这条口径不变）。 */
+function listenAutoMark(p) {
   const c = listenClips.value.find((x) => x.id === p.id)
   if (!c) return
-  const next = reviewAdvance(c, { fromDateKey: todayKey(), intervals: listenSettings.value.reviewIntervals })
+  const due = !c.next_due_date || compareDateKey(c.next_due_date, todayKey()) <= 0
+  const next = due
+    ? reviewAdvance(c, { fromDateKey: todayKey(), intervals: listenSettings.value.reviewIntervals })
+    : countPlayed(c)
   if (!next) return setListenMsg('这条数据有问题，先不记账。', true)
   listenClips.value = saveClips(listenClips.value.map((x) => (x.id === c.id ? next : x)))
-  setListenMsg(`已记一次：「${next.name}」共听 ${next.played_count} 次 · ${listenStageLabel(next)}`)
+  setListenMsg(due
+    ? `放满 ${listenPlayTotal.value} 遍，自动记一次：「${next.name}」共听 ${next.played_count} 次 · ${listenStageLabel(next)}`
+    : `放满 ${listenPlayTotal.value} 遍，自动记一次：「${next.name}」共听 ${next.played_count} 次（还没到复习日，排期先不动）`)
+  applyListenSchedule()
+}
+/* 「到点提醒我去听」开关（2026-10-03 修 bug：此前 enabled 默认 false 且界面上没有开关，
+   于是练耳通知永远排不出来）。写进 web2.listen.set.enabled，watch 会触发重排。 */
+function toggleListenNotify() {
+  const enabled = !listenSettings.value.enabled
+  listenSettings.value = saveListenSettings({ enabled })
+  setListenMsg(enabled
+    ? '已开启到点提醒：到复习日合并成一条通知（记得允许通知权限）。'
+    : '已关掉练耳提醒（课前提醒不受影响）。')
+  applyListenSchedule()
 }
 
 /* ------------------------------------------------------------------
@@ -994,7 +1019,8 @@ function listenMark(p) {
    - 浏览器：用导入时留下的 blob URL（刷新后字节没了，提示重新导入）
    会话内重复：一遍放完自动接着下一遍，直到下一遍 = 0（放完 total 遍）才停；
    连放几遍由 repeatTimesOf 决定（本条 repeat_times 优先，null 跟全局设置）。
-   说明：播放**不推进复习进度**——进度只认「已听」那一次人工确认（§3.5 的口径）。
+   进度：放满设定遍数 = 完成一次复习 → 自动记一次「已听」（2026-10-03 用户决策，手工按钮已去掉）。
+   点「停止」只是暂停：遍数与播放位置都留着，再点「继续」从断点接着放。
    ------------------------------------------------------------------ */
 const listenBlobUrls = new Map() // 浏览器模式：id → blob URL（仅当前会话有效）
 const listenPlayId = ref('') // 正在播的那条 id（空 = 没在播）
@@ -1002,36 +1028,85 @@ const listenPlayRound = ref(0) // 当前放到第几遍（0 = 没在播）
 const listenPlayTotal = ref(0) // 这次要点连放几遍
 let listenAudio = null
 
-function stopListen() {
+const listenPaused = ref(false) // 暂停中（点过「停止」：遍数与播放位置都留着，可「继续」）
+
+/* 点「停止」= 暂停（不是清空）：记住放到第几遍、记住播放位置，再点「继续」从断点接着放。
+   2026-10-03 用户反馈的 bug 就是这里原来把遍数清 0 了。 */
+function pauseListen() {
+  if (listenAudio) { try { listenAudio.pause() } catch { /* 停不下来也别崩 */ } }
+  listenPaused.value = true
+}
+/* 彻底收摊：换段、放完一遍不剩、出错时用 */
+function clearListen() {
   if (listenAudio) { try { listenAudio.pause() } catch { /* 忽略 */ } }
   listenPlayId.value = ''
   listenPlayRound.value = 0
   listenPlayTotal.value = 0
+  listenPaused.value = false
 }
-/* 一遍放完：还有下一遍就重头再放，否则停。
+/* 从暂停处接着放（不动遍数） */
+async function resumeListen() {
+  const a = listenAudio
+  if (!a || !listenPlayId.value) return clearListen()
+  try {
+    await a.play()
+    listenPaused.value = false
+  } catch {
+    setListenMsg('播放失败：文件可能不在了，重新导入试试。', true)
+    clearListen()
+  }
+}
+/* 一遍放完：还有下一遍就重头再放，否则这一轮算完成 → 自动记账（不再需要点「已听」）。
    重放失败（少见：音频被系统回收/浏览器限制）就老实停下，不空转。 */
 function onListenEnded() {
-  if (!listenPlayId.value) return
+  const id = listenPlayId.value
+  if (!id) return
   const nextRound = nextPlayRound(listenPlayRound.value, listenPlayTotal.value)
-  if (!nextRound) return stopListen()
-  listenPlayRound.value = nextRound
   const a = listenAudio
-  if (!a) return stopListen()
-  try {
-    a.currentTime = 0
-    const p = a.play()
-    if (p && typeof p.catch === 'function') p.catch(() => stopListen())
-  } catch { stopListen() }
+  if (nextRound) {
+    listenPlayRound.value = nextRound
+    if (!a) return clearListen()
+    try {
+      a.currentTime = 0
+      const p = a.play()
+      if (p && typeof p.catch === 'function') p.catch(() => clearListen())
+    } catch { clearListen() }
+    return
+  }
+  /* 放满 total 遍 = 完成一次复习 */
+  clearListen()
+  const c = listenClips.value.find((x) => x.id === id)
+  if (c) listenAutoMark(c)
 }
 async function onListenPlay(c) {
-  if (listenPlayId.value === c.id) return stopListen() // 再点同一段 = 停
-  stopListen()
+  /* 同一段：正在放 → 暂停；暂停中 → 从断点继续（遍数不清零） */
+  if (listenPlayId.value === c.id) {
+    if (listenPaused.value) return resumeListen()
+    return pauseListen()
+  }
+  clearListen()
   setListenMsg('')
   let src = listenBlobUrls.get(c.id) || ''
   if (!src && listenIsApp.value) {
-    const r = await resolveListenUri(c.file)
-    if (!r || !r.ok) return setListenMsg('播不了：' + ((r && r.error) || '未知原因'), true)
-    src = r.uri
+    /* 真机播放主路径（2026-10-03 真机实测后改）：读盘→Blob URL。
+       原来用 getUri + convertFileSrc 得到 https://localhost/_capacitor_file_/…，
+       真机上 <audio> 报 "Failed to load because no supported source was found."；
+       而导入时读时长用的 URL.createObjectURL(File) 是通的，所以改成读字节自造 Blob，
+       与能用的那条路对齐。读不出来才退回原链路，两条都失败就把原因如实说出来。 */
+    const b = await makeClipBlobUrl(c.file)
+    if (b && b.ok && b.url) {
+      const old = listenBlobUrls.get(c.id)
+      if (old) { try { URL.revokeObjectURL(old) } catch { /* 忽略 */ } }
+      listenBlobUrls.set(c.id, b.url)
+      src = b.url
+    } else {
+      const r = await resolveListenUri(c.file)
+      if (r && r.ok && r.uri) {
+        src = r.uri
+      } else {
+        return setListenMsg('播不了：' + ((b && b.error) || (r && r.error) || '未知原因'), true)
+      }
+    }
   }
   if (!src) return setListenMsg('这段音频的原始文件不在本机了，请重新导入一次。', true)
   try {
@@ -1040,13 +1115,14 @@ async function onListenPlay(c) {
       listenAudio.onended = onListenEnded
     }
     listenAudio.src = src
+    try { listenAudio.currentTime = 0 } catch { /* 有些浏览器设不了，无妨 */ }
     const total = repeatTimesOf(c, listenSettings.value)
     listenPlayId.value = c.id
     listenPlayRound.value = 1
     listenPlayTotal.value = total
     await listenAudio.play()
   } catch (e) {
-    stopListen()
+    clearListen()
     setListenMsg('播放失败：' + (e && e.message ? e.message : String(e)) + '（文件可能不在了，重新导入试试）', true)
   }
 }
@@ -3775,6 +3851,26 @@ function gridDbl(e) {
         </div>
 
         <template v-if="listenOpen">
+          <!-- 到点提醒开关（2026-10-03 补：以前默认关且没有开关，通知永远不响） -->
+          <div class="mt-3 flex items-center gap-3 rounded-xl bg-ink/[0.04] px-3 py-2.5">
+            <span class="min-w-0 flex-1">
+              <span class="block text-[12px] font-medium">到点提醒我去听</span>
+              <span class="block text-[11px] text-ink-dim/70">到复习日合并成一条「今天有 N 段待复习」</span>
+            </span>
+            <button
+              class="relative h-6 w-11 shrink-0 rounded-full transition"
+              :class="listenSettings.enabled ? 'bg-primary-500' : 'bg-ink/15'"
+              data-listen-notify-toggle
+              :aria-pressed="listenSettings.enabled ? 'true' : 'false'"
+              @click="toggleListenNotify"
+            >
+              <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" :class="listenSettings.enabled ? 'left-[22px]' : 'left-0.5'"></span>
+            </button>
+          </div>
+          <p v-if="listenSettings.enabled && !notifyOk" class="mt-1.5 text-[11px] leading-relaxed text-amber-500">
+            这个环境没有通知能力（浏览器里收不到）——装到手机 App 里才生效。
+          </p>
+
           <label class="mt-3.5 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-primary-400/50 bg-primary-50/40 px-3 py-3 text-xs font-medium text-primary-500 transition active:scale-[0.99]">
             <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V3M4.5 6.5L8 3l3.5 3.5" /><path d="M3 11.5V13a1 1 0 001 1h8a1 1 0 001-1v-1.5" /></svg>
             <span>从本地导入音频（mp3 / m4a / wav 等）</span>
@@ -3809,19 +3905,11 @@ function gridDbl(e) {
                 </span>
                 <button
                   class="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
-                  :class="listenPlayId === c.id ? 'bg-primary-500 text-white' : 'bg-primary-50 text-primary-500'"
+                  :class="listenPlayId === c.id && !listenPaused ? 'bg-primary-500 text-white' : 'bg-primary-50 text-primary-500'"
                   data-listen-play
                   @click="onListenPlay(c)"
                 >
-                  {{ listenPlayId === c.id ? '停止' : '播放' }}
-                </button>
-                <button
-                  class="shrink-0 rounded-full bg-ink/5 px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
-                  :disabled="!c.next_due_date || c.next_due_date > todayKey()"
-                  :class="(!c.next_due_date || c.next_due_date > todayKey()) ? 'opacity-40' : ''"
-                  @click="listenMark(c)"
-                >
-                  已听
+                  {{ listenPlayId === c.id ? (listenPaused ? '继续' : '停止') : '播放' }}
                 </button>
               </div>
             </li>
