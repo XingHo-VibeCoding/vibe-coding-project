@@ -25,7 +25,9 @@ import { currentWeekNo, minOf } from './store.js'
 
 export const NOTIFY_KEY = 'web2.notify'
 const NOTIFY_DEFAULTS = { enabled: true, minutesBefore: 10 }
-const SCHEDULE_TAG = 'web2-m5' // 本应用排程的 extra.src 标记（重排时识别自己的）
+const SCHEDULE_TAG = 'web2-m5' // 课前提醒排程的 extra.src 标记（重排时识别自己的）
+export const LISTEN_TAG = 'web2-listen' // 练耳复习提醒自己的标记——**必须与课前提醒分开**：重排只清自己这一批
+export const LISTEN_CHANNEL = 'listen-reminder' // 练耳复习提醒的独立渠道
 const HORIZON_DAYS = 7 // 只排未来 7 天，App 启动/变动时重排即可覆盖
 const MAX_SCHEDULE = 64 // 单次排程上限（7 天 × 每天最多 8 节 ≈ 56，64 是保险线）
 
@@ -74,6 +76,8 @@ export async function ensureNotifyEnv() {
     // importance：4 = HIGH（响 + 弹横幅），3 = DEFAULT（响、不弹横幅）；渠道已存在时是 no-op
     await p.createChannel({ id: 'class-reminder', name: '课前提醒', importance: 4 })
     await p.createChannel({ id: 'task-done', name: '完成通知', importance: 3 })
+    // 练耳复习提醒：与课前提醒同级（要响、要弹横幅），安静时段由练耳自己的勿扰时段兜
+    await p.createChannel({ id: LISTEN_CHANNEL, name: '练耳复习提醒', importance: 4 })
     await p.registerActionTypes({
       types: [{ id: 'class-reminder', actions: [{ id: 'START_REC', title: '开始录音' }] }],
     })
@@ -147,7 +151,7 @@ export function buildScheduleItems({ courses = [], events = [], routines = [], s
         if (weekNo < 1 || weekNo > Number(semester.totalWeeks)) continue // 放假/未开学
         if (!matchWeekRule(c.week_rule, weekNo)) continue
       }
-      const item = makeItem('c', c.id, dKey, day, c.start, lead, leadLabel, c.name, c.place)
+      const item = makeItem('c', c.id, dKey, day, c.start, lead, leadLabel, c.name, c.place, c.end)
       if (item) out.push(item)
     }
 
@@ -162,14 +166,14 @@ export function buildScheduleItems({ courses = [], events = [], routines = [], s
       } else if (!matchWeekRule(r.week_rule, weekNo)) {
         continue
       }
-      const item = makeItem('r', r.id, dKey, day, r.start, lead, leadLabel, r.name, r.place)
+      const item = makeItem('r', r.id, dKey, day, r.start, lead, leadLabel, r.name, r.place, r.end)
       if (item) out.push(item)
     }
 
     for (const e of events) {
       if (!e || e.type !== 'event') continue
       if (String(e.date) !== dKey) continue
-      const item = makeItem('e', e.id, dKey, day, e.start, lead, leadLabel, e.name, e.place)
+      const item = makeItem('e', e.id, dKey, day, e.start, lead, leadLabel, e.name, e.place, e.end)
       if (item) out.push(item)
     }
   }
@@ -185,43 +189,56 @@ function matchWeekRule(rule, weekNo) {
   return false
 }
 
-/* 生成一条提醒（时刻 = 当天 start - lead 分钟；跨到前一天或时刻无效则返回 null） */
-function makeItem(kind, id, dKey, day, start, lead, leadLabel, name, place) {
+/* 生成一条提醒（时刻 = 当天 start - lead 分钟；跨到前一天或时刻无效则返回 null）。
+   顺带带上 start / end（当天 HH:mm）：空闲槽要用真实起止算，
+   不能拿被提前量挪过的 at 当起点——练耳 L2/L4 靠它算空档。 */
+function makeItem(kind, id, dKey, day, start, lead, leadLabel, name, place, end) {
   if (!start || !/^\d{1,2}:\d{2}/.test(String(start))) return null
   const total = minOf(String(start)) - lead
   if (total < 0) return null
   const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(total / 60), total % 60, 0, 0)
   const key = kind + '_' + String(id) + '_' + dKey
   const body = leadLabel + (place ? ' · ' + place : '')
-  return { key, at, title: String(name || '日程'), body }
+  return { key, at, title: String(name || '日程'), body, start: String(start), end: end ? String(end) : '' }
 }
 
 /* ---------- 排程（幂等重排） ---------- */
 
-export async function applySchedule(items) {
+/* opts 让不同功能各排各的（缺省 = 课前提醒那一套，旧调用一个字不用改）：
+   - src：extra.src 标记。**重排只清自己这个标记的**——否则练耳一重排会把课前提醒全删掉。
+   - channelId / actionTypeId：渠道与按钮类型；`actionTypeId: null` = 通知不带按钮
+     （练耳就是这种：点通知只回 App，**不自动播放**）。
+   - enabled：开关。缺省沿用课前提醒的设置。 */
+export async function applySchedule(items, opts = {}) {
   const p = plugin()
   if (!p || typeof p.schedule !== 'function') return { ok: false, unsupported: true }
-  // 先清掉本应用排过的（不管开关状态——关掉开关 = 清空）
+  const src = opts.src || SCHEDULE_TAG
+  const channelId = opts.channelId || 'class-reminder'
+  const actionTypeId = opts.actionTypeId === undefined ? 'class-reminder' : opts.actionTypeId
+  const enabled = opts.enabled === undefined ? loadNotifySettings().enabled : !!opts.enabled
+  // 先清掉自己排过的（不管开关状态——关掉开关 = 清空）
   try {
     const pending = await p.getPending()
-    const mine = (pending.notifications || []).filter((n) => n.extra && n.extra.src === SCHEDULE_TAG)
+    const mine = (pending.notifications || []).filter((n) => n.extra && n.extra.src === src)
     if (mine.length) await p.cancel({ notifications: mine.map((n) => ({ id: n.id })) })
   } catch {
     /* 取不到 pending 就只管排新的，不失败 */
   }
-  const settings = loadNotifySettings()
-  if (!settings.enabled) return { ok: true, scheduled: 0, cancelled: true }
+  if (!enabled) return { ok: true, scheduled: 0, cancelled: true }
   const notifications = items
     .slice(0, MAX_SCHEDULE)
-    .map((it) => ({
-      id: hashId(it.key),
-      title: it.title,
-      body: it.body,
-      schedule: { at: it.at, allowWhileIdle: true }, // 无精确闹钟权限时插件自动降级
-      channelId: 'class-reminder',
-      actionTypeId: 'class-reminder',
-      extra: { src: SCHEDULE_TAG, key: it.key },
-    }))
+    .map((it) => {
+      const n = {
+        id: hashId(it.key),
+        title: it.title,
+        body: it.body,
+        schedule: { at: it.at, allowWhileIdle: true }, // 无精确闹钟权限时插件自动降级
+        channelId,
+        extra: { src, key: it.key },
+      }
+      if (actionTypeId) n.actionTypeId = actionTypeId // 不带按钮时整个字段都不写
+      return n
+    })
   if (!notifications.length) return { ok: true, scheduled: 0 }
   try {
     await p.schedule({ notifications })

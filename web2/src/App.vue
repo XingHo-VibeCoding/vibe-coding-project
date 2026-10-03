@@ -8,7 +8,9 @@ import { transcriberAvailable, modelState, ensureModel, transcribeLecture, start
 import { loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable, testConnection, DEEPSEEK_MODELS } from './data/summarizer.js'
 import { compressImageForRecognize, recognizeScheduleImage, recognizerAvailable } from './data/recognizer.js'
 import { buildIcs, downloadText } from './data/ics.js'
-import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction } from './data/notify.js'
+import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL } from './data/notify.js'
+import { loadClips, saveClips, loadSettings as loadListenSettings, reviewAdvance, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey, minOf as minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices } from './data/listen.js'
+import { fileToBase64, writeClipBytes, resolveListenUri } from './data/listenStore.js'
 import MonthCalendar from './components/MonthCalendar.vue'
 import NumberWheel from './components/NumberWheel.vue'
 import TimeWheel from './components/TimeWheel.vue'
@@ -135,6 +137,7 @@ onMounted(() => {
   const ro = new ResizeObserver(() => measureStrip())
   if (stripRef.value) for (const page of stripRef.value.children) ro.observe(page)
   refreshLectures() // 录音场次列表（二期 M2）
+  initListen() // 碎片练耳：列表 + 设置（四期）
   // 转写中途被杀（重启/冻结后杀进程）的场次回退「待转写」——
   // 状态机不允许 transcribing 重进，不回退就永远没有转写按钮（真机实证）
   let stuckTr = false
@@ -370,11 +373,14 @@ async function initNotify() {
   if (!notifyOk) return
   const env = await ensureNotifyEnv()
   notifyPerm.value = env.granted === undefined ? null : !!env.granted
-  onNotificationAction(({ actionId }) => {
+  onNotificationAction(({ actionId, extra }) => {
     goMeTab()
     if (actionId === 'START_REC') startRec() // 幂等：已在录音则 startRec 直接 return
+    /* 练耳复习提醒：无按钮，点通知只回「我的」页并把练耳卡展开——**不自动播放**（L6） */
+    if (extra && extra.src === LISTEN_TAG) listenOpen.value = true
   })
   await applyNotifySchedule()
+  await applyListenSchedule()
 }
 
 /* ---------------- 初始设定引导页（差距⑦） ----------------
@@ -825,6 +831,224 @@ async function doDeleteLecture() {
   if (sumOpenId.value === id) sumOpenId.value = null
   refreshLectures()
   setRecMsg(`已删除「${l ? l.title : '场次'}」${fileNote}`)
+}
+
+/* ---------------- 碎片练耳（四期 Day 18，入口「我的」页） ----------------
+   口径：数据走 web2.listen / web2.listen.set（本机，不进导出）；通知只提醒、不自动播放；
+   已听次数与复习档位（艾宾浩斯 review_stage / next_due_date）**只由「已听」手动确认推进**。
+   浏览器环境不落盘音频字节：文件仅本次会话可用，刷新后重新导入即可（记录与计数保留）。 */
+const listenClips = ref([])
+const listenSettings = ref(loadListenSettings())
+const listenMsg = ref('')
+const listenMsgBad = ref(false)
+const listenOpen = ref(false)
+const listenIsApp = ref(false)
+
+function setListenMsg(text, bad = false) {
+  listenMsg.value = text
+  listenMsgBad.value = !!bad
+}
+function refreshListen() {
+  listenClips.value = loadClips()
+}
+function initListen() {
+  try {
+    listenClips.value = loadClips()
+    listenSettings.value = loadListenSettings()
+  } catch {
+    listenClips.value = []
+  }
+  /* 平台判定放到 mounted：App 外壳的手工桥可能晚于模块求值完成
+     （与 trSupported 同一个坑，见下方转写一节的注释）。 */
+  const c = typeof window !== 'undefined' ? window.Capacitor : null
+  const p = c && c.Plugins ? c.Plugins : null
+  listenIsApp.value = !!(p && p.Filesystem)
+}
+
+/* L3/L4：把未来 7 天的复习提醒排进系统通知（有通知能力 + 练耳总开关打开才排）。
+   与课前提醒**各用各的标记**（LISTEN_TAG）：applySchedule 只清自己那一批，互不删。
+   通知**不带按钮**：点它只回 App（定位到练耳卡），绝不自动播放（L6）。 */
+function listenDayKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+async function applyListenSchedule() {
+  if (!notifyOk) return
+  const cfg = listenSettings.value
+  const now = new Date()
+  /* 空档要按**真实起止**算，所以提前量设为 0 —— 否则 b/class 的 at 被挪前 10 分钟，
+     算出来的空档起点也跟着偏，提醒时刻会和界面上写的建议对不上。 */
+  const items = buildScheduleItems({
+    courses: weekAll.value,
+    events: events.value,
+    routines: routines.value,
+    semester: semester.value,
+    settings: { ...notifySettings.value, minutesBefore: 0 },
+    now,
+    horizonDays: 7,
+  })
+  const notices = buildListenNotices({
+    clips: listenClips.value,
+    settings: cfg,
+    now,
+    horizonDays: 7,
+    itemsOfDay: (dKey) => items.filter((it) => it.at instanceof Date && listenDayKey(it.at) === dKey),
+    durationOf: (it) => minOfTime(String(it.end)) - minOfTime(String(it.start)),
+  })
+  await applySchedule(notices, { src: LISTEN_TAG, channelId: LISTEN_CHANNEL, actionTypeId: null, enabled: cfg.enabled })
+}
+/* 导入 / 点「已听」/ 改设置 → 重排（saveClips/loadClips 返回新数组，引用变化即触发） */
+watch([listenClips, listenSettings], () => { applyListenSchedule() })
+/* 今天要提醒的练耳建议（L2 空闲槽标记）：
+   用 notify.js 的排程项（buildScheduleItems 的输出，形态 { at, title, ... }）
+   反推今天几点到几点有空 → 空闲槽 ∩ 今日到期音频 → "几点可放几段"。
+   与「课前提醒」共用同一份时刻展开口径，两者不会各算一套。 */
+function isSameDay(d, ref) {
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate()
+}
+const listenSuggestions = computed(() => {
+  if (!listenClips.value.length) return { due: [], suggestions: [], remaining: 0 }
+  const now = new Date()
+  const items = buildScheduleItems({
+    courses: weekAll.value,
+    events: events.value,
+    routines: routines.value,
+    semester: semester.value,
+    settings: notifySettings.value,
+    now,
+    horizonDays: 1,
+  }).filter((it) => it.at instanceof Date && isSameDay(it.at, now))
+  return buildListenItems({
+    items,
+    clips: listenClips.value,
+    settings: listenSettings.value,
+    now,
+    durationOf: (it) => {
+      const end = it && it.end
+      if (!end) return 0
+      const d = minOfTime(String(end)) - minOfTime(String(it.start || ''))
+      return d > 0 ? d : 0
+    },
+  })
+})
+
+/* 今日到期的音频（含"今天刚导入"的第一段）——用于"今天在等听的 N 段"提示 */
+const listenDue = computed(() => dueClips(listenClips.value, todayKey()))
+
+/* 列表里每条显示「已听 N 次 · 下次复习 X」 */function listenStageLabel(c) {
+  const stage = Math.max(0, Number(c.review_stage) || 0)
+  if (!c.next_due_date) return stage > 0 ? '已完成全部复习' : '未开始'
+  const today = todayKey()
+  const d = String(c.next_due_date)
+  if (d <= today) return d === today ? '今天该听' : `拖了：原定 ${d}`
+  const later = addDaysKey(today, 1)
+  if (d === later) return '明天该复习'
+  return `下次复习 ${d}`
+}
+async function onListenPick(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = '' // 允许重复选同一个文件
+  if (!file) return
+  setListenMsg('')
+  if (file.size > 20 * 1024 * 1024) return setListenMsg('这个文件超过 20MB，先剪短再导入。', true)
+  const seconds = await clipDuration(file)
+  const { clip, added } = newClipFromImport({ fileName: file.name, seconds }, listenClips.value)
+  if (!added) return setListenMsg('这段音频已经在列表里了，没有重复导入。')
+  /* 真机路径（Step 7）：把音频字节写进应用私有目录 listen/<file>，
+     这样关掉 App / 刷新之后不用重新导入（记录里 file 只存文件名，路径前缀落盘时拼）。 */
+  if (listenIsApp.value) {
+    try {
+      const b64 = await fileToBase64(file)
+      const r = await writeClipBytes(clip.file, b64)
+      if (!r || !r.ok) {
+        return setListenMsg('音频没能存到本机：' + ((r && r.error) || '未知原因') + '。请重试一次。', true)
+      }
+    } catch (err) {
+      return setListenMsg('音频没能存到本机：' + (err && err.message ? err.message : String(err)) + '。请重试一次。', true)
+    }
+  } else {
+    /* 浏览器：字节不落盘（刷新就没了，界面已明说），但把这次选中的文件留成 blob URL，
+       当前会话里点「播放」能直接听——否则刚导入就播不了，体验上讲不通。 */
+    try { listenBlobUrls.set(clip.id, URL.createObjectURL(file)) } catch { /* 拿不到就别播，下面会提示重新导入 */ }
+  }
+  const next = saveClips([...listenClips.value, clip])
+  listenClips.value = next
+  const durText = seconds ? '（' + fmtSeconds(seconds) + '）' : ''
+  setListenMsg(listenIsApp.value
+    ? `已导入「${clip.name}」${durText}并存到本机——刷新或重开都不会丢。`
+    : `已导入「${clip.name}」${durText}——今天就可以听。`)
+}
+/* 「已听」= 唯一的手动确认入口：已听次数 +1、复习档位 +1、按艾宾浩斯重算下次复习日 */
+function listenMark(p) {
+  const c = listenClips.value.find((x) => x.id === p.id)
+  if (!c) return
+  const next = reviewAdvance(c, { fromDateKey: todayKey(), intervals: listenSettings.value.reviewIntervals })
+  if (!next) return setListenMsg('这条数据有问题，先不记账。', true)
+  listenClips.value = saveClips(listenClips.value.map((x) => (x.id === c.id ? next : x)))
+  setListenMsg(`已记一次：「${next.name}」共听 ${next.played_count} 次 · ${listenStageLabel(next)}`)
+}
+
+/* ------------------------------------------------------------------
+   播放（四期）：播放 / 停止 + 会话内重复遍数（repeatTimes，L4 那半截）。
+   - App：用 listenStore.resolveListenUri 把 listen/<file> 解析成可播地址
+     （getUri → convertFileSrc，与课堂录音同链路）
+   - 浏览器：用导入时留下的 blob URL（刷新后字节没了，提示重新导入）
+   会话内重复：一遍放完自动接着下一遍，直到下一遍 = 0（放完 total 遍）才停；
+   连放几遍由 repeatTimesOf 决定（本条 repeat_times 优先，null 跟全局设置）。
+   说明：播放**不推进复习进度**——进度只认「已听」那一次人工确认（§3.5 的口径）。
+   ------------------------------------------------------------------ */
+const listenBlobUrls = new Map() // 浏览器模式：id → blob URL（仅当前会话有效）
+const listenPlayId = ref('') // 正在播的那条 id（空 = 没在播）
+const listenPlayRound = ref(0) // 当前放到第几遍（0 = 没在播）
+const listenPlayTotal = ref(0) // 这次要点连放几遍
+let listenAudio = null
+
+function stopListen() {
+  if (listenAudio) { try { listenAudio.pause() } catch { /* 忽略 */ } }
+  listenPlayId.value = ''
+  listenPlayRound.value = 0
+  listenPlayTotal.value = 0
+}
+/* 一遍放完：还有下一遍就重头再放，否则停。
+   重放失败（少见：音频被系统回收/浏览器限制）就老实停下，不空转。 */
+function onListenEnded() {
+  if (!listenPlayId.value) return
+  const nextRound = nextPlayRound(listenPlayRound.value, listenPlayTotal.value)
+  if (!nextRound) return stopListen()
+  listenPlayRound.value = nextRound
+  const a = listenAudio
+  if (!a) return stopListen()
+  try {
+    a.currentTime = 0
+    const p = a.play()
+    if (p && typeof p.catch === 'function') p.catch(() => stopListen())
+  } catch { stopListen() }
+}
+async function onListenPlay(c) {
+  if (listenPlayId.value === c.id) return stopListen() // 再点同一段 = 停
+  stopListen()
+  setListenMsg('')
+  let src = listenBlobUrls.get(c.id) || ''
+  if (!src && listenIsApp.value) {
+    const r = await resolveListenUri(c.file)
+    if (!r || !r.ok) return setListenMsg('播不了：' + ((r && r.error) || '未知原因'), true)
+    src = r.uri
+  }
+  if (!src) return setListenMsg('这段音频的原始文件不在本机了，请重新导入一次。', true)
+  try {
+    if (!listenAudio) {
+      listenAudio = new Audio()
+      listenAudio.onended = onListenEnded
+    }
+    listenAudio.src = src
+    const total = repeatTimesOf(c, listenSettings.value)
+    listenPlayId.value = c.id
+    listenPlayRound.value = 1
+    listenPlayTotal.value = total
+    await listenAudio.play()
+  } catch (e) {
+    stopListen()
+    setListenMsg('播放失败：' + (e && e.message ? e.message : String(e)) + '（文件可能不在了，重新导入试试）', true)
+  }
 }
 
 /* ---------------- 转写（二期 M3）：场次上的「转写」按钮 → 模型下载 → 逐 clip 识别 ----------------
@@ -3528,6 +3752,89 @@ function gridDbl(e) {
             </template>
           </li>
         </ul>
+      </section>
+
+      <!-- 碎片练耳（四期 Day 18）：导入 + 列表（L1）。通知/播放见后续板块 -->
+      <section class="rounded-2xl border border-line bg-card p-4 shadow-sm">
+        <div class="flex items-center gap-3.5">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12.5V7a5 5 0 0110 0v5.5" /><path d="M1.5 11.5h2v3h-2zM12.5 11.5h2v3h-2z" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">碎片练耳</span>
+            <span class="block text-[11px] text-ink-dim/70">
+              本地音频按艾宾浩斯排复习；到点只提醒你去听，不自动播放
+            </span>
+          </span>
+          <button
+            class="shrink-0 rounded-full bg-primary-500 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
+            @click="listenOpen = !listenOpen"
+          >
+            {{ listenOpen ? '收起' : '打开' }}
+          </button>
+        </div>
+
+        <template v-if="listenOpen">
+          <label class="mt-3.5 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-primary-400/50 bg-primary-50/40 px-3 py-3 text-xs font-medium text-primary-500 transition active:scale-[0.99]">
+            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V3M4.5 6.5L8 3l3.5 3.5" /><path d="M3 11.5V13a1 1 0 001 1h8a1 1 0 001-1v-1.5" /></svg>
+            <span>从本地导入音频（mp3 / m4a / wav 等）</span>
+            <input type="file" accept="audio/*" class="hidden" data-listen-import @change="onListenPick" />
+          </label>
+
+          <!-- L2：空闲槽建议时段（哪些空档能放几段） -->
+          <div v-if="listenClips.length" data-listen-slots class="mt-3 rounded-xl bg-ink/[0.04] px-3 py-2.5">
+            <p v-if="listenSuggestions.suggestions.length" class="text-[11px] font-medium text-ink-dim">
+              今天可听：{{ listenSuggestions.suggestions.reduce((n, s) => n + s.take, 0) }} 段，挑这些空档去听
+            </p>
+            <ul v-if="listenSuggestions.suggestions.length" class="mt-1 space-y-0.5">
+              <li v-for="(s, i) in listenSuggestions.suggestions" :key="i" class="text-[11px] text-ink-dim/80">
+                {{ s.start }}–{{ s.end }} · {{ s.mins }} 分钟 · {{ s.kind === 'short' ? '短槽' : '可多段' }} → 放 {{ s.take }} 段
+              </li>
+            </ul>
+            <p v-else-if="listenSuggestions.due.length" class="text-[11px] text-ink-dim/80">
+              今天待复习 {{ listenSuggestions.due.length }} 段，但课表已排满 / 空档小于 5 分钟——自己找时间听
+            </p>
+            <p v-else class="text-[11px] text-ink-dim/80">
+              今天没有到期的音频；列表里 {{ listenClips.length }} 段都排在未来
+            </p>
+          </div>
+
+          <ul v-if="listenClips.length" class="mt-3 divide-y divide-line border-t border-line">            <li v-for="c in listenClips" :key="c.id" class="py-2.5">
+              <div class="flex items-center gap-3">
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[13px] font-medium">{{ c.name }}</span>
+                  <span class="block text-[11px] text-ink-dim/70">
+                    已听 {{ c.played_count }} 次 · {{ fmtSeconds(c.seconds) }} · {{ listenStageLabel(c) }}<template v-if="listenPlayId === c.id && listenPlayTotal > 1"> · <span class="font-medium text-primary-500" data-listen-round>第 {{ listenPlayRound }}/{{ listenPlayTotal }} 遍</span></template>
+                  </span>
+                </span>
+                <button
+                  class="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
+                  :class="listenPlayId === c.id ? 'bg-primary-500 text-white' : 'bg-primary-50 text-primary-500'"
+                  data-listen-play
+                  @click="onListenPlay(c)"
+                >
+                  {{ listenPlayId === c.id ? '停止' : '播放' }}
+                </button>
+                <button
+                  class="shrink-0 rounded-full bg-ink/5 px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
+                  :disabled="!c.next_due_date || c.next_due_date > todayKey()"
+                  :class="(!c.next_due_date || c.next_due_date > todayKey()) ? 'opacity-40' : ''"
+                  @click="listenMark(c)"
+                >
+                  已听
+                </button>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="mt-3 rounded-xl bg-ink/[0.04] px-3 py-2.5 text-[11px] text-ink-dim/70">
+            还没有音频。导入一段（20 秒–1 分钟最合适），当天就可以开始听。
+          </p>
+
+          <p v-if="listenClips.length && !listenIsApp" class="mt-2 text-[11px] leading-relaxed text-amber-500">
+            浏览器里音频字节不落盘：刷新后要重新导入（听过的次数与复习排期会保留）。
+          </p>
+          <p v-if="listenMsg" class="mt-2 text-[11px]" :class="listenMsgBad ? 'text-red-400' : 'text-primary-500'">{{ listenMsg }}</p>
+        </template>
       </section>
 
       <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
