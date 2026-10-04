@@ -53,9 +53,11 @@ const AI_COURSES = {
 }
 
 /* v1.41.9 真机反馈：老版本把 undefined 拼进模板串落了盘，场次列表里出现过「undefined · 10月1日」。
-   sanitizeLecture 已把空串 / "undefined" / "null" 一律收敛成「未命名录音」，这里连着渲染兜底一起守。 */
+   v1.41.10 收紧：真机落盘的**不是裸 "undefined"**，而是拼好的复合串，所以 sanitizeLecture 改成
+   前缀正则（`/^(?:undefined|null|nan)\b/i`），空串 / 复合串一律收敛成「未命名录音」。 */
 const LEC_SEED = [
   { id: 'l_broken', title: 'undefined', status: 'transcribed', started_at: '2026-10-01T09:12:00.000Z', duration_ms: 2520000, clip_count: 0, clips: [], created_at: '2026-10-01T09:12:00.000Z', updated_at: '2026-10-01T09:12:00.000Z' },
+  { id: 'l_broken2', title: 'undefined · 10月1日', status: 'summarized', started_at: '2026-10-01T10:14:00.000Z', duration_ms: 2522000, clip_count: 0, clips: [], created_at: '2026-10-01T10:14:00.000Z', updated_at: '2026-10-01T10:14:00.000Z' },
   { id: 'l_ok', title: '课堂录音 10月2日', status: 'transcribed', started_at: '2026-10-02T09:12:00.000Z', duration_ms: 600000, clip_count: 0, clips: [], created_at: '2026-10-02T09:12:00.000Z', updated_at: '2026-10-02T09:12:00.000Z' },
 ]
 
@@ -137,6 +139,9 @@ try {
   t('F1. 坏标题显示成「未命名录音」', lecTxt.includes('未命名录音'))
   t('F2. 界面上不再出现字面量 undefined', !lecTxt.includes('undefined'))
   t('F3. 正常标题原样保留', lecTxt.includes('课堂录音 10月2日'))
+  /* 两条坏数据（裸 "undefined" + 复合串 "undefined · 10月1日"）都要被收敛 → 数到正好两次 */
+  const unnamedCount = (lecTxt.match(/未命名录音/g) || []).length
+  t('F4. 两条坏数据都被收敛（未命名录音 ×2）', unnamedCount === 2)
   await ctx.close()
 } catch (e) {
   console.log('ERROR:', e.message)

@@ -785,10 +785,11 @@ function sanitizeLecture(l) {
   if (!l || typeof l !== 'object') return null
   const status = LECTURE_STATUS.indexOf(l.status) !== -1 ? l.status : null
   if (!status) return null
-  /* 标题兜底（v1.41.9 真机反馈）：老版本往模板串里拼过 undefined，落盘成了字符串 "undefined"，
-     列表里就出现「undefined · 10月1日」。空串 / "undefined" / "null" 一律当没名字。 */
+  /* 标题兜底（v1.41.9 真机反馈，v1.41.10 收紧）：老版本往模板串里拼过 undefined，
+     落盘不是裸 "undefined" 而是拼好的复合串（真机实测渲染成「undefined · 10月1日」），
+     所以只比相等兜不住——空串、或**以** undefined/null/nan 开头（后接分隔符或结尾）都当没名字。 */
   const rawTitle = String(l.title == null ? '' : l.title).trim()
-  const title = rawTitle === '' || rawTitle === 'undefined' || rawTitle === 'null' ? '未命名录音' : rawTitle
+  const title = rawTitle === '' || /^(?:undefined|null|nan)\b/i.test(rawTitle) ? '未命名录音' : rawTitle
   const out = {
     id: String(l.id || ''),
     schedule_id: l.schedule_id == null ? null : String(l.schedule_id),
