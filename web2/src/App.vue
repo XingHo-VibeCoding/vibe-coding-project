@@ -2374,6 +2374,48 @@ function setAccent(key) {
 }
 applyAccent() // 首帧就应用
 
+/* ---------------- 主题「跟着时间呼吸」（v1.41.6，默认关） ----------------
+   早 05–09 薄荷绿 / 白天 09–17 蓝白 / 傍晚 17–21 薰衣草紫 / 夜里 21–05 薰衣草紫 + 深色。
+   刻意只在**跨时段**那一刻生效（记住上次自动应用的那一档）：用户中途手动改深浅/配色，
+   不会被 5 分钟一次的巡检抢回去，等到 next 时段才自动接管。 */
+const AUTO_THEME_KEY = 'web2.theme.auto'
+const autoTheme = ref(localStorage.getItem(AUTO_THEME_KEY) === '1')
+const AUTO_SLOTS = [
+  { from: 5, to: 9, accent: 'mint', dark: false, name: '清晨' },
+  { from: 9, to: 17, accent: 'blue', dark: false, name: '白天' },
+  { from: 17, to: 21, accent: 'lavender', dark: false, name: '傍晚' },
+  { from: 21, to: 29, accent: 'lavender', dark: true, name: '夜里' },
+]
+function autoSlot(h = new Date().getHours()) {
+  const hh = h < 5 ? h + 24 : h
+  return AUTO_SLOTS.find((s) => hh >= s.from && hh < s.to) || AUTO_SLOTS[1]
+}
+const autoSlotName = computed(() => (autoTheme.value ? autoSlot().name : ''))
+let autoApplied = ''
+function applyAutoTheme(force = false) {
+  if (!autoTheme.value) {
+    autoApplied = ''
+    return
+  }
+  const slot = autoSlot()
+  const key = slot.accent + (slot.dark ? '/dark' : '/light')
+  if (!force && key === autoApplied) return
+  autoApplied = key
+  accent.value = slot.accent
+  localStorage.setItem(ACCENT_KEY, slot.accent)
+  applyAccent()
+  theme.value = slot.dark ? 'dark' : 'light'
+  localStorage.setItem(THEME_KEY, theme.value)
+  applyTheme()
+}
+function setAutoTheme(on) {
+  autoTheme.value = !!on
+  localStorage.setItem(AUTO_THEME_KEY, autoTheme.value ? '1' : '0')
+  if (autoTheme.value) applyAutoTheme(true)
+}
+applyAutoTheme(true)
+setInterval(() => applyAutoTheme(), 5 * 60_000)
+
 const todos = ref(initial.todos.map((t) => ({ ...t })))
 const doneCount = computed(() => todos.value.filter((t) => t.done).length)
 
@@ -2556,6 +2598,24 @@ const todayCourses = computed(() => {
 
 /* 今日循环日程条数：只用来决定文案口径（「N 节课」还是「N 项安排」） */
 const todayRoutineCount = computed(() => todayCourses.value.filter((c) => c.type === 'routine').length)
+
+/* 学期进度（v1.41.6）：第 N / 共 M 周 + 距期末天数 + 逐周点亮的格子。
+   缺 totalWeeks 就整条不出现；缺 firstMonday 只给周次、不猜期末日期（宁可少说，不猜）。 */
+const termInfo = computed(() => {
+  const s = semester.value
+  const total = Number(s && s.totalWeeks) || 0
+  if (!total) return null
+  const wk = Math.min(Math.max(Number(s.week) || 1, 1), total)
+  let daysLeft = null
+  if (s.firstMonday) {
+    const end = new Date(s.firstMonday + 'T00:00:00')
+    if (!Number.isNaN(end.getTime())) {
+      end.setDate(end.getDate() + total * 7)
+      daysLeft = Math.max(0, Math.ceil((end - new Date(todayStr + 'T00:00:00')) / 86400000))
+    }
+  }
+  return { wk, total, pct: Math.round((wk / total) * 100), daysLeft, weeks: Array.from({ length: total }, (_, i) => i + 1) }
+})
 
 /* 冲突检测的统一候选池：课程 + 循环日程 + 独立日程。
    独立日程没有星期几的概念，这里先把 date 换算成 { weekday, weekNo } 再交给 findConflicts
@@ -2868,6 +2928,40 @@ function nowPct(c) {
   if (nowTime.value >= e) return 100
   return Math.round(((nowTime.value - s) / (e - s)) * 100)
 }
+
+/* 周课表「现在」游标（v1.41.6）：行是等高 1fr，所以把当前时刻映射成「第几行 + 行内比例」。
+   只看本周（weekOffset === 0）才画；落在哪一行都算——午休/晚休这种被压成一行的空档
+   按它自己的真实起止（上一节结束 → 下一节开始）做行内插值，游标与格子里的课同一套坐标。
+   不在任何一行内（比如课表第一行之前 / 最后一行之后）返回 null，整条不画。 */
+const nowClock = computed(() => {
+  const h = Math.floor(nowTime.value / 60)
+  const m = nowTime.value % 60
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0')
+})
+const nowLineY = computed(() => {
+  if (weekOffset.value !== 0) return null
+  const rows = gridRows.value
+  const n = rows.length
+  if (!n || !gridH.value) return null
+  const t = nowTime.value
+  for (let i = 0; i < n; i++) {
+    const r = rows[i]
+    let from = null
+    let to = null
+    if (r.type === 'p') {
+      from = minOf(r.p.start)
+      to = minOf(r.p.end)
+    } else {
+      const prev = rows[i - 1]
+      const next = rows[i + 1]
+      from = prev && prev.type === 'p' ? minOf(prev.p.end) : null
+      to = next && next.type === 'p' ? minOf(next.p.start) : null
+    }
+    if (from === null || to === null || !(to > from)) continue
+    if (t >= from && t < to) return ((i + (t - from) / (to - from)) / n) * gridH.value
+  }
+  return null
+})
 
 const undoneCount = computed(() => todos.value.filter((t) => !t.done).length)
 
@@ -3293,6 +3387,29 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </svg>
         </button>
       </div>
+      <!-- 学期进度（v1.41.6）：一周点亮一格，一眼看到「学期过到哪了」。
+           只在今日页出现——周课表/我的页的头部是紧凑版，塞进来会把它们撑高。 -->
+      <div v-if="tab === 'today' && termInfo" data-term-ribbon class="mt-3.5">
+        <div class="flex items-end justify-between gap-2">
+          <p class="text-[11px] font-medium text-primary-600/90">
+            学期进度 · 第 {{ termInfo.wk }} / {{ termInfo.total }} 周
+          </p>
+          <p v-if="termInfo.daysLeft !== null" data-term-left class="shrink-0 text-[11px] text-ink-dim/80">
+            距期末 {{ termInfo.daysLeft }} 天
+          </p>
+        </div>
+        <div class="mt-1.5 flex items-end gap-[3px]">
+          <span
+            v-for="w in termInfo.weeks"
+            :key="w"
+            data-term-w
+            class="flex-1 rounded-[2px] transition-all duration-500"
+            :class="w <= termInfo.wk ? 'bg-primary-500/85' : 'bg-white/70'"
+            :style="{ height: w === termInfo.wk ? '10px' : '7px' }"
+            :title="'第 ' + w + ' 周'"
+          ></span>
+        </div>
+      </div>
       <!-- 今日状态行（2026-10-03 方案 C Step 2 起是**窄条**）：只留一行状态文案
            （进行中 · X / 下一节 · X HH:MM / 今日安排已结束 / 今天没有课），
            计数与进度条已搬进今天页顶部的 data-today-strip，不再在卡里重复一遍。
@@ -3419,7 +3536,19 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary-500"></span>
                 </span>
                 进行中 · 已过 {{ nowPct(c) }}%
+                <span class="font-normal text-ink-dim/80">· 还剩 {{ Math.max(0, minOf(c.end) - nowTime) }} 分钟</span>
               </p>
+              <!-- 进行中的进度条（v1.41.6）：每 30 秒自己往前走一格，页面不再是静态表格 -->
+              <div
+                v-if="courseStatus(c) === 'now'"
+                data-now-bar
+                class="mt-2 h-1 w-full overflow-hidden rounded-full bg-primary-100"
+              >
+                <div
+                  class="h-full rounded-full bg-primary-500 transition-all duration-700"
+                  :style="{ width: nowPct(c) + '%' }"
+                ></div>
+              </div>
               <!-- 下一节（不是进行中的那节）才报倒计时：课前 5 分钟恰好也是「该动身了」的信号 -->
               <p v-else-if="c.id === nextTodayId" class="mt-1 text-[11px] font-medium text-primary-600">
                 还有 {{ minUntil(c) }} 分钟开始
@@ -3769,6 +3898,22 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           @pointercancel="gridUp"
           @dblclick="gridDbl"
         >
+          <!-- 「现在」游标（v1.41.6）：只在本周画；行是等高 1fr，按「第几行 + 行内比例」折算，
+               午休/晚休也走自己的真实起止，所以它永远和格子里的课对齐。 -->
+          <div
+            v-if="nowLineY !== null"
+            data-now-line
+            class="pointer-events-none absolute inset-x-0 z-20"
+            :style="{ top: nowLineY + 'px' }"
+          >
+            <div class="relative">
+              <div class="absolute inset-x-0 h-[1.5px] -translate-y-1/2 bg-primary-500/75"></div>
+              <div class="absolute left-0 top-0 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-primary-500 shadow-sm"></div>
+              <span class="absolute right-0 top-0 -translate-y-1/2 rounded-full bg-primary-500 px-1.5 py-[1px] text-[9px] font-semibold leading-none text-white shadow-sm">
+                {{ nowClock }}
+              </span>
+            </div>
+          </div>
           <template v-for="(r, ri) in gridRows" :key="ri">
             <!-- 分隔行：上午/下午/晚上之间的午休、晚休（补回网格里看不见的时间差） -->
             <div
@@ -4418,6 +4563,30 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 @click="setAccent(a.key)"
               ></button>
             </div>
+          </div>
+          <!-- 跟着时间呼吸（v1.41.6）：默认关；打开后清晨薄荷绿 / 白天蓝白 / 傍晚与夜里薰衣草紫
+               （夜里同时切深色）。只在跨时段那刻接管，中途手动改配色/深浅不会被抢回去。 -->
+          <div class="mt-3 flex items-center gap-3 border-t border-line pt-3">
+            <span class="min-w-0 flex-1">
+              <span class="block text-[11px] text-ink-dim/80">跟着时间自动换</span>
+              <span class="block text-[11px] text-ink-dim/60">
+                {{ autoTheme ? '当前时段：' + autoSlotName + '（' + (isDark ? '深色' : '浅色') + '）' : '清晨 / 白天 / 傍晚 / 夜里各一套' }}
+              </span>
+            </span>
+            <button
+              type="button"
+              data-theme-auto
+              role="switch"
+              :aria-checked="autoTheme ? 'true' : 'false'"
+              class="relative h-6 w-11 shrink-0 rounded-full transition"
+              :class="autoTheme ? 'bg-primary-500' : 'bg-ink/15'"
+              @click="setAutoTheme(!autoTheme)"
+            >
+              <span
+                class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all"
+                :style="{ left: autoTheme ? '22px' : '2px' }"
+              ></span>
+            </button>
           </div>
         </div>
 
