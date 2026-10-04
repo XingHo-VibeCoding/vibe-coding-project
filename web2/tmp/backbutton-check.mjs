@@ -24,6 +24,8 @@ window.Capacitor = { Plugins: {
 }}`
 
 const seed = 'localStorage.setItem("web2.onboarded","1");localStorage.setItem("web2.data",' + JSON.stringify(readFileSync('D:/Document/Project/vibe-coding-project/web2/tmp/valid-export.json', 'utf8')) + ');'
+  /* 种一篇日精进：今日页才出现「日精进 1 篇 ›」入口，才能验历史浮层的返回键（v1.41.9 真机反馈） */
+  + 'localStorage.setItem("web2.review",JSON.stringify([{date:"2026-10-01",summary:"测试日精进"}]));'
 
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
@@ -117,6 +119,27 @@ try {
   t('5b. 未立即退出', (await exits()) === 1)
   await fire()
   t('5c. 2 秒内再按 → 退出计数 +1', (await exits()) === 2)
+
+  // 5d–5g. 日精进浮层（v1.41.9 真机反馈）：问答 / 今天的日精进 / 日精进·全部 三种模式共用 reviewSheet，
+  //        以前 closeTopmostLayer() 里没有这一层 → 按返回键浮层不关，直接落到「退到今日页/退出预备」。
+  await page.locator('[data-review-start]').first().click()
+  await page.waitForTimeout(400)
+  t('5d. 复盘问答浮层已打开', await page.locator('[data-review-q]').isVisible())
+  await fire()
+  await page.waitForTimeout(600)
+  t('5e. 返回键先关掉问答浮层（不退 app、不切页）',
+    !(await page.locator('[data-review-q]').isVisible().catch(() => false)) &&
+      !(await page.locator('text=再按一次返回键退出').isVisible().catch(() => false)) &&
+      (await exits()) === 2 && (await activeTab()).includes('今日'))
+  await page.locator('[data-review-open-history]').first().click()
+  await page.waitForTimeout(400)
+  t('5f. 日精进历史浮层已打开（真机踩到的那一层）', await page.locator('text=日精进 · 全部').isVisible())
+  await fire()
+  await page.waitForTimeout(600)
+  t('5g. 返回键关掉历史浮层（不再什么都不做）',
+    !(await page.locator('text=日精进 · 全部').isVisible().catch(() => false)) &&
+      !(await page.locator('text=再按一次返回键退出').isVisible().catch(() => false)) &&
+      (await exits()) === 2)
 } catch (e) {
   console.log('ERROR:', e.message)
   results.push(['无异常跑完', false])

@@ -228,6 +228,9 @@ function closeTopmostLayer() {
   if (addForm.value) { addForm.value = null; return true }
   if (todoForm.value) { todoForm.value = null; return true }
   if (evtForm.value) { evtForm.value = null; return true }
+  /* 日精进浮层（问答 / 今天的日精进 / 日精进·全部 三种模式同一个 reviewSheet，v1.41.9 真机反馈）：
+     开着时按返回键以前什么都不做，直接落到「退到今日页」——与「不可见状态绝不能吞返回键」同一条纪律的两面。 */
+  if (reviewSheet.value) { closeReview(); return true }
   // 2026-10-03 方案 C Step 5：二级层一路往回收（练耳设置面板 → 设置折叠 → 课表子视图）
   // 注意：练耳设置/设置折叠是「我的」页里的就地展开块，切走后看不见——不可见的状态绝不能吞掉返回键
   if (tab.value === 'me' && listenSettingsOpen.value) { listenSettingsOpen.value = false; return true }
@@ -3133,8 +3136,10 @@ const undoneTodos = computed(() => todos.value.filter((t) => !t.done))
 
 /* 状态框（Day 19）：数据变动 → 重推快照。注册点必须在 todayCourses(2431) / listenDue(1088) /
    undoneCount(2760) 之后 —— 这三个 computed 在 setup 里是 const，提前 watch 会撞 TDZ
-   （实测：提前注册会让整个 setup 抛 "Cannot access 'ya' before initialization"）。 */
-watch([todayCourses, listenDue, undoneCount, frameSettings, recActiveId], () => { pushFrameNow() })
+   （实测：提前注册会让整个 setup 抛 "Cannot access 'ya' before initialization"）。
+   v1.41.9 真机反馈补 listenSettings（1178）：勿扰时段改了不重推，状态框要等下一次数据变动或重启
+   才变——用户看到的就是「改了等于没改」，和 v1.41.3 修的那个现象是同一句话、不同的层。 */
+watch([todayCourses, listenDue, undoneCount, frameSettings, recActiveId, listenSettings], () => { pushFrameNow() })
 
 /* 详情弹层：点任意课卡弹出，点遮罩/×关闭 */
 const detail = ref(null)
@@ -4366,7 +4371,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           >
             <div class="flex items-center gap-3">
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-[13px] font-medium">{{ l.title }}</span>
+                <span class="block truncate text-[13px] font-medium">{{ l.title || '未命名录音' }}</span>
                 <span class="block text-[11px] text-ink-dim">
                   {{ fmtLecDate(l.started_at) }} · {{ fmtDur(l.duration_ms) }} · {{ lecStatusLabel(l) }}
                 </span>

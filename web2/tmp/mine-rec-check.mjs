@@ -52,6 +52,13 @@ const AI_COURSES = {
   notes: [],
 }
 
+/* v1.41.9 真机反馈：老版本把 undefined 拼进模板串落了盘，场次列表里出现过「undefined · 10月1日」。
+   sanitizeLecture 已把空串 / "undefined" / "null" 一律收敛成「未命名录音」，这里连着渲染兜底一起守。 */
+const LEC_SEED = [
+  { id: 'l_broken', title: 'undefined', status: 'transcribed', started_at: '2026-10-01T09:12:00.000Z', duration_ms: 2520000, clip_count: 0, clips: [], created_at: '2026-10-01T09:12:00.000Z', updated_at: '2026-10-01T09:12:00.000Z' },
+  { id: 'l_ok', title: '课堂录音 10月2日', status: 'transcribed', started_at: '2026-10-02T09:12:00.000Z', duration_ms: 600000, clip_count: 0, clips: [], created_at: '2026-10-02T09:12:00.000Z', updated_at: '2026-10-02T09:12:00.000Z' },
+]
+
 const browser = await chromium.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   headless: true,
@@ -64,6 +71,7 @@ try {
   await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(SEED)})`)
   await page.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
   await page.addInitScript(`localStorage.setItem('web2.llm', ${JSON.stringify(LLM_CFG)})`)
+  await page.addInitScript(`localStorage.setItem('web2.lectures', ${JSON.stringify(JSON.stringify(LEC_SEED))})`)
   await page.addInitScript(`window.fetch = (function (orig) {
     return function (url, init) {
       if (String(url).indexOf('api.deepseek.com') !== -1) {
@@ -120,6 +128,15 @@ try {
   t('E4. 反馈含冲突提示（高等数学）', msg.includes('冲突') && msg.includes('高等数学'))
   t('E5. 反馈含成功计数（2 门）', msg.includes('2'))
   t('E6. 引导层已关闭', !(await page.locator('[data-ob-summary]').isVisible().catch(() => false)))
+
+  // 6. 场次列表：标题是字符串 "undefined" 的坏数据必须显示成「未命名录音」
+  await page.locator('nav button', { hasText: '我的' }).click()
+  await page.waitForTimeout(500)
+  const lecTxt = await page.locator('ul').filter({ hasText: '课堂录音 10月2日' }).first().innerText().catch(() => '')
+  console.log('   场次列表：', lecTxt.replace(/\s+/g, ' ').slice(0, 200))
+  t('F1. 坏标题显示成「未命名录音」', lecTxt.includes('未命名录音'))
+  t('F2. 界面上不再出现字面量 undefined', !lecTxt.includes('undefined'))
+  t('F3. 正常标题原样保留', lecTxt.includes('课堂录音 10月2日'))
   await ctx.close()
 } catch (e) {
   console.log('ERROR:', e.message)

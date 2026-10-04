@@ -243,6 +243,27 @@ const pushesAfter = await page.evaluate(() => window.__frame.pushes.length)
 t('B16. 领完动作会补推一次快照', pushesAfter > pushesBefore, pushesBefore + ' → ' + pushesAfter)
 t('B17. 落地后有回执文案', (await page.locator('[data-frame-msg]').innerText()).includes('记下'), await page.locator('[data-frame-msg]').innerText())
 
+/* B21–B22：改勿扰时段必须当场重推快照（v1.41.9 真机反馈：watch 列表里缺 listenSettings，
+   改完要等下一次数据变动或重启 App 才生效 —— 用户看到的就是「改了等于没改」，
+   和 v1.41.3 修掉的那句话是同一个现象、不同的层）。
+   顺带把清单 #5 的口径钉在单元层：起点设 00:00 必须真按 0 点算（不当成「没设」、不回落 23:00）。 */
+const pushesBeforeDnd = await page.evaluate(() => window.__frame.pushes.length)
+await page.locator('button', { hasText: '打开' }).first().click() // 碎片练耳卡片
+await page.waitForTimeout(300)
+await page.locator('[data-listen-settings-toggle]').click()
+await page.waitForTimeout(300)
+await page.locator('[data-listen-dnd-start]').fill('00:00')
+await page.waitForTimeout(700)
+const pushesDnd = await page.evaluate(() => window.__frame.pushes.slice())
+t('B21. 改勿扰时段当场重推快照', pushesDnd.length > pushesBeforeDnd, pushesBeforeDnd + ' → ' + pushesDnd.length)
+let snapDnd = {}
+try {
+  snapDnd = JSON.parse(pushesDnd[pushesDnd.length - 1])
+} catch {
+  /* 解析失败 → 下面断言带原文变红 */
+}
+t('B22. 快照里 dndStart=0（00:00 没被当成「没设」、没回落 23:00）', snapDnd.dndStart === 0, pushesDnd[pushesDnd.length - 1])
+
 /* B18–B19：没有原生桥时整个失效（浏览器/网页版零变化） */
 const plainCtx = await browser.newContext({ viewport: { width: 390, height: 844 } })
 const plainPage = await plainCtx.newPage()
