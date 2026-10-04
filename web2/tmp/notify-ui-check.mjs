@@ -65,7 +65,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL, { waitUntil: 'load' })
   await page.waitForTimeout(1000)
   const n = await page.evaluate(() => window.__notify)
-  t('A1 建了两个通知渠道（课前提醒 + 完成通知）', n.channels.join() === 'class-reminder,task-done')
+  t('A1 建了三个通知渠道（课前提醒 + 完成通知 + 练耳复习提醒）', n.channels.join() === 'class-reminder,task-done,listen-reminder')
   t('A2 注册了带「开始录音」按钮的 action 组', n.actionTypes.includes('class-reminder'))
   t('A3 已有权限时不重复申请（permReq=0）', n.permReq === 0)
   t('A4 按示例课表排了程（>10 条）', n.scheduled.length > 10)

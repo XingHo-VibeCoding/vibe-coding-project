@@ -8,7 +8,7 @@ import { transcriberAvailable, modelState, ensureModel, transcribeLecture, start
 import { loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable, testConnection, DEEPSEEK_MODELS } from './data/summarizer.js'
 import { compressImageForRecognize, recognizeScheduleImage, recognizerAvailable } from './data/recognizer.js'
 import { buildIcs, downloadText } from './data/ics.js'
-import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL } from './data/notify.js'
+import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL, exactAlarmState, askExactAlarm } from './data/notify.js'
 import { loadClips, saveClips, loadSettings as loadListenSettings, saveSettings as saveListenSettings, reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey, minOf as minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices, parseIntervals, formatIntervals, intInRange, isTimeStr, DEFAULTS as LISTEN_DEFAULTS } from './data/listen.js'
 import { fileToBase64, writeClipBytes, resolveListenUri, makeClipBlobUrl, statClipFile } from './data/listenStore.js'
 /* Day 19 状态框：只依赖 listen.js 的两个小工具（todayKey / minOf），没有循环依赖 */
@@ -353,6 +353,46 @@ const notifyTesting = ref(false)
 const notifyMsg = ref('')
 const notifyMsgBad = ref(false)
 
+/* 精确提醒（Android 12+）：没拿到 SCHEDULE_EXACT_ALARM 时只能用非精确闹钟，系统给最多
+   1 小时的浮动窗口，提醒可能晚到。只在「确实在排提醒」且「确实没权限」时提示，不打扰。 */
+const exactAlarm = ref({ supported: false, allowed: null })
+const exactAsking = ref(false)
+const exactMsg = ref('')
+const exactMsgBad = ref(false)
+const exactHint = computed(
+  () =>
+    !!notifyOk &&
+    exactAlarm.value.supported &&
+    exactAlarm.value.allowed === false &&
+    (notifySettings.value.enabled || listenSettings.value.enabled),
+)
+
+async function refreshExactAlarm() {
+  if (!notifyOk) return
+  exactAlarm.value = await exactAlarmState()
+}
+
+async function onAskExactAlarm() {
+  if (exactAsking.value) return
+  exactAsking.value = true
+  const r = await askExactAlarm()
+  exactAsking.value = false
+  await refreshExactAlarm()
+  if (r.ok) {
+    exactMsgBad.value = false
+    exactMsg.value = '已允许精确提醒 · 正在按精确闹钟重排…'
+    await applyNotifySchedule()
+    await applyListenSchedule()
+    exactMsg.value = '已允许精确提醒，提醒已按精确闹钟重排。'
+  } else if (r.unsupported) {
+    exactMsgBad.value = true
+    exactMsg.value = '这个版本的系统没有这个开关，不用管它。'
+  } else {
+    exactMsgBad.value = true
+    exactMsg.value = '还没有允许：' + (r.error || '请在系统那页打开「闹钟和提醒」')
+  }
+}
+
 function goMeTab() {
   if (tab.value !== 'me') switchTab('me')
   /* 「我的」页的低频项（课前提醒开关、纪要配置、清除数据…）都收在「设置」折叠区里，
@@ -406,6 +446,7 @@ async function initNotify() {
   if (!notifyOk) return
   const env = await ensureNotifyEnv()
   notifyPerm.value = env.granted === undefined ? null : !!env.granted
+  await refreshExactAlarm()
   onNotificationAction(({ actionId, extra }) => {
     goMeTab()
     if (actionId === 'START_REC') startRec() // 幂等：已在录音则 startRec 直接 return
@@ -589,6 +630,8 @@ function onFrameVisible() {
   if (document.visibilityState !== 'visible') return
   drainFrameActions()
   pushFrameNow()
+  /* 用户可能刚去系统那页允许了精确提醒（改那个开关系统会重启 App，没重启的情况在这里补一次） */
+  if (notifyOk) refreshExactAlarm()
 }
 document.addEventListener('visibilitychange', onFrameVisible)
 /* 窗口重新聚焦也领一次（桌面/平板的多任务切换不走 visibilitychange） */
@@ -4521,6 +4564,30 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </div>
           <p v-if="notifyPerm === false" class="mt-2 text-[11px] text-red-400">通知权限被拒绝了：请在系统设置里允许本应用发通知，否则提醒收不到。</p>
           <p v-if="notifyMsg" class="mt-2 text-[11px]" :class="notifyMsgBad ? 'text-red-400' : 'text-primary-500'">{{ notifyMsg }}</p>
+        </div>
+
+        <!-- 精确提醒（Android 12+）：没有 SCHEDULE_EXACT_ALARM 时只能排非精确闹钟，系统给最多
+             1 小时的浮动窗口，提醒可能晚到。只在真在排提醒、又真没权限时才出现（见 exactHint）；
+             允许之后警告撤掉，只留一行回执（exactMsg 还在内存里，下次启动自然清掉）。 -->
+        <div v-if="exactHint || exactMsg" data-exact-row class="border-t border-line px-4 py-3.5">
+          <div class="flex items-start gap-2">
+            <span v-if="exactHint" class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-600">!</span>
+            <div class="min-w-0 flex-1">
+              <div v-if="exactHint" data-exact-warn>
+                <p class="text-[12px] font-medium text-ink">提醒可能晚到（最多 1 小时）</p>
+                <p class="mt-1 text-[11px] leading-relaxed text-ink-dim/80">
+                  还没允许本应用「设置闹钟和提醒」，系统会把这批提醒当成普通闹钟，到点可能晚一小时才响。允许之后，课前提醒和练耳提醒就能准点到。
+                </p>
+                <button
+                  data-exact-ask
+                  class="mt-2 rounded-full bg-primary-500 px-3 py-1.5 text-[11px] font-medium text-white transition active:scale-95"
+                  :class="exactAsking ? 'opacity-60' : ''"
+                  @click="onAskExactAlarm"
+                >{{ exactAsking ? '打开系统设置…' : '去允许精确提醒' }}</button>
+              </div>
+              <p v-if="exactMsg" data-exact-msg class="text-[11px]" :class="[exactMsgBad ? 'text-red-400' : 'text-primary-500', exactHint ? 'mt-1.5' : '']">{{ exactMsg }}</p>
+            </div>
+          </div>
         </div>
 
         <!-- 常驻状态框（Day 19）：通知栏里一条常驻的「现在在上什么 / 还有多久 / 待办几项」，

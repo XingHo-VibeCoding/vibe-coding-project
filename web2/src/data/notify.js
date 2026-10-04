@@ -65,6 +65,35 @@ export function notifyAvailable() {
   return !!plugin()
 }
 
+/* ---------- 精确提醒（Android 12+ 的 SCHEDULE_EXACT_ALARM） ----------
+   Android 12 起，没拿到这个特殊权限的应用只能用「非精确闹钟」：系统给一个最多 1 小时的
+   浮动窗口（2026-10-03 真机实测 `dumpsys alarm` 里每条都是 window=+1h0m0s0ms），
+   到点可能晚很久。这两个方法只有 Android 原生端提供（浏览器/老系统没有 → supported:false，
+   整块提示不出现），所以要「探测能力」而不是写死平台。 */
+export async function exactAlarmState() {
+  const p = plugin()
+  if (!p || typeof p.checkExactNotificationSetting !== 'function') return { supported: false, allowed: null }
+  try {
+    const st = await p.checkExactNotificationSetting()
+    return { supported: true, allowed: !!(st && st.exact_alarm === 'granted') }
+  } catch {
+    return { supported: false, allowed: null }
+  }
+}
+
+/* 跳到系统那页开关。注意：用户改完这个开关，系统会重启本应用，且已排的精确闹钟会被清掉
+   （插件文档），所以调用方拿到 ok 之后必须重排一次提醒。 */
+export async function askExactAlarm() {
+  const p = plugin()
+  if (!p || typeof p.changeExactNotificationSetting !== 'function') return { ok: false, unsupported: true }
+  try {
+    const st = await p.changeExactNotificationSetting()
+    return { ok: !!(st && st.exact_alarm === 'granted'), exact: st ? st.exact_alarm : null }
+  } catch (e) {
+    return { ok: false, error: errMsg(e) }
+  }
+}
+
 /* ---------- 环境准备（渠道 / action / 权限），幂等 ---------- */
 
 let envReady = false
