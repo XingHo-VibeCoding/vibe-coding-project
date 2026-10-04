@@ -413,19 +413,35 @@ export function toBusy(items, durationOf) {
     .sort((a, b) => a.start - b.start)
 }
 
-/* 相邻日程之间 ≥ slotMinMin 的空档（默认考察 08:00–22:00 这个作息区间）。 */
-export function freeSlots(items, settings, { dayFrom = 8 * 60, dayTo = 22 * 60, durationOf } = {}) {
+/* 可听作息区间 = 勿扰窗口的补集（2026-10-04 用户决策：不再硬编码 08:00–22:00）。
+   默认勿扰 23:00–07:00 是「跨零点」的作息边界 → 可听区间 07:00–23:00，
+   早 07:00–08:00 与晚 22:00–23:00 的碎片时间终于能排上练耳提醒。
+   同日勿扰（午休 13:00–14:00、或验收里的 07:00–09:00）只表示「这一小段别吵」，
+   不是作息边界 → 仍用 08:00–22:00，落进勿扰的空档交给 buildListenNotices 顺延兜住。 */
+export function awakeWindow(settings) {
   const cfg = sanitizeSettings(settings)
+  const a = minOf(cfg.dndStart)
+  const b = minOf(cfg.dndEnd)
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a <= b) return { dayFrom: 8 * 60, dayTo: 22 * 60 }
+  return { dayFrom: b, dayTo: a }
+}
+
+/* 相邻日程之间 ≥ slotMinMin 的空档。不传 dayFrom/dayTo 时用 awakeWindow() 推出来的作息区间。 */
+export function freeSlots(items, settings, { dayFrom, dayTo, durationOf } = {}) {
+  const cfg = sanitizeSettings(settings)
+  const win = awakeWindow(cfg)
+  const from = Number.isFinite(Number(dayFrom)) ? Number(dayFrom) : win.dayFrom
+  const to = Number.isFinite(Number(dayTo)) ? Number(dayTo) : win.dayTo
   const busy = toBusy(items, durationOf)
 
   const slots = []
-  let cursor = dayFrom
+  let cursor = from
   for (const b of busy) {
     const gap = b.start - cursor
     if (gap >= cfg.slotMinMin) slots.push({ start: cursor, end: b.start, mins: gap })
     cursor = Math.max(cursor, b.start + b.mins)
   }
-  if (dayTo - cursor >= cfg.slotMinMin) slots.push({ start: cursor, end: dayTo, mins: dayTo - cursor })
+  if (to - cursor >= cfg.slotMinMin) slots.push({ start: cursor, end: to, mins: to - cursor })
   return slots
 }
 

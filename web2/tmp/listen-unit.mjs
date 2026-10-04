@@ -15,7 +15,7 @@ import {
   parseIntervals, formatIntervals, intInRange,
   sanitizeSettings, loadClips, saveClips, loadSettings, saveSettings,
   nextDueDate, reviewAdvance, countPlayed, dueClips,
-  freeSlots, slotPlan, buildListenItems, toBusy,
+  freeSlots, slotPlan, buildListenItems, toBusy, awakeWindow,
   dndOf, inDndMin, buildListenNotices,
 } from '../src/data/listen.js'
 
@@ -167,6 +167,18 @@ const tiny = freeSlots(
 )
 ok('小于 slotMinMin 的碎空档不排', !tiny.some((s) => s.mins === 4))
 
+/* ---------------- 6b. 可听作息区间跟随勿扰边界（2026-10-04） ----------------
+   原先写死 08:00–22:00，早 07:00–08:00 / 晚 22:00–23:00 的碎片时间永远排不上。
+   现在：跨零点勿扰（作息边界）= 它的补集；同日勿扰（只是某段别吵）仍用 08:00–22:00。 */
+eq('默认勿扰 23:00–07:00 → 可听区间 07:00–23:00', awakeWindow(DEFAULTS), { dayFrom: 420, dayTo: 1380 })
+eq('跨零点勿扰 22:00–06:00 → 06:00–22:00', awakeWindow(sanitizeSettings({ dndStart: '22:00', dndEnd: '06:00' })), { dayFrom: 360, dayTo: 1320 })
+eq('同日勿扰（午休 13:00–14:00）→ 回落 08:00–22:00', awakeWindow(sanitizeSettings({ dndStart: '13:00', dndEnd: '14:00' })), { dayFrom: 480, dayTo: 1320 })
+eq('起止相同（不设勿扰）→ 回落 08:00–22:00', awakeWindow(sanitizeSettings({ dndStart: '23:00', dndEnd: '23:00' })), { dayFrom: 480, dayTo: 1320 })
+const wide = freeSlots([], DEFAULTS, { durationOf: () => 0 })
+eq('不该作息区间时，第一个空档从 07:00 起（不再是 08:00）', [wide[0].start, wide[0].end], [420, 1380])
+const narrow = freeSlots([], sanitizeSettings({ dndStart: '13:00', dndEnd: '14:00' }), { durationOf: () => 0 })
+eq('同日勿扰仍按 08:00–22:00 起', [narrow[0].start, narrow[0].end], [480, 1320])
+
 const plan = slotPlan(slots, 30, DEFAULTS) // 30 秒一段
 eq('短槽（10 分钟）kind', plan[1].kind, 'short')
 eq('长槽（60 分钟）kind', plan[0].kind, 'long')
@@ -287,7 +299,7 @@ eq('到期日在未来 → 今天不排', buildListenNotices({ clips: [clipDue('
 const one = buildListenNotices({ clips: [clipDue(D0)], settings: SET_U, now: NOW_EARLY, itemsOfDay: NOITEMS, durationOf: durOf, horizonDays: 1 })
 eq('一段今天到期 + 整天有空 → 排 1 条', one.length, 1)
 eq('  键名按日期', one[0].key, 'l_' + D0)
-eq('  时刻 = 第一个空档起点 08:00', [one[0].at.getHours(), one[0].at.getMinutes()], [8, 0])
+eq('  时刻 = 第一个空档起点 07:00（可听区间跟随勿扰边界）', [one[0].at.getHours(), one[0].at.getMinutes()], [7, 0])
 eq('  文案含段数与时长', one[0].body, '今天有 1 段待复习（约 1 分钟）· 挑空档去听')
 eq('  count 字段', one[0].count, 1)
 eq('  标题', one[0].title, '碎片练耳')
@@ -306,24 +318,24 @@ eq('今天空档已过 → 当天不排', buildListenNotices({ clips: [clipDue(D
 const fromNoon = buildListenNotices({ clips: [clipDue(D0)], settings: SET_U, now: new Date(2026, 9, 3, 15, 0), itemsOfDay: NOITEMS, durationOf: durOf, horizonDays: 2 })
 eq('今天跳过、明天照排', fromNoon.map((n) => n.key), ['l_2026-10-04'])
 
-/* 整天排满（08:00–22:00 都被课占）→ 当天不排 */
+/* 整天排满（07:00–23:00 可听区间都被课占）→ 当天不排 */
 eq('整天排满 → 当天不排', buildListenNotices({
   clips: [clipDue(D0)], settings: SET_U, now: NOW_EARLY,
-  itemsOfDay: () => dayItems(D0, [['08:00', '22:00']]), durationOf: durOf,
+  itemsOfDay: () => dayItems(D0, [['07:00', '23:00']]), durationOf: durOf,
 }).length, 0)
 
 /* 空档太小（10 分钟课之间只剩 4 分钟 < slotMinMin 5）→ 不排 */
 eq('空档小于 5 分钟 → 不排', buildListenNotices({
   clips: [clipDue(D0)], settings: SET_U, now: NOW_EARLY,
-  itemsOfDay: () => dayItems(D0, [['08:00', '11:56'], ['12:00', '22:00']]), durationOf: durOf,
+  itemsOfDay: () => dayItems(D0, [['07:00', '11:56'], ['12:00', '23:00']]), durationOf: durOf,
 }).length, 0)
 
 /* 放不下的空档要跳过：第一个空档只 5 分钟，放不下 20 分钟的音频 → 取后面那个大空档 */
 const find2nd = buildListenNotices({
   clips: [clipDue(D0, 1200)], settings: SET_U, now: NOW_EARLY,
-  itemsOfDay: () => dayItems(D0, [['08:05', '08:12']]), durationOf: durOf, horizonDays: 1,
+  itemsOfDay: () => dayItems(D0, [['07:05', '07:12']]), durationOf: durOf, horizonDays: 1,
 })
-eq('跳过放不下的空档，取第一个放得下的', [find2nd.length, find2nd[0].at.getHours(), find2nd[0].at.getMinutes()], [1, 8, 12])
+eq('跳过放不下的空档，取第一个放得下的', [find2nd.length, find2nd[0].at.getHours(), find2nd[0].at.getMinutes()], [1, 7, 12])
 
 /* 勿扰：同一天里更晚就顺延到勿扰结束 */
 const dndShift = buildListenNotices({
@@ -332,11 +344,12 @@ const dndShift = buildListenNotices({
 })
 eq('落在勿扰 → 顺延到勿扰结束 09:00', [dndShift.length, dndShift[0].at.getHours(), dndShift[0].at.getMinutes()], [1, 9, 0])
 
-/* 勿扰跨零点且顺延会跑到第二天早上 → 当天放弃（空档落在 20:00 之后，正处勿扰里） */
-eq('跨零点勿扰 → 当天放弃', buildListenNotices({
+/* 勿扰跨零点（作息边界）→ 可听区间取它的补集，提醒天然落不进勿扰里 */
+const cross = buildListenNotices({
   clips: [clipDue(D0)], settings: sanitizeSettings({ dndStart: '20:00', dndEnd: '07:00' }), now: NOW_EARLY,
-  itemsOfDay: () => dayItems(D0, [['08:00', '20:30']]), durationOf: durOf,
-}).length, 0)
+  itemsOfDay: () => dayItems(D0, [['08:00', '20:30']]), durationOf: durOf, horizonDays: 1,
+})
+eq('跨零点勿扰 20:00–07:00：可听区间 07:00–20:00，提醒落在 07:00（不落进勿扰）', [cross.length, cross[0].at.getHours(), cross[0].at.getMinutes()], [1, 7, 0])
 
 /* 多天：一段一直到期，三天各排一条（键各不同） */
 const multi = buildListenNotices({ clips: [clipDue(D0)], settings: SET_U, now: NOW_EARLY, itemsOfDay: NOITEMS, durationOf: durOf, horizonDays: 3 })
