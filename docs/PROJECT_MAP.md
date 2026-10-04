@@ -28,7 +28,7 @@ vibe-coding-project/
 ├── web2/                # 正式版应用（Vite 构建，当前 v1.41.10，已上线）
 ├── db/                  # schema.sql + seed.sql（PostgreSQL 版，Day 16）
 ├── cloudfunctions/      # 云函数（health=Day15 健康检查，list=Day17 读接口）
-├── mock-frontend/       # Day15 mock 练习页（线上 = *.tcloudbaseapp.com，不是 web2 本体）
+├── mock-frontend/       # Day15 建、Day20 改成「数据检查台」并部署（线上 = *.tcloudbaseapp.com，不是 web2 本体）
 ├── .workbuddy/          # 工具临时区（检查脚本/备份），被 .gitignore 忽略，有意保留不清理
 └── docs/                # api-contract.md（接口契约）、Day15-复盘.md、真机复验清单.md、本文件
 ```
@@ -57,7 +57,7 @@ vibe-coding-project/
 | 4 | 碎片练耳 | ✅ 完成（Day 18 起，v1.41.x 持续打磨） |
 | 5 | 复盘 | 🔄 进行中（Day 20，v1.41.7 最小闭环：四题引导 + 本机日精进 + 每晚轻提醒；AI 引导式对话与 `reviews` 云表留后续） |
 
-后端线（跟五期并行）：Day 15 `/api/health` 上线 → Day 16 建库灌数 → Day 17 `/api/list` 读接口上线（契约见 `docs/api-contract.md`，只实现了表里的 1、2 号接口，3–5 号还是占位）。
+后端线（跟五期并行）：Day 15 `/api/health` 上线 → Day 16 建库灌数 → Day 17 `/api/list` 读接口上线（契约见 `docs/api-contract.md`，只实现了表里的 1、2 号接口，3–5 号还是占位）→ Day 20 前端页面从 mock 练习页改成「数据检查台」（真实数据 + 最后更新时间 + 刷新 / 写入测试入口）并重新部署到静态托管。
 
 📱 **攒着等手机连上验的项**（状态框勿扰时段 / 精确提醒引导 / 时间感三件套 / 每日复盘提醒链路）见 `docs/真机复验清单.md`——电脑上验不了，别重复怀疑是代码坏了。
 

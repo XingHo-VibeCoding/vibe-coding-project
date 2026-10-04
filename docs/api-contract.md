@@ -13,6 +13,7 @@
 | HTTP 网关（后端接口） | `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com` |
 | 静态托管（前端页面） | `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com` |
 | 已上线接口 | `GET /api/health`、`GET /api/list` |
+| 静态托管当前页面 | 「大学生日程助手 · 数据检查台」（Day 20 版；首次访问会先落 CloudBase 测试域名的「风险提醒」页，点一次「确定访问」才进页面） |
 
 ---
 
@@ -150,9 +151,9 @@
 
 1. **返回格式**：接口统一返回 JSON。成功时 `ok: true`，失败时 `ok: false` 并携带 `message`。
 2. **鉴权**：Day 15–20 先全部使用「免鉴权」验证通路与形态；登录态方案 Day 21 后再定。
-3. **跨域**：通过 CloudBase HTTP 网关默认已经支持跨域（浏览器中 mock 页可正常请求后端）。如后续换自定义域名，需单独检查 `Access-Control-Allow-Origin`。
+3. **跨域**：CloudBase HTTP 网关只放**白名单 Origin**——Day 20 实测只有静态托管域名 `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com` 会拿到 `access-control-allow-origin`（并带 `access-control-allow-credentials: true`），`Origin: https://evil.example.com`、web2 线上域名、以及不带 `Origin` 的请求**都没有任何 `access-control-*` 头**（不是 `*`，也不回显任意 Origin）；`OPTIONS` 预检返回 `204` + `access-control-allow-methods: GET`。Day 20 已用**真实浏览器（不关 CORS）**验证线上页面能跨域拿到 `/api/health` 与 `/api/list`。如后续换自定义域名，要把新域名加进白名单。
 4. **版本管理**：接口路径暂不带版本号 `v1`，等 Day 25 之后若形态稳定再统一加 `/api/v1/` 前缀。
 
 ---
 
-*最后更新：2026-10-02（Day 17，`/api/list` 上线）*
+*最后更新：2026-10-04（Day 20，前端改为「数据检查台」并重新部署到静态托管；接口实现进度不变，仍是 1、2 号）*

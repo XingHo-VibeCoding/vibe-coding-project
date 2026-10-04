@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>大学生日程助手 · mock 版</title>
+  <title>大学生日程助手 · 数据检查台</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -14,7 +14,7 @@
     }
     .wrap { width: 100%; max-width: 480px; }
     h1 { font-size: 20px; margin-bottom: 4px; }
-    .sub { font-size: 12px; color: #6b7280; margin-bottom: 24px; }
+    .sub { font-size: 12px; color: #6b7280; margin-bottom: 24px; line-height: 1.6; }
     .card {
       background: #fff; border-radius: 12px; padding: 16px;
       margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
@@ -24,13 +24,13 @@
     .dot { width: 10px; height: 10px; border-radius: 50%; background: #d1d5db; flex: none; }
     .dot.ok { background: #22c55e; }
     .dot.bad { background: #ef4444; }
-    code { font-family: Consolas, monospace; background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    code { font-family: Consolas, monospace; background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; word-break: break-all; }
     .api { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #e5e7eb; font-size: 13px; }
     .api:last-child { border-bottom: none; }
-    .api .m { color: #6b7280; width: 44px; flex: none; font-size: 12px; font-weight: 600; }
+    .api .m { color: #6b7280; width: 52px; flex: none; font-size: 12px; font-weight: 600; }
     .api .todo { color: #9ca3af; font-size: 12px; }
-    .foot { text-align: center; font-size: 11px; color: #9ca3af; margin-top: 24px; }
-    /* Day 17 新增：真实数据卡片的样式 */
+    .api .live { color: #16a34a; font-size: 12px; }
+    .foot { text-align: center; font-size: 11px; color: #9ca3af; margin-top: 24px; line-height: 1.7; }
     .counts { display: flex; gap: 8px; margin-bottom: 10px; }
     .counts div {
       flex: 1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 8px 4px;
@@ -42,20 +42,32 @@
     .row .t { color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .row .d { color: #9ca3af; flex: none; }
     .err { font-size: 12px; color: #ef4444; }
+    .meta { font-size: 12px; color: #374151; padding: 4px 0; display: flex; justify-content: space-between; gap: 8px; }
+    .meta .k { color: #6b7280; flex: none; }
+    .meta .v { font-family: Consolas, monospace; text-align: right; word-break: break-all; }
+    .btns { display: flex; gap: 8px; margin-top: 12px; }
+    button {
+      flex: 1; font: inherit; font-size: 13px; padding: 9px 8px; border-radius: 8px;
+      border: 1px solid #d1d5db; background: #fff; color: #374151; cursor: pointer;
+    }
+    button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    button:active { transform: translateY(1px); }
+    .note { margin-top: 10px; font-size: 12px; line-height: 1.7; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px; }
+    .note b { color: #78350f; }
+    .url { margin-top: 10px; font-size: 11px; color: #9ca3af; line-height: 1.7; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>大学生日程助手 · mock 版</h1>
-    <p class="sub">Day 15 部署练习页 —— 前后端各占一半，今天只搭骨架</p>
+    <h1>大学生日程助手 · 数据检查台</h1>
+    <p class="sub">Day 20 —— 这个页面不走任何假数据：下面的数字和内容，都是浏览器直接向公网接口要回来的数据库真实数据。</p>
 
     <div class="card">
       <h2>后端服务状态</h2>
       <p class="status" id="status"><span class="dot" id="dot"></span><span id="msg">正在检测 /api/health …</span></p>
+      <p class="url">GET <span id="health-url">…</span></p>
     </div>
 
-    <!-- Day 17 新增：GET /api/list 的真实数据。数据来自数据库三张表，
-         接口返回 {ok, data:{semesters, schedules, todos, counts}}，这里只做展示。 -->
     <div class="card">
       <h2>库里的真实数据（GET /api/list）</h2>
       <div class="counts" id="counts" style="display:none">
@@ -64,72 +76,140 @@
         <div><b id="c-todo">–</b><span>待办</span></div>
       </div>
       <div id="rows"><p class="err" id="list-msg">正在加载 /api/list …</p></div>
+      <p class="url">GET <span id="list-url">…</span></p>
     </div>
 
     <div class="card">
-      <h2>接口清单（占位，见 api-contract.md）</h2>
-      <div class="api"><span><span class="m">GET</span> <code>/api/health</code></span><span class="todo">已上线</span></div>
-      <div class="api"><span><span class="m">GET</span> <code>/api/list</code></span><span class="todo">已上线（Day 17）</span></div>
-      <div class="api"><span><span class="m">POST</span> <code>/api/favorite</code></span><span class="todo">Day 16+ 再实现</span></div>
-      <div class="api"><span><span class="m">PUT</span> <code>/api/update</code></span><span class="todo">Day 16+ 再实现</span></div>
-      <div class="api"><span><span class="m">DELETE</span> <code>/api/delete</code></span><span class="todo">Day 16+ 再实现</span></div>
+      <h2>检查台</h2>
+      <div class="meta"><span class="k">数据最后更新</span><span class="v" id="last-updated">–</span></div>
+      <div class="meta"><span class="k">本次拉取</span><span class="v" id="fetched-at">–</span></div>
+      <div class="btns">
+        <button class="primary" id="btn-refresh">刷新数据</button>
+        <button id="btn-write">写入测试</button>
+      </div>
+      <div class="note" id="write-note" style="display:none">
+        <b>写接口还没实现。</b><br />
+        api-contract.md 里 <code>POST /api/favorite</code>、<code>PUT /api/update</code>、<code>DELETE /api/delete</code> 仍是「未实现」，
+        今天也不改后端代码，所以这里点不出真正的写入。
+        <br /><br />
+        <b>今天的写入验证这样做：</b>去 CloudBase 控制台的数据库里改一条记录（比如把某条待办的标题改掉、或加一条）→
+        回到本页点「刷新数据」→ 上面的数字 / 列表跟着变，就说明这个页面读的是库里的真数据，不是写死的。
+      </div>
     </div>
 
-    <p class="foot">静态托管 · 前端 mock 版 · 数据暂为假，接口暂为空</p>
+    <div class="card">
+      <h2>接口清单（见 api-contract.md）</h2>
+      <div class="api"><span><span class="m">GET</span> <code>/api/health</code></span><span class="live">已上线</span></div>
+      <div class="api"><span><span class="m">GET</span> <code>/api/list</code></span><span class="live">已上线（Day 17）</span></div>
+      <div class="api"><span><span class="m">POST</span> <code>/api/favorite</code></span><span class="todo">未实现</span></div>
+      <div class="api"><span><span class="m">PUT</span> <code>/api/update</code></span><span class="todo">未实现</span></div>
+      <div class="api"><span><span class="m">DELETE</span> <code>/api/delete</code></span><span class="todo">未实现</span></div>
+    </div>
+
+    <p class="foot">静态托管页 · 数据来自 CloudBase 数据库<br />前端不含任何密钥（凭据只放在云函数的环境变量里）</p>
   </div>
 
   <script>
-    // 页面打开后自动请求一次 /api/health，把后端状态显示在卡片上。
-    // 地址写的是 HTTP 网关的完整公网地址（静态托管和网关是两个域名）。
-    var HEALTH_URL = 'https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com/api/health'
-    // Day 17 新增：读接口。同一个网关，路径换成 /api/list。
-    var LIST_URL = 'https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com/api/list'
+    // 页面打开后自己向公网接口要数据。
+    // 只保留一个基点：静态托管（前端）和 HTTP 网关（后端）是两个域名，这里写的是网关。
+    var API_BASE = 'https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com'
+    var HEALTH_URL = API_BASE + '/api/health'
+    var LIST_URL = API_BASE + '/api/list?limit=200'
 
-    fetch(HEALTH_URL)
-      .then(function (r) { return r.json() })
-      .then(function (d) {
-        document.getElementById('dot').className = 'dot ok'
-        document.getElementById('msg').textContent = '后端连通，返回：' + JSON.stringify(d)
+    document.getElementById('health-url').textContent = HEALTH_URL
+    document.getElementById('list-url').textContent = LIST_URL
+
+    function pad(n) { return (n < 10 ? '0' : '') + n }
+    function nowText() {
+      var d = new Date()
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+        + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+    }
+    // 库里所有行里最新的 updated_at —— 用来证明「页面看到的是当下库里的样子」
+    function latestUpdated(data) {
+      var all = [].concat(data.semesters || [], data.schedules || [], data.todos || [])
+      var best = ''
+      all.forEach(function (r) {
+        var t = r && r.updated_at ? String(r.updated_at) : ''
+        if (t && t > best) { best = t }
       })
-      .catch(function () {
-        document.getElementById('dot').className = 'dot bad'
-        document.getElementById('msg').textContent = '后端暂不可达（跨域或未部署，见 api-contract.md）'
-      })
+      return best ? best.replace('T', ' ').slice(0, 19) : '（接口未返回 updated_at）'
+    }
 
-    // 拉真实数据并渲染。要点：
-    //   1) 只认 ok 字段 —— 这是契约：成功 ok:true，失败 ok:false + message
-    //   2) 列表只取前 5 条做展示，完整数据以接口返回为准
-    //   3) 一处失败就整卡报错，不搞「半真半假」的页面
-    fetch(LIST_URL)
-      .then(function (r) { return r.json() })
-      .then(function (d) {
-        if (!d || d.ok !== true) {
-          throw new Error((d && d.message) ? d.message : '接口返回异常')
-        }
-        var data = d.data
-        document.getElementById('c-sem').textContent = data.counts.semesters
-        document.getElementById('c-sch').textContent = data.counts.schedules
-        document.getElementById('c-todo').textContent = data.counts.todos
-        document.getElementById('counts').style.display = 'flex'
-
-        var current = data.semesters.filter(function (s) { return s.periods })[0] || data.semesters[0]
-        var courses = data.schedules.filter(function (x) { return x.type === 'course' && current && x.semester_id === current.id })
-        var todoOpen = data.todos.filter(function (t) { return !t.done })
-        var html = ''
-        html += '<div class="row"><span class="t">当前学期：' + (current ? current.name : '—') + '，本学期课程 ' + courses.length + ' 门</span></div>'
-        courses.slice(0, 5).forEach(function (c) {
-          html += '<div class="row"><span class="t">' + c.title + ' · ' + (c.location || '') + '</span>'
-            + '<span class="d">周' + '日一二三四五六'[c.weekday] + ' ' + String(c.start_time).slice(0, 5) + '</span></div>'
+    function loadHealth() {
+      var dot = document.getElementById('dot')
+      var msg = document.getElementById('msg')
+      return fetch(HEALTH_URL)
+        .then(function (r) { return r.json() })
+        .then(function (d) {
+          dot.className = 'dot ok'
+          msg.textContent = '后端连通，返回：' + JSON.stringify(d)
         })
-        html += '<div class="row"><span class="t">未完成待办 ' + todoOpen.length + ' 条，最近：</span></div>'
-        todoOpen.slice(0, 3).forEach(function (t) {
-          html += '<div class="row"><span class="t">' + t.title + '</span><span class="d">' + t.due_date + '</span></div>'
+        .catch(function () {
+          dot.className = 'dot bad'
+          msg.textContent = '后端暂不可达（跨域或未部署，见 api-contract.md）'
         })
-        document.getElementById('rows').innerHTML = html
-      })
-      .catch(function (e) {
-        document.getElementById('list-msg').textContent = '加载失败：' + (e && e.message ? e.message : '未知错误')
-      })
+    }
+
+    function loadList() {
+      return fetch(LIST_URL)
+        .then(function (r) { return r.json() })
+        .then(function (d) {
+          // 契约：成功 ok:true，失败 ok:false + message。一处失败整卡报错，不搞「半真半假」。
+          if (!d || d.ok !== true) {
+            throw new Error((d && d.message) ? d.message : '接口返回异常')
+          }
+          var data = d.data
+          document.getElementById('c-sem').textContent = data.counts.semesters
+          document.getElementById('c-sch').textContent = data.counts.schedules
+          document.getElementById('c-todo').textContent = data.counts.todos
+          document.getElementById('counts').style.display = 'flex'
+
+          // 当前学期：优先「有作息节次」的那条（本学期），否则退回首条
+          var current = (data.semesters || []).filter(function (s) { return s.periods })[0] || (data.semesters || [])[0]
+          var mine = (data.schedules || []).filter(function (x) { return current && x.semester_id === current.id })
+          var courses = mine.filter(function (x) { return x.type === 'course' })
+          var show = courses.length ? courses : mine
+          var todoOpen = (data.todos || []).filter(function (t) { return !t.done })
+
+          var html = ''
+          html += '<div class="row"><span class="t">当前学期：' + (current ? current.name : '—')
+            + '（本学期日程 ' + mine.length + ' 条，其中课程 ' + courses.length + ' 条）</span></div>'
+          show.slice(0, 5).forEach(function (c) {
+            var wd = (c.weekday === null || c.weekday === undefined) ? '' : ' 周' + '日一二三四五六'[c.weekday]
+            html += '<div class="row"><span class="t">' + (c.title || '(无标题)') + ' · ' + (c.location || '—') + '</span>'
+              + '<span class="d">' + (c.type === 'course' ? '课程' : (c.type || '')) + wd + ' '
+              + String(c.start_time || '').slice(0, 5) + '</span></div>'
+          })
+          if (!show.length) {
+            html += '<div class="row"><span class="t">这个学期还没有日程</span></div>'
+          }
+          html += '<div class="row"><span class="t">未完成待办 ' + todoOpen.length + ' 条，最近：</span></div>'
+          todoOpen.slice(0, 3).forEach(function (t) {
+            html += '<div class="row"><span class="t">' + (t.title || '(无标题)') + '</span><span class="d">' + (t.due_date || '—') + '</span></div>'
+          })
+          document.getElementById('rows').innerHTML = html
+          document.getElementById('last-updated').textContent = latestUpdated(data)
+          document.getElementById('fetched-at').textContent = nowText()
+        })
+        .catch(function (e) {
+          document.getElementById('list-msg').textContent = '加载失败：' + (e && e.message ? e.message : '未知错误')
+          document.getElementById('rows').innerHTML = '<p class="err">加载失败：' + (e && e.message ? e.message : '未知错误') + '</p>'
+          document.getElementById('last-updated').textContent = '–'
+        })
+    }
+
+    function loadAll() {
+      return Promise.all([loadHealth(), loadList()])
+    }
+
+    document.getElementById('btn-refresh').addEventListener('click', loadAll)
+    document.getElementById('btn-write').addEventListener('click', function () {
+      var n = document.getElementById('write-note')
+      n.style.display = (n.style.display === 'none') ? 'block' : 'none'
+    })
+
+    loadAll()
   </script>
 </body>
 </html>
