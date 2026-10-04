@@ -166,9 +166,13 @@ export function currentWeekNo(firstMonday, today = new Date()) {
   return Math.floor(diffDays / 7) + 1
 }
 
-/* 待办截止显示：今天 / 明天 / M.D */
+/* 待办截止显示：今天 / 明天 / M.D
+   没有截止日期时返回空串 —— 上层（周清单 listDateLabel）会退化成「无截止日期」，
+   不能让它算出 Invalid Date 后拼出 `NaN.NaN`。 */
 function dueLabel(ds) {
+  if (!ds) return ''
   const d = new Date(ds + 'T00:00:00')
+  if (Number.isNaN(d.getTime())) return ''
   const today0 = new Date()
   const diff = Math.round((d - new Date(today0.getFullYear(), today0.getMonth(), today0.getDate())) / 86400000)
   if (diff === 0) return '今天'

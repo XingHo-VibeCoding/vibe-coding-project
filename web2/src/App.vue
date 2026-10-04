@@ -807,9 +807,9 @@ function habitCellState(h, d) {
 }
 const HABIT_CELL_CLS = {
   done: 'bg-primary-500 text-white',
-  back: 'border border-primary-400 bg-primary-50 text-primary-500',
-  today: 'border-2 border-primary-400 text-primary-500',
-  open: 'border border-dashed border-primary-300 text-primary-500/70',
+  back: 'border border-primary-400 bg-primary-50 text-primary-600',
+  today: 'border-2 border-primary-400 text-primary-600',
+  open: 'border border-dashed border-primary-300 text-primary-600',
   future: 'bg-ink/[0.04] text-ink-dim/30',
   locked: 'bg-ink/[0.06] text-ink-dim/45',
 }
@@ -3020,14 +3020,16 @@ function cardFit(it) {
 }
 
 /* 课程配色：按课程名哈希取色，同一门课永远同色。
-   深色模式下改为「同色系半透明底 + 原色文字」，避免大块高亮糊在暗底上 */
+   深色模式下改为「同色系半透明底 + 原色文字」，避免大块高亮糊在暗底上。
+   text 是浅色模式的文字色（对 bg ≥4.85），textDark 是深色模式的文字色
+   （对「bar@16% 叠卡片」的底 ≥4.87）——深色下不能直接用 bar，那样只有 3.0–4.4。 */
 const PALETTES = [
-  { bg: '#eef4fe', bar: '#2f6feb', text: '#1f57cc' },
-  { bg: '#f1eefe', bar: '#7c5ce0', text: '#5b3fc0' },
-  { bg: '#e9f9ef', bar: '#22a95e', text: '#157a43' },
-  { bg: '#fff4e8', bar: '#ef9436', text: '#c2620a' },
-  { bg: '#fdeef4', bar: '#e8659f', text: '#c03d7d' },
-  { bg: '#e8f6f8', bar: '#2ba3b5', text: '#17798a' },
+  { bg: '#eef4fe', bar: '#2f6feb', text: '#1f57cc', textDark: '#6d9af1' },
+  { bg: '#f1eefe', bar: '#7c5ce0', text: '#5b3fc0', textDark: '#a38de9' },
+  { bg: '#e9f9ef', bar: '#22a95e', text: '#157a43', textDark: '#38b26e' },
+  { bg: '#fff4e8', bar: '#ef9436', text: '#a55309', textDark: '#ef9436' },
+  { bg: '#fdeef4', bar: '#e8659f', text: '#b63a77', textDark: '#ea74a9' },
+  { bg: '#e8f6f8', bar: '#2ba3b5', text: '#167383', textDark: '#40acbc' },
 ]
 function hashName(name) {
   let h = 0
@@ -3052,7 +3054,7 @@ function pal(c) {
   }
   const p = PALETTES[hashName(c.name) % PALETTES.length]
   if (!isDark.value) return p
-  return { bg: hexA(p.bar, 0.16), bar: p.bar, text: p.bar }
+  return { bg: hexA(p.bar, 0.16), bar: p.bar, text: p.textDark }
 }
 
 /* 节次时间轴：periods 为空回落默认节次表（口径同主项目） */
@@ -3558,7 +3560,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <p class="text-[11px] font-medium text-primary-600/90">
             学期进度 · 第 {{ termInfo.wk }} / {{ termInfo.total }} 周
           </p>
-          <p v-if="termInfo.daysLeft !== null" data-term-left class="shrink-0 text-[11px] text-ink-dim/80">
+          <p v-if="termInfo.daysLeft !== null" data-term-left class="shrink-0 text-[11px] text-ink-dim">
             距期末 {{ termInfo.daysLeft }} 天
           </p>
         </div>
@@ -3662,7 +3664,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             <div class="w-11 text-center">
               <p
                 class="text-sm font-bold"
-                :class="courseStatus(c) === 'now' ? 'text-primary-600' : 'text-primary-500'"
+                :class="courseStatus(c) === 'now' ? 'text-primary-600' : 'text-primary-600'"
                 :style="isRoutine(c) ? { color: pal(c).text } : {}"
               >{{ c.start }}</p>
               <p class="text-[11px] text-ink-dim">{{ c.end }}</p>
@@ -3700,7 +3702,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary-500"></span>
                 </span>
                 进行中 · 已过 {{ nowPct(c) }}%
-                <span class="font-normal text-ink-dim/80">· 还剩 {{ Math.max(0, minOf(c.end) - nowTime) }} 分钟</span>
+                <span class="font-normal text-ink-dim">· 还剩 {{ Math.max(0, minOf(c.end) - nowTime) }} 分钟</span>
               </p>
               <!-- 进行中的进度条（v1.41.6）：每 30 秒自己往前走一格，页面不再是静态表格 -->
               <div
@@ -3769,10 +3771,11 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             :key="t.id"
             class="flex items-center gap-3 p-3.5"
           >
-            <!-- 打勾只认这个圆圈（不能把整行包成 label：button 是 label 的隐式关联控件，点行内任意处都会触发打勾） -->
+            <!-- 打勾只认这个圆圈（不能把整行包成 label：button 是 label 的隐式关联控件，点行内任意处都会触发打勾）。
+                 24×24 是 WCAG 2.5.8(AA) 的目标下限，原先的 h-5.5(22px) 差 2px（2026-10-04 A4 扫描）。 -->
             <button
               type="button"
-              class="-m-1.5 flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded-full border-2 p-1.5 transition active:scale-90"
+              class="-m-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 p-1.5 transition active:scale-90"
               :class="t.done ? 'border-primary-500 bg-primary-500' : 'border-ink-dim/40'"
               :aria-label="t.done ? '标记为未完成' : '标记为完成'"
               @click="toggleTodo(t.id)"
@@ -3788,7 +3791,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             >
               {{ t.title }}
             </span>
-            <span class="shrink-0 text-[11px]" :class="t.done ? 'text-ink-dim/60' : 'text-primary-500'">
+            <span class="shrink-0 text-[11px]" :class="t.done ? 'text-ink-dim' : 'text-primary-600'">
               {{ t.due }}
             </span>
           </div>
@@ -3828,7 +3831,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
     <button
       type="button"
       data-today-habit-undo
-      class="shrink-0 text-xs text-ink-dim/70 underline decoration-dotted underline-offset-2 transition active:opacity-60"
+      class="shrink-0 text-xs text-ink-dim underline decoration-dotted underline-offset-2 transition active:opacity-60"
       @click="undoAllHabitsToday"
     >
       取消
@@ -3860,7 +3863,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
       <div v-for="h in habits" :key="h.id" :data-today-habit="h.id" class="flex items-center gap-3 p-3.5">
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm" :class="h.records[habitToday] ? 'text-ink-dim' : 'text-ink'">{{ h.name }}</p>
-          <p class="mt-0.5 text-[11px] text-ink-dim/70">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</p>
+          <p class="mt-0.5 text-[11px] text-ink-dim">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</p>
         </div>
         <!-- 打卡主操作：h-11 = 44px 热区；已打卡实心勾（可点取消） -->
         <button
@@ -3905,8 +3908,8 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           >
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm text-ink">{{ c.name }}</p>
-              <p class="mt-0.5 text-[11px] text-ink-dim/70">
-                已听 {{ c.played_count }} 次 · {{ fmtSeconds(c.seconds) }}<template v-if="listenPlayId === c.id && listenPlayTotal > 1"> · <span class="font-medium text-primary-500" data-listen-round>第 {{ listenPlayRound }}/{{ listenPlayTotal }} 遍</span></template>
+              <p class="mt-0.5 text-[11px] text-ink-dim">
+                已听 {{ c.played_count }} 次 · {{ fmtSeconds(c.seconds) }}<template v-if="listenPlayId === c.id && listenPlayTotal > 1"> · <span class="font-medium text-primary-600" data-listen-round>第 {{ listenPlayRound }}/{{ listenPlayTotal }} 遍</span></template>
               </p>
             </div>
             <button
@@ -3934,19 +3937,19 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
       >
         <div class="flex items-center gap-3.5">
           <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" :class="recActiveId ? 'bg-red-400/10' : 'bg-primary-50'">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" :class="recActiveId ? 'text-red-400' : 'text-primary-500'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" :class="recActiveId ? 'text-red-600 dark:text-red-400' : 'text-primary-500'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
           </span>
           <span class="min-w-0 flex-1">
             <template v-if="!recActiveId">
               <span class="block text-sm font-medium">课堂录音</span>
-              <span class="block text-[11px] text-ink-dim/70">下课 2 分钟自动停；停录后自动转写、纪要、作业转待办</span>
+              <span class="block text-[11px] text-ink-dim">下课 2 分钟自动停；停录后自动转写、纪要、作业转待办</span>
             </template>
             <template v-else>
               <span class="flex items-center gap-2">
                 <span class="h-2 w-2 animate-pulse rounded-full bg-red-400"></span>
                 <span class="text-sm font-semibold tabular-nums">{{ fmtDur(recElapsed * 1000) }}</span>
               </span>
-              <span class="block text-[11px] text-ink-dim/70">录音中 · 锁屏也会继续录</span>
+              <span class="block text-[11px] text-ink-dim">录音中 · 锁屏也会继续录</span>
             </template>
           </span>
           <button
@@ -3967,7 +3970,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             停止并保存
           </button>
         </div>
-        <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-400' : 'text-primary-500'">{{ recMsg }}</p>
+        <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ recMsg }}</p>
       </section>
 
       <!-- ===== 每日复盘（五期）=====
@@ -3979,7 +3982,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <button
             v-if="reviewHistory.length"
             data-review-open-history
-            class="text-[11px] text-ink-dim/80 transition active:scale-95"
+            class="text-[11px] text-ink-dim transition active:scale-95"
             @click="openReview('history')"
           >日精进 {{ reviewHistory.length }} 篇 ›</button>
         </div>
@@ -4000,14 +4003,14 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             </div>
           </template>
           <template v-else>
-            <p class="text-[12.5px] leading-relaxed text-ink-dim/90">花 2 分钟给今天收个尾：今天怎么样、明天最重要的一件事。写完会生成一段「日精进」存下来。</p>
+            <p class="text-[12.5px] leading-relaxed text-ink-dim">花 2 分钟给今天收个尾：今天怎么样、明天最重要的一件事。写完会生成一段「日精进」存下来。</p>
             <button
               data-review-start
               class="mt-3 w-full rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
               @click="openReview('ask')"
             >开始复盘</button>
           </template>
-          <p v-if="reviewMsg" data-review-card-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-400' : 'text-primary-500'">{{ reviewMsg }}</p>
+          <p v-if="reviewMsg" data-review-card-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ reviewMsg }}</p>
         </div>
       </section>
     </main>
@@ -4045,7 +4048,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         type="button"
         title="拍课表识别"
         aria-label="拍课表识别：截图课表自动加课"
-        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-card text-primary-500 shadow-sm transition active:scale-95"
+        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-card text-primary-600 shadow-sm transition active:scale-95"
         @click="mineRecStart"
       >
         <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5v9M3.5 8h9" /></svg>
@@ -4124,7 +4127,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             <div
               v-if="r.type === 'gap'"
               data-gap
-              class="flex items-center gap-1.5 bg-ink/[0.04] px-1 text-[9px] font-medium text-ink-dim/80"
+              class="flex items-center gap-1.5 bg-ink/[0.04] px-1 text-[10px] font-medium text-ink-dim"
               :style="{ gridColumn: '1 / -1', gridRow: ri + 1 }"
             >
               <span class="h-px flex-1 bg-line/70"></span>
@@ -4140,7 +4143,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 :style="{ gridColumn: 1, gridRow: ri + 1 }"
               >
                 <span class="text-[10px] font-semibold text-primary-600/90">第{{ r.p.no }}节</span>
-                <span class="mt-0.5 text-[9px] text-ink-dim/80">{{ r.p.start }}</span>
+                <span class="mt-0.5 text-[10px] text-ink-dim">{{ r.p.start }}</span>
               </div>
               <div
                 v-for="d in weekCols"
@@ -4195,13 +4198,13 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             </div>
             <p
               v-if="it.c.place && cardFit(it) !== 'mid2'"
-              class="text-[9px] leading-tight text-ink-dim"
+              class="text-[10px] leading-tight text-ink-dim"
               :class="cardFit(it) === 'loose' ? 'line-clamp-3 break-words' : 'truncate'"
             >{{ it.c.place }}</p>
             <!-- 只在与节次边界不齐时标真实时间（识别导入的课常见），对齐的不啰嗦 -->
             <span
               v-if="!isAligned(it.c, periods)"
-              class="absolute right-0.5 bottom-0 text-[8px] leading-none text-ink-dim/80"
+              class="absolute right-0.5 bottom-0 text-[9px] leading-none text-ink-dim"
             >{{ it.c.start }}</span>
           </article>
         </div>
@@ -4212,7 +4215,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
   <section data-list-page>
     <div class="mb-2 flex items-baseline justify-between px-1">
       <h2 class="text-sm font-semibold text-ink">其他日程</h2>
-      <span class="text-xs text-ink-dim/70">{{ listTotalCount }} 项</span>
+      <span class="text-xs text-ink-dim">{{ listTotalCount }} 项</span>
     </div>
 
     <!-- 课表里看得到的固定安排（课程 / 循环日程）不重复列在这里，给一行去课表的指引 -->
@@ -4224,7 +4227,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
       @click="setWeekSub('week')"
     >
       <span class="min-w-0 truncate text-xs text-ink-dim">还有 {{ listFixedCount }} 项固定安排在周课表里（不在这里重复）</span>
-      <span class="ml-2 shrink-0 text-xs font-medium text-primary-500">去周课表 ›</span>
+      <span class="ml-2 shrink-0 text-xs font-medium text-primary-600">去周课表 ›</span>
     </button>
 
     <!-- 空态：本来就没有 -->
@@ -4276,7 +4279,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                     ><path d="M3 8a5 5 0 105-5M3 8V5M3 8h3" /></svg>
                     <span class="truncate text-sm" :class="g.key === 'todo' && it.done ? 'text-ink-dim line-through' : 'text-ink'">{{ entryName(it) }}</span>
                   </span>
-                  <span class="mt-0.5 block truncate text-[11px] text-ink-dim/80">{{ listMeta(it, g.key) }}</span>
+                  <span class="mt-0.5 block truncate text-[11px] text-ink-dim">{{ listMeta(it, g.key) }}</span>
                 </span>
               </button>
             </div>
@@ -4309,7 +4312,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.2l2.5 2.5L5 13.5l-3 .5.5-3z" /></svg>
         </button>
       </section>
-      <p v-if="source !== 'import'" class="-mt-2 px-1 text-[11px] text-ink-dim/70">示例数据不能编辑学期信息：导入真实课表或用引导页创建学期后可改</p>
+      <p v-if="source !== 'import'" class="-mt-2 px-1 text-[11px] text-ink-dim">示例数据不能编辑学期信息：导入真实课表或用引导页创建学期后可改</p>
 
       <!-- 课堂录音（二期 M2）：App 平台可用；浏览器环境点按给就地提示，不做假录音 -->
       <section class="rounded-2xl border border-line bg-card p-4 shadow-sm">
@@ -4319,7 +4322,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">课堂录音</span>
-            <span class="block text-[11px] text-ink-dim/70">下课后 2 分钟自动停；停录后自动转写并生成纪要；长按场次可删除</span>
+            <span class="block text-[11px] text-ink-dim">下课后 2 分钟自动停；停录后自动转写并生成纪要；长按场次可删除</span>
           </span>
           <button
             v-if="!recActiveId"
@@ -4342,10 +4345,10 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         <div v-if="recActiveId" class="mt-3 flex items-center gap-2 rounded-xl bg-red-400/10 px-3 py-2.5">
           <span class="h-2 w-2 animate-pulse rounded-full bg-red-400"></span>
           <span class="text-sm font-semibold tabular-nums">{{ fmtDur(recElapsed * 1000) }}</span>
-          <span class="ml-auto text-[11px] text-ink-dim/70">录音中 · 锁屏也会继续录</span>
+          <span class="ml-auto text-[11px] text-ink-dim">录音中 · 锁屏也会继续录</span>
         </div>
 
-        <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-400' : 'text-primary-500'">{{ recMsg }}</p>
+        <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ recMsg }}</p>
 
         <!-- 场次列表：倒序，试听按钮在播放/暂停间切换 -->
         <ul v-if="lectures.length" class="mt-3 divide-y divide-line border-t border-line">
@@ -4364,7 +4367,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             <div class="flex items-center gap-3">
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-[13px] font-medium">{{ l.title }}</span>
-                <span class="block text-[11px] text-ink-dim/70">
+                <span class="block text-[11px] text-ink-dim">
                   {{ fmtLecDate(l.started_at) }} · {{ fmtDur(l.duration_ms) }} · {{ lecStatusLabel(l) }}
                 </span>
               </span>
@@ -4389,12 +4392,12 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               <div class="h-1.5 overflow-hidden rounded-full bg-ink/10">
                 <div class="h-full rounded-full bg-primary-500 transition-[width] duration-300" :style="{ width: trPercent + '%' }"></div>
               </div>
-              <p class="mt-1 text-[11px] text-ink-dim/70">{{ trLabel }}</p>
+              <p class="mt-1 text-[11px] text-ink-dim">{{ trLabel }}</p>
             </div>
             <!-- 文字稿 + 纪要：转写完成后解锁（纪要在浏览器里也能生成，与转写的 App 限制无关） -->
             <template v-if="(l.status === 'transcribed' || l.status === 'summarized') && l.transcript">
               <div class="mt-1.5 flex items-center gap-3">
-                <button class="text-[11px] text-primary-500" @click="trOpenId = trOpenId === l.id ? null : l.id">
+                <button class="text-[11px] text-primary-600" @click="trOpenId = trOpenId === l.id ? null : l.id">
                   {{ trOpenId === l.id ? '收起文字稿 ▲' : '查看文字稿 ▼' }}
                 </button>
                 <button
@@ -4413,43 +4416,43 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 class="mt-1.5 whitespace-pre-wrap rounded-xl bg-ink/[0.04] p-3 text-[12px] leading-relaxed"
               >{{ l.transcript }}</p>
               <!-- 生成中：转圈 + 阶段说明 + 取消（LLM 调用是真网络请求，必须可掐断） -->
-              <div v-if="sumBusyId === l.id" class="mt-2 flex items-center gap-2 text-[11px] text-ink-dim/80">
+              <div v-if="sumBusyId === l.id" class="mt-2 flex items-center gap-2 text-[11px] text-ink-dim">
                 <span class="h-3 w-3 animate-spin rounded-full border-2 border-primary-400 border-t-transparent"></span>
                 <span class="flex-1">{{ sumStage === 'call' ? '正在调用 AI 生成纪要…' : '正在解析纪要…' }}</span>
-                <button class="shrink-0 text-red-400" @click="cancelSummary">取消</button>
+                <button class="shrink-0 text-red-600 dark:text-red-400" @click="cancelSummary">取消</button>
               </div>
               <!-- 纪要卡：总览 / 要点 / 概念 / 作业 / 存疑（空块不渲染） -->
               <div v-if="l.summary && sumOpenId === l.id" class="mt-2 rounded-xl border border-primary-400/30 bg-primary-50 p-3">
                 <div class="flex items-center justify-between">
-                  <span class="text-[11px] font-bold text-primary-500">课堂纪要</span>
-                  <button class="text-[11px] text-ink-dim/60" @click="sumOpenId = null">收起 ▲</button>
+                  <span class="text-[11px] font-bold text-primary-600">课堂纪要</span>
+                  <button class="text-[11px] text-ink-dim" @click="sumOpenId = null">收起 ▲</button>
                 </div>
                 <p class="mt-1.5 text-[12px] leading-relaxed text-ink">{{ l.summary.overview }}</p>
                 <ul v-if="l.summary.key_points && l.summary.key_points.length" class="mt-2 space-y-1">
                   <li v-for="(k, i) in l.summary.key_points" :key="'k' + i" class="flex gap-1.5 text-[12px] leading-relaxed">
-                    <span class="shrink-0 text-primary-500">•</span><span>{{ k }}</span>
+                    <span class="shrink-0 text-primary-600">•</span><span>{{ k }}</span>
                   </li>
                 </ul>
                 <div v-if="l.summary.terms && l.summary.terms.length" class="mt-2.5">
-                  <p class="text-[11px] font-semibold text-ink-dim/80">概念术语</p>
+                  <p class="text-[11px] font-semibold text-ink-dim">概念术语</p>
                   <div class="mt-1 flex flex-wrap gap-1.5">
                     <span v-for="(t, i) in l.summary.terms" :key="'t' + i" class="rounded-full bg-ink/[0.06] px-2 py-0.5 text-[11px]" :title="t.note">{{ t.term }}</span>
                   </div>
                 </div>
                 <div v-if="l.summary.homework && l.summary.homework.length" class="mt-2.5">
-                  <p class="text-[11px] font-semibold text-ink-dim/80">作业 / 截止</p>
+                  <p class="text-[11px] font-semibold text-ink-dim">作业 / 截止</p>
                   <ul class="mt-1 space-y-0.5">
                     <li v-for="(h, i) in l.summary.homework" :key="'h' + i" class="text-[12px] leading-relaxed">□ {{ h }}</li>
                   </ul>
                 </div>
                 <div v-if="l.summary.questions && l.summary.questions.length" class="mt-2.5">
-                  <p class="text-[11px] font-semibold text-amber-500">存疑点（可能识别有误）</p>
+                  <p class="text-[11px] font-semibold text-amber-700 dark:text-amber-500">存疑点（可能识别有误）</p>
                   <ul class="mt-1 space-y-0.5">
                     <li v-for="(q, i) in l.summary.questions" :key="'q' + i" class="text-[12px] leading-relaxed">? {{ q }}</li>
                   </ul>
                 </div>
               </div>
-              <button v-else-if="l.summary" class="mt-1.5 text-[11px] text-primary-500" @click="sumOpenId = l.id">
+              <button v-else-if="l.summary" class="mt-1.5 text-[11px] text-primary-600" @click="sumOpenId = l.id">
                 查看纪要 ▼
               </button>
             </template>
@@ -4465,7 +4468,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">碎片练耳</span>
-            <span class="block text-[11px] text-ink-dim/70">
+            <span class="block text-[11px] text-ink-dim">
               本地音频按艾宾浩斯排复习；到点只提醒你去听，不自动播放
             </span>
           </span>
@@ -4482,7 +4485,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <div class="mt-3 flex items-center gap-3 rounded-xl bg-ink/[0.04] px-3 py-2.5">
             <span class="min-w-0 flex-1">
               <span class="block text-[12px] font-medium">到点提醒我去听</span>
-              <span class="block text-[11px] text-ink-dim/70">到复习日合并成一条「今天有 N 段待复习」</span>
+              <span class="block text-[11px] text-ink-dim">到复习日合并成一条「今天有 N 段待复习」</span>
             </span>
             <button
               class="relative h-6 w-11 shrink-0 rounded-full transition"
@@ -4494,7 +4497,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" :class="listenSettings.enabled ? 'left-[22px]' : 'left-0.5'"></span>
             </button>
           </div>
-          <p v-if="listenSettings.enabled && !notifyOk" class="mt-1.5 text-[11px] leading-relaxed text-amber-500">
+          <p v-if="listenSettings.enabled && !notifyOk" class="mt-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-500">
             这个环境没有通知能力（浏览器里收不到）——装到手机 App 里才生效。
           </p>
 
@@ -4506,7 +4509,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             @click="listenSettingsOpen = !listenSettingsOpen"
           >
             <span>练耳设置（遍数 / 复习间隔 / 勿扰 / 空档）</span>
-            <span class="text-[11px] text-ink-dim/70">{{ listenSettingsOpen ? '收起' : '展开' }}</span>
+            <span class="text-[11px] text-ink-dim">{{ listenSettingsOpen ? '收起' : '展开' }}</span>
           </button>
 
           <div v-if="listenSettingsOpen" data-listen-settings class="mt-2 space-y-2.5 rounded-xl bg-ink/[0.04] px-3 py-3">
@@ -4533,7 +4536,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 :value="formatIntervals(listenSettings.reviewIntervals)"
                 @change="onListenIntervals"
               />
-              <span class="shrink-0 text-[11px] text-ink-dim/70">天</span>
+              <span class="shrink-0 text-[11px] text-ink-dim">天</span>
             </div>
             <div class="flex items-center gap-2">
               <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">勿扰时段</span>
@@ -4544,7 +4547,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 :value="listenSettings.dndStart"
                 @change="onListenDnd('start', $event)"
               />
-              <span class="text-[11px] text-ink-dim/60">至</span>
+              <span class="text-[11px] text-ink-dim">至</span>
               <input
                 type="time"
                 data-listen-dnd-end
@@ -4553,7 +4556,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 @change="onListenDnd('end', $event)"
               />
             </div>
-            <p class="text-[11px] leading-relaxed text-ink-dim/70">结束时间早于开始时间 = 跨夜（默认 23:00–07:00），这段时间不发提醒。</p>
+            <p class="text-[11px] leading-relaxed text-ink-dim">结束时间早于开始时间 = 跨夜（默认 23:00–07:00），这段时间不发提醒。</p>
             <div class="flex items-center gap-2">
               <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">短槽上限</span>
               <input
@@ -4565,7 +4568,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 :value="listenSettings.shortGapMaxMin"
                 @change="onListenNum('shortGapMaxMin', $event)"
               />
-              <span class="text-[11px] text-ink-dim/70">分钟以内算短槽（只放 1 段）</span>
+              <span class="text-[11px] text-ink-dim">分钟以内算短槽（只放 1 段）</span>
             </div>
             <div class="flex items-center gap-2">
               <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">最短空档</span>
@@ -4578,7 +4581,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 :value="listenSettings.slotMinMin"
                 @change="onListenNum('slotMinMin', $event)"
               />
-              <span class="text-[11px] text-ink-dim/70">分钟以下不排（太碎听不完）</span>
+              <span class="text-[11px] text-ink-dim">分钟以下不排（太碎听不完）</span>
             </div>
             <button
               class="w-full rounded-lg bg-ink/[0.06] py-2 text-[12px] font-medium text-ink-dim transition active:scale-[0.99]"
@@ -4587,7 +4590,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             >恢复默认</button>
           </div>
 
-          <label class="mt-3.5 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-primary-400/50 bg-primary-50/40 px-3 py-3 text-xs font-medium text-primary-500 transition active:scale-[0.99]">
+          <label class="mt-3.5 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-primary-400/50 bg-primary-50/40 px-3 py-3 text-xs font-medium text-primary-600 transition active:scale-[0.99]">
             <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V3M4.5 6.5L8 3l3.5 3.5" /><path d="M3 11.5V13a1 1 0 001 1h8a1 1 0 001-1v-1.5" /></svg>
             <span>从本地导入音频（mp3 / m4a / wav 等）</span>
             <input type="file" accept="audio/*" class="hidden" data-listen-import @change="onListenPick" />
@@ -4599,14 +4602,14 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               今天可听：{{ listenSuggestions.suggestions.reduce((n, s) => n + s.take, 0) }} 段，挑这些空档去听
             </p>
             <ul v-if="listenSuggestions.suggestions.length" class="mt-1 space-y-0.5">
-              <li v-for="(s, i) in listenSuggestions.suggestions" :key="i" class="text-[11px] text-ink-dim/80">
+              <li v-for="(s, i) in listenSuggestions.suggestions" :key="i" class="text-[11px] text-ink-dim">
                 {{ s.start }}–{{ s.end }} · {{ s.mins }} 分钟 · {{ s.kind === 'short' ? '短槽' : '可多段' }} → 放 {{ s.take }} 段
               </li>
             </ul>
-            <p v-else-if="listenSuggestions.due.length" class="text-[11px] text-ink-dim/80">
+            <p v-else-if="listenSuggestions.due.length" class="text-[11px] text-ink-dim">
               今天待复习 {{ listenSuggestions.due.length }} 段，但课表已排满 / 空档小于 5 分钟——自己找时间听
             </p>
-            <p v-else class="text-[11px] text-ink-dim/80">
+            <p v-else class="text-[11px] text-ink-dim">
               今天没有到期的音频；列表里 {{ listenClips.length }} 段都排在未来
             </p>
           </div>
@@ -4615,8 +4618,8 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               <div class="flex items-center gap-3">
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-[13px] font-medium">{{ c.name }}</span>
-                  <span class="block text-[11px] text-ink-dim/70">
-                    已听 {{ c.played_count }} 次 · {{ fmtSeconds(c.seconds) }} · {{ listenStageLabel(c) }}<template v-if="listenPlayId === c.id && listenPlayTotal > 1"> · <span class="font-medium text-primary-500" data-listen-round>第 {{ listenPlayRound }}/{{ listenPlayTotal }} 遍</span></template>
+                  <span class="block text-[11px] text-ink-dim">
+                    已听 {{ c.played_count }} 次 · {{ fmtSeconds(c.seconds) }} · {{ listenStageLabel(c) }}<template v-if="listenPlayId === c.id && listenPlayTotal > 1"> · <span class="font-medium text-primary-600" data-listen-round>第 {{ listenPlayRound }}/{{ listenPlayTotal }} 遍</span></template>
                   </span>
                 </span>
                 <button
@@ -4630,14 +4633,14 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               </div>
             </li>
           </ul>
-          <p v-else class="mt-3 rounded-xl bg-ink/[0.04] px-3 py-2.5 text-[11px] text-ink-dim/70">
+          <p v-else class="mt-3 rounded-xl bg-ink/[0.04] px-3 py-2.5 text-[11px] text-ink-dim">
             还没有音频。导入一段（20 秒–1 分钟最合适），当天就可以开始听。
           </p>
 
-          <p v-if="listenClips.length && !listenIsApp" class="mt-2 text-[11px] leading-relaxed text-amber-500">
+          <p v-if="listenClips.length && !listenIsApp" class="mt-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-500">
             浏览器里音频字节不落盘：刷新后要重新导入（听过的次数与复习排期会保留）。
           </p>
-          <p v-if="listenMsg" class="mt-2 text-[11px]" :class="listenMsgBad ? 'text-red-400' : 'text-primary-500'">{{ listenMsg }}</p>
+          <p v-if="listenMsg" class="mt-2 text-[11px]" :class="listenMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ listenMsg }}</p>
         </template>
       </section>
 
@@ -4649,10 +4652,10 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V2M4.5 5.5L8 2l3.5 3.5M3 11v2.5A.5.5 0 003.5 14h9a.5.5 0 00.5-.5V11" /></svg>
           </span>
           <span class="flex-1 text-sm font-medium">导入主项目数据</span>
-          <span class="text-xs" :class="source === 'import' ? 'text-primary-500' : 'text-ink-dim/70'">
+          <span class="text-xs" :class="source === 'import' ? 'text-primary-600' : 'text-ink-dim'">
             {{ source === 'import' ? '已导入 ✓' : '选择导出的 JSON' }}
           </span>
-          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-ink-dim/50" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
           <input type="file" accept=".json,application/json" class="hidden" @change="onImportFile" />
         </label>
 
@@ -4679,7 +4682,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </span>
           <span class="flex-1">
             <span class="block text-sm font-medium">导出回写主项目</span>
-            <span class="block text-[11px] text-ink-dim/70">勾选过的待办会同步进导出文件</span>
+            <span class="block text-[11px] text-ink-dim">勾选过的待办会同步进导出文件</span>
           </span>
         </button>
 
@@ -4693,7 +4696,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </span>
           <span class="flex-1">
             <span class="block text-sm font-medium">导出日历（.ics）</span>
-            <span class="block text-[11px] text-ink-dim/70">整学期课表装进手机系统日历，带课前提醒</span>
+            <span class="block text-[11px] text-ink-dim">整学期课表装进手机系统日历，带课前提醒</span>
           </span>
         </button>
 
@@ -4718,11 +4721,11 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">设置</span>
-            <span class="block text-[11px] text-ink-dim/70">主题外观 · 课前提醒 · 课堂纪要 · 数据重置</span>
+            <span class="block text-[11px] text-ink-dim">主题外观 · 课前提醒 · 课堂纪要 · 数据重置</span>
           </span>
           <svg
             viewBox="0 0 16 16"
-            class="h-3.5 w-3.5 shrink-0 text-ink-dim/50 transition-transform"
+            class="h-3.5 w-3.5 shrink-0 text-ink-dim transition-transform"
             :class="settingsOpen ? 'rotate-90' : ''"
             fill="none"
             stroke="currentColor"
@@ -4743,7 +4746,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             </span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">主题外观</span>
-              <span class="block text-[11px] text-ink-dim/70">{{ isDark ? '当前：深色' : '当前：浅色' }}</span>
+              <span class="block text-[11px] text-ink-dim">{{ isDark ? '当前：深色' : '当前：浅色' }}</span>
             </span>
             <button
               type="button"
@@ -4756,7 +4759,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             </button>
           </div>
           <div class="mt-3 flex items-center gap-3 border-t border-line pt-3">
-            <span class="text-[11px] text-ink-dim/80">主题配色</span>
+            <span class="text-[11px] text-ink-dim">主题配色</span>
             <div class="flex items-center gap-2.5">
               <button
                 v-for="a in ACCENTS"
@@ -4773,8 +4776,8 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                （夜里同时切深色）。只在跨时段那刻接管，中途手动改配色/深浅不会被抢回去。 -->
           <div class="mt-3 flex items-center gap-3 border-t border-line pt-3">
             <span class="min-w-0 flex-1">
-              <span class="block text-[11px] text-ink-dim/80">跟着时间自动换</span>
-              <span class="block text-[11px] text-ink-dim/60">
+              <span class="block text-[11px] text-ink-dim">跟着时间自动换</span>
+              <span class="block text-[11px] text-ink-dim">
                 {{ autoTheme ? '当前时段：' + autoSlotName + '（' + (isDark ? '深色' : '浅色') + '）' : '清晨 / 白天 / 傍晚 / 夜里各一套' }}
               </span>
             </span>
@@ -4807,14 +4810,14 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             </span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">课堂纪要</span>
-              <span class="block text-[11px] text-ink-dim/70">{{ llmReady ? 'AI 服务已配置，可在录音场次一键生成' : '转写完成后用 AI 把文字稿总结成复习纪要' }}</span>
+              <span class="block text-[11px] text-ink-dim">{{ llmReady ? 'AI 服务已配置，可在录音场次一键生成' : '转写完成后用 AI 把文字稿总结成复习纪要' }}</span>
             </span>
-            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim/50 transition-transform" :class="llmInputOpen ? 'rotate-90' : ''" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim transition-transform" :class="llmInputOpen ? 'rotate-90' : ''" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
           </button>
 
           <div v-if="llmInputOpen" class="mt-3 space-y-2.5">
             <div>
-              <span class="mb-1 block text-[11px] text-ink-dim/80">纪要服务</span>
+              <span class="mb-1 block text-[11px] text-ink-dim">纪要服务</span>
               <DropdownSelect
                 v-model="llmCfg.provider"
                 data-dd="provider"
@@ -4824,7 +4827,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               />
             </div>
             <label v-if="llmCfg.provider === 'deepseek'" class="block">
-              <span class="mb-1 block text-[11px] text-ink-dim/80">DeepSeek API Key（只存在本机，不会上传）</span>
+              <span class="mb-1 block text-[11px] text-ink-dim">DeepSeek API Key（只存在本机，不会上传）</span>
               <input
                 v-model="llmCfg.key"
                 type="text"
@@ -4832,12 +4835,12 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 spellcheck="false"
                 placeholder="sk-…"
                 enterkeyhint="done"
-                class="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim/40 focus:border-primary-400"
+                class="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim focus:border-primary-400"
                 @input="onLlmKey"
               />
             </label>
             <div v-if="llmCfg.provider === 'deepseek'">
-              <span class="mb-1 block text-[11px] text-ink-dim/80">模型（二选一，不用手填）</span>
+              <span class="mb-1 block text-[11px] text-ink-dim">模型（二选一，不用手填）</span>
               <DropdownSelect
                 v-model="llmCfg.model"
                 data-dd="model"
@@ -4858,9 +4861,9 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             <p
               v-if="llmTest.msg"
               class="text-[11px] leading-relaxed"
-              :class="llmTest.ok ? 'text-primary-500' : 'text-red-400'"
+              :class="llmTest.ok ? 'text-primary-600' : 'text-red-600 dark:text-red-400'"
             >{{ llmTest.msg }}</p>
-            <p class="text-[11px] leading-relaxed text-ink-dim/60">
+            <p class="text-[11px] leading-relaxed text-ink-dim">
               Key 在 platform.deepseek.com 申请；一次纪要通常几分钱以内。配置存在本机，换设备后需重填。
             </p>
           </div>
@@ -4873,11 +4876,11 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           @click="confirmClear = true"
         >
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-red-400/10">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6.5 2.5h3M4 4.5l.6 9a1 1 0 001 .9h4.8a1 1 0 001-.9l.6-9M6.8 7.5v4M9.2 7.5v4" /></svg>
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6.5 2.5h3M4 4.5l.6 9a1 1 0 001 .9h4.8a1 1 0 001-.9l.6-9M6.8 7.5v4M9.2 7.5v4" /></svg>
           </span>
           <span class="flex-1">
-            <span class="block text-sm font-medium text-red-400">清除数据并重置</span>
-            <span class="block text-[11px] text-ink-dim/70">想从头开始（换学期 / 重测）用它，无法恢复</span>
+            <span class="block text-sm font-medium text-red-600 dark:text-red-400">清除数据并重置</span>
+            <span class="block text-[11px] text-ink-dim">想从头开始（换学期 / 重测）用它，无法恢复</span>
           </span>
         </button>
 
@@ -4888,7 +4891,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">后台录音</span>
-            <span class="block text-[11px] leading-relaxed text-ink-dim/70">
+            <span class="block text-[11px] leading-relaxed text-ink-dim">
               录音时锁屏、切到别的应用都会继续录，通知栏会有一条「正在录音」。看不到这条通知的话，去系统设置里打开本应用的通知权限——通知被拦掉时，后台更容易被系统清理。
             </span>
           </span>
@@ -4901,7 +4904,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">课前提醒</span>
-            <span class="block text-[11px] leading-relaxed text-ink-dim/70">
+            <span class="block text-[11px] leading-relaxed text-ink-dim">
               {{ notifyOk
                 ? '上课前高优先级提醒（会响、会弹横幅），点通知或「开始录音」直接开录。课程、独立日程、循环日程都包含。'
                 : '通知能力仅 App 内生效，浏览器上不可用。' }}
@@ -4922,7 +4925,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         </div>
         <div v-if="notifyOk && notifySettings.enabled" class="border-t border-line px-4 py-3.5">
           <div class="flex items-center gap-2">
-            <span class="text-[11px] text-ink-dim/80">提前</span>
+            <span class="text-[11px] text-ink-dim">提前</span>
             <button
               v-for="m in [5, 10, 15]"
               :key="m"
@@ -4936,8 +4939,8 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               @click="onTestNotify"
             >{{ notifyTesting ? '发送中…' : '发测试通知' }}</button>
           </div>
-          <p v-if="notifyPerm === false" class="mt-2 text-[11px] text-red-400">通知权限被拒绝了：请在系统设置里允许本应用发通知，否则提醒收不到。</p>
-          <p v-if="notifyMsg" class="mt-2 text-[11px]" :class="notifyMsgBad ? 'text-red-400' : 'text-primary-500'">{{ notifyMsg }}</p>
+          <p v-if="notifyPerm === false" class="mt-2 text-[11px] text-red-600 dark:text-red-400">通知权限被拒绝了：请在系统设置里允许本应用发通知，否则提醒收不到。</p>
+          <p v-if="notifyMsg" class="mt-2 text-[11px]" :class="notifyMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ notifyMsg }}</p>
         </div>
 
         <!-- 每日复盘（五期）：每晚一条轻提醒 + 提醒时间 + 日精进历史入口 -->
@@ -4948,7 +4951,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             </span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">每日复盘</span>
-              <span class="block text-[11px] leading-relaxed text-ink-dim/70">每晚轻提醒一次，点开花 2 分钟收个尾，生成当天的日精进。存档只在本机，不进导出。</span>
+              <span class="block text-[11px] leading-relaxed text-ink-dim">每晚轻提醒一次，点开花 2 分钟收个尾，生成当天的日精进。存档只在本机，不进导出。</span>
             </span>
             <button
               v-if="notifyOk"
@@ -4962,7 +4965,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             </button>
           </div>
           <div class="mt-3 flex items-center gap-2">
-            <span class="text-[11px] text-ink-dim/80">提醒</span>
+            <span class="text-[11px] text-ink-dim">提醒</span>
             <button
               v-for="t in REVIEW_AT_CHOICES"
               :key="t"
@@ -4984,11 +4987,11 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
              允许之后警告撤掉，只留一行回执（exactMsg 还在内存里，下次启动自然清掉）。 -->
         <div v-if="exactHint || exactMsg" data-exact-row class="border-t border-line px-4 py-3.5">
           <div class="flex items-start gap-2">
-            <span v-if="exactHint" class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-600">!</span>
+            <span v-if="exactHint" class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-700 dark:text-amber-600">!</span>
             <div class="min-w-0 flex-1">
               <div v-if="exactHint" data-exact-warn>
                 <p class="text-[12px] font-medium text-ink">提醒可能晚到（最多 1 小时）</p>
-                <p class="mt-1 text-[11px] leading-relaxed text-ink-dim/80">
+                <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">
                   还没允许本应用「设置闹钟和提醒」，系统会把这批提醒当成普通闹钟，到点可能晚一小时才响。允许之后，课前提醒和练耳提醒就能准点到。
                 </p>
                 <button
@@ -4998,7 +5001,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   @click="onAskExactAlarm"
                 >{{ exactAsking ? '打开系统设置…' : '去允许精确提醒' }}</button>
               </div>
-              <p v-if="exactMsg" data-exact-msg class="text-[11px]" :class="[exactMsgBad ? 'text-red-400' : 'text-primary-500', exactHint ? 'mt-1.5' : '']">{{ exactMsg }}</p>
+              <p v-if="exactMsg" data-exact-msg class="text-[11px]" :class="[exactMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600', exactHint ? 'mt-1.5' : '']">{{ exactMsg }}</p>
             </div>
           </div>
         </div>
@@ -5013,7 +5016,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             </span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">常驻状态框</span>
-              <span class="block text-[11px] leading-relaxed text-ink-dim/70">
+              <span class="block text-[11px] leading-relaxed text-ink-dim">
                 通知栏常驻一条「现在 · 课名 / 还有多久」，可直接开始录音、标记「这节上完了」「我去听了」；录音时变身成录音态，全程只有一条常驻通知。
               </span>
             </span>
@@ -5030,17 +5033,17 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               ></span>
             </button>
           </div>
-          <p v-if="frameMsg" data-frame-msg class="mt-2 text-[11px]" :class="frameMsgBad ? 'text-red-400' : 'text-primary-500'">{{ frameMsg }}</p>
+          <p v-if="frameMsg" data-frame-msg class="mt-2 text-[11px]" :class="frameMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ frameMsg }}</p>
         </div>
 
         <!-- 数据清理：多次导入叠加的重复课程（有重复才显示，干净的数据不摆这个入口） -->
         <div v-if="addedDupCount" data-dedup-entry class="flex items-center gap-3.5 p-4">
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-amber-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6l-1.6 7.2a1.5 1.5 0 01-1.5 1.3H4.6a1.5 1.5 0 01-1.5-1.3L1.5 6M6 6V4a2 2 0 012-2h0a2 2 0 012 2v2M14 6H2" /></svg>
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-amber-700 dark:text-amber-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6l-1.6 7.2a1.5 1.5 0 01-1.5 1.3H4.6a1.5 1.5 0 01-1.5-1.3L1.5 6M6 6V4a2 2 0 012-2h0a2 2 0 012 2v2M14 6H2" /></svg>
           </span>
           <div class="flex-1">
             <span class="block text-sm font-medium">清理重复课程</span>
-            <span class="block text-[11px] text-ink-dim/70">检测到 {{ addedDupCount }} 门重复（多次导入叠加），一键删掉多余的</span>
+            <span class="block text-[11px] text-ink-dim">检测到 {{ addedDupCount }} 门重复（多次导入叠加），一键删掉多余的</span>
           </div>
           <button
             class="rounded-full bg-ink/5 px-3 py-1.5 text-xs font-medium transition active:scale-95"
@@ -5054,7 +5057,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zM2 14c0-2.5 2.5-4 6-4s6 1.5 6 4" /></svg>
           </span>
           <span class="flex-1 text-sm font-medium">关于</span>
-          <span class="text-xs text-ink-dim/70" data-app-version>{{ APP_VERSION }}</span>
+          <span class="text-xs text-ink-dim" data-app-version>{{ APP_VERSION }}</span>
         </div>
         </div>
       </section>
@@ -5064,7 +5067,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         v-if="importMsg"
         data-import-msg
         class="px-1 text-center text-xs"
-        :class="importMsg.startsWith('导入成功') || importMsg.startsWith('已导出') ? 'text-primary-500' : 'text-red-400'"
+        :class="importMsg.startsWith('导入成功') || importMsg.startsWith('已导出') ? 'text-primary-600' : 'text-red-600 dark:text-red-400'"
       >
         {{ importMsg }}
       </p>
@@ -5131,7 +5134,10 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           ]"
           :key="t.key"
           class="relative flex flex-col items-center pt-1 pb-1 transition-transform duration-150 active:scale-90"
-          :class="tab === t.key ? 'text-primary-500' : 'text-ink-dim/70'"
+          :class="tab === t.key ? 'text-primary-600' : 'text-ink-dim'"
+          :data-nav="t.key"
+          :data-active="tab === t.key ? '1' : null"
+          :aria-current="tab === t.key ? 'page' : undefined"
           @click="switchTab(t.key)"
         >
           <!-- 图标 wrapper：h-7 w-12 与滑块药丸同尺寸同位置，图标在药丸内绝对居中；
@@ -5214,7 +5220,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         >‹</button>
         <div class="text-center">
           <p class="text-xs font-medium text-ink tabular-nums">{{ habitWeekLabel }}</p>
-          <p class="text-[10px]" :class="habitWeekBase === 0 ? 'text-primary-500' : 'text-ink-dim/70'">
+          <p class="text-[10px]" :class="habitWeekBase === 0 ? 'text-primary-600' : 'text-ink-dim'">
             {{ habitWeekBase === 0 ? '本周 · 漏卡可补' : (habitWeekBase === -1 ? '上周' : -habitWeekBase + ' 周前') + ' · 已锁定' }}
           </p>
         </div>
@@ -5236,7 +5242,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           maxlength="20"
           placeholder="习惯名，如：背单词"
           enterkeyhint="done"
-          class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim/50 focus:border-primary-400"
+          class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim focus:border-primary-400"
           @keyup.enter="addHabitConfirm"
         />
         <button
@@ -5280,7 +5286,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             <button
               type="button"
               class="h-8 w-8 shrink-0 text-xs transition active:scale-90"
-              :class="habitDelId === h.id ? 'font-bold text-red-500' : 'text-ink-dim/40'"
+              :class="habitDelId === h.id ? 'font-bold text-red-600 dark:text-red-400' : 'text-ink-dim/40'"
               :aria-label="habitDelId === h.id ? '确认删除该习惯' : '删除习惯'"
               @click="onHabitDelete(h.id)"
             >
@@ -5299,7 +5305,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               class="flex flex-col items-center gap-1 rounded-xl py-1.5 transition active:scale-95"
               @click="onHabitCell(h.id, d.key)"
             >
-              <span class="text-[10px] leading-none" :class="d.isToday ? 'font-semibold text-primary-500' : 'text-ink-dim/70'">{{ d.name }}</span>
+              <span class="text-[10px] leading-none" :class="d.isToday ? 'font-semibold text-primary-600' : 'text-ink-dim'">{{ d.name }}</span>
               <span
                 class="flex h-6 w-6 items-center justify-center rounded-full text-[10px] tabular-nums"
                 :class="HABIT_CELL_CLS[habitCellState(h, d)]"
@@ -5312,7 +5318,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         </div>
 
         <!-- 图例：补卡是这一轮新增的视觉态，不解释一下没人看得懂 -->
-        <p class="px-1 pt-1 text-[11px] leading-relaxed text-ink-dim/80">
+        <p class="px-1 pt-1 text-[11px] leading-relaxed text-ink-dim">
           <span class="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-primary-500 align-[-1px]" />当天打卡
           <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-primary-400 bg-primary-50 align-[-1px]" />事后补卡
           <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-dashed border-primary-300 align-[-1px]" />可补
@@ -5397,7 +5403,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         </button>
         <button
           class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
-          :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
+          :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-600 dark:text-red-400' : 'border-red-200 text-red-600 dark:text-red-400'"
           @click="onDelCourse"
         >
           {{ confirmDel ? '再点一次确认' : '删除' }}
@@ -5415,7 +5421,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         <button
           data-routine-del
           class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
-          :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
+          :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-600 dark:text-red-400' : 'border-red-200 text-red-600 dark:text-red-400'"
           @click="onDelRoutine"
         >
           {{ confirmDel ? '再点一次确认' : '删除' }}
@@ -5490,17 +5496,17 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 </select>
               </label>
             </div>
-            <p class="text-[11px]" :class="recCellWhen ? 'text-ink-dim' : 'text-red-400'">
+            <p class="text-[11px]" :class="recCellWhen ? 'text-ink-dim' : 'text-red-600 dark:text-red-400'">
               {{ recCellWhen ? '上课时间 ' + recCellWhen : '节次超出当前节次表' }}
             </p>
           </div>
         </div>
-        <p v-if="recCellErr" data-cell-err class="mt-2.5 text-xs text-red-400">{{ recCellErr }}</p>
+        <p v-if="recCellErr" data-cell-err class="mt-2.5 text-xs text-red-600 dark:text-red-400">{{ recCellErr }}</p>
         <div class="mt-4 flex gap-2.5">
           <button
             v-if="recCell.index !== null"
             data-cell-del
-            class="rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-red-400 transition active:scale-[0.98]"
+            class="rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 transition active:scale-[0.98]"
             @click="delRecCell"
           >
             删除
@@ -5624,8 +5630,8 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             : '这条原本是' + ({ odd: '单周', even: '双周' }[addForm.week_rule] || '每周') + '，保存后保持原样（循环日程表单不提供单双周选项）。' }}
         </p>
       </div>
-      <p v-if="addWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-500">{{ addWarn }}</p>
-      <p v-if="addErr" class="mt-2.5 text-xs text-red-400">{{ addErr }}</p>
+      <p v-if="addWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-500">{{ addWarn }}</p>
+      <p v-if="addErr" class="mt-2.5 text-xs text-red-600 dark:text-red-400">{{ addErr }}</p>
       <div class="mt-4 flex gap-2.5">
         <button
           class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
@@ -5658,18 +5664,18 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         <button
           type="button"
           class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
-          :class="todoForm.due_date ? 'text-ink' : 'text-ink-dim/50'"
+          :class="todoForm.due_date ? 'text-ink' : 'text-ink-dim'"
           @click="openDateField({ value: todoForm.due_date, onDone: (v) => (todoForm.due_date = v) })"
         >
           {{ todoForm.due_date || '哪天前做完？（可选）' }}
         </button>
       </div>
-      <p v-if="todoErr" class="mt-2.5 text-xs text-red-400">{{ todoErr }}</p>
+      <p v-if="todoErr" class="mt-2.5 text-xs text-red-600 dark:text-red-400">{{ todoErr }}</p>
       <div class="mt-4 flex gap-2.5">
         <button
           v-if="todoForm.id"
           class="rounded-xl border py-2.5 px-4 text-sm font-medium transition active:scale-[0.98]"
-          :class="confirmDelTodo ? 'border-red-400 bg-red-400/10 text-red-500' : 'border-red-200 text-red-400'"
+          :class="confirmDelTodo ? 'border-red-400 bg-red-400/10 text-red-600 dark:text-red-400' : 'border-red-200 text-red-600 dark:text-red-400'"
           @click="onDeleteTodo"
         >
           {{ confirmDelTodo ? '再点一次确认' : '删除' }}
@@ -5702,7 +5708,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         <template v-if="reviewSheet.mode === 'ask'">
           <div class="flex items-baseline justify-between">
             <p class="text-base font-bold">今天收个尾</p>
-            <span data-review-step class="text-[11px] text-ink-dim/70">{{ reviewSheet.step + 1 }} / {{ reviewStepTotal }}</span>
+            <span data-review-step class="text-[11px] text-ink-dim">{{ reviewSheet.step + 1 }} / {{ reviewStepTotal }}</span>
           </div>
           <div class="mt-2 flex gap-1">
             <span
@@ -5713,7 +5719,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             ></span>
           </div>
           <p data-review-q class="mt-4 text-sm font-semibold">{{ QUESTIONS[reviewSheet.step].title }}</p>
-          <p class="mt-1 text-[11px] leading-relaxed text-ink-dim/80">{{ QUESTIONS[reviewSheet.step].hint }}</p>
+          <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">{{ QUESTIONS[reviewSheet.step].hint }}</p>
 
           <!-- 今天状态：五档，点一下就答完 -->
           <div v-if="QUESTIONS[reviewSheet.step].kind === 'mood'" class="mt-4 flex items-center justify-between gap-2">
@@ -5726,16 +5732,16 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               @click="reviewSheet.mood = m.v"
             >
               <span class="text-lg leading-none">{{ m.emoji }}</span>
-              <span class="text-[10px]" :class="reviewSheet.mood === m.v ? 'text-primary-600' : 'text-ink-dim/80'">{{ m.label }}</span>
+              <span class="text-[10px]" :class="reviewSheet.mood === m.v ? 'text-primary-600' : 'text-ink-dim'">{{ m.label }}</span>
             </button>
           </div>
 
           <!-- 没做完的：把未完成待办列出来，让「继续还是放掉」是有据可依的选择 -->
           <div v-else-if="QUESTIONS[reviewSheet.step].kind === 'keep'" class="mt-4">
             <div v-if="undoneTodos.length" class="mb-3 space-y-1.5 rounded-xl bg-ink/5 p-3">
-              <p v-for="t in undoneTodos" :key="t.id" class="truncate text-[12px] text-ink-dim/90">· {{ t.title }}</p>
+              <p v-for="t in undoneTodos" :key="t.id" class="truncate text-[12px] text-ink-dim">· {{ t.title }}</p>
             </div>
-            <p v-else class="mb-3 rounded-xl bg-ink/5 p-3 text-[12px] text-ink-dim/90">今天没有没做完的事，挺好。</p>
+            <p v-else class="mb-3 rounded-xl bg-ink/5 p-3 text-[12px] text-ink-dim">今天没有没做完的事，挺好。</p>
             <div class="flex items-center gap-2">
               <button
                 v-for="c in ['明天接着做', '今天就到这儿']"
@@ -5783,10 +5789,10 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         <template v-else-if="reviewSheet.mode === 'result'">
           <div class="flex items-baseline justify-between">
             <p class="text-base font-bold">今天的日精进</p>
-            <span class="text-[11px] text-ink-dim/70">{{ reviewSheet.record.date }}</span>
+            <span class="text-[11px] text-ink-dim">{{ reviewSheet.record.date }}</span>
           </div>
           <p data-review-summary class="mt-3 whitespace-pre-line rounded-xl bg-ink/5 p-3 text-[12.5px] leading-relaxed text-ink">{{ reviewSheet.record.summary }}</p>
-          <p v-if="reviewMsg" data-review-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-400' : 'text-primary-500'">{{ reviewMsg }}</p>
+          <p v-if="reviewMsg" data-review-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ reviewMsg }}</p>
           <div class="mt-4 flex items-center gap-2">
             <button
               data-review-todo
@@ -5805,16 +5811,16 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         <template v-else>
           <div class="flex items-baseline justify-between">
             <p class="text-base font-bold">日精进 · 全部</p>
-            <span class="text-[11px] text-ink-dim/70">共 {{ reviewHistory.length }} 篇 · 只在本机</span>
+            <span class="text-[11px] text-ink-dim">共 {{ reviewHistory.length }} 篇 · 只在本机</span>
           </div>
-          <p v-if="!reviewHistory.length" class="mt-3 text-[12.5px] leading-relaxed text-ink-dim/90">还没有复盘记录。从今天开始，每晚花 2 分钟收个尾。</p>
+          <p v-if="!reviewHistory.length" class="mt-3 text-[12.5px] leading-relaxed text-ink-dim">还没有复盘记录。从今天开始，每晚花 2 分钟收个尾。</p>
           <div v-else data-review-history-list class="mt-3 max-h-[58vh] space-y-2.5 overflow-y-auto">
             <div v-for="r in reviewHistory" :key="r.date" data-review-history-item class="rounded-xl border border-line p-3">
               <div class="flex items-baseline justify-between">
                 <span class="text-xs font-semibold">{{ r.date }}{{ weekdayLabelOf(r.date) ? ' · ' + weekdayLabelOf(r.date) : '' }}</span>
-                <span class="text-[11px] text-ink-dim/70">{{ moodLabelOf(r.mood) }}</span>
+                <span class="text-[11px] text-ink-dim">{{ moodLabelOf(r.mood) }}</span>
               </div>
-              <p class="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-ink-dim/90">{{ r.summary }}</p>
+              <p class="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-ink-dim">{{ r.summary }}</p>
             </div>
           </div>
         </template>
@@ -5838,7 +5844,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <button
             type="button"
             class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
-            :class="evtForm.date ? 'text-ink' : 'text-ink-dim/50'"
+            :class="evtForm.date ? 'text-ink' : 'text-ink-dim'"
             @click="openDateField({ value: evtForm.date, onDone: (v) => (evtForm.date = v) })"
           >
             {{ evtForm.date || '日期' }}
@@ -5846,7 +5852,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <button
             type="button"
             class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
-            :class="evtForm.start ? 'text-ink' : 'text-ink-dim/50'"
+            :class="evtForm.start ? 'text-ink' : 'text-ink-dim'"
             @click="openTimeField({ value: evtForm.start, onDone: (v) => (evtForm.start = v) })"
           >
             {{ evtForm.start || '几点开始' }}
@@ -5869,8 +5875,8 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
         />
       </div>
-      <p v-if="evtWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-500">{{ evtWarn }}</p>
-      <p v-if="evtErr" class="mt-2.5 text-xs text-red-400">{{ evtErr }}</p>
+      <p v-if="evtWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-500">{{ evtWarn }}</p>
+      <p v-if="evtErr" class="mt-2.5 text-xs text-red-600 dark:text-red-400">{{ evtErr }}</p>
       <div class="mt-4 flex gap-2.5">
         <button
           class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
@@ -5906,7 +5912,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <button
             type="button"
             class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
-            :class="semForm.first_monday ? 'text-ink' : 'text-ink-dim/50'"
+            :class="semForm.first_monday ? 'text-ink' : 'text-ink-dim'"
             @click="openDateField({ value: semForm.first_monday, restrictMonday: true, onDone: (v) => (semForm.first_monday = v) })"
           >
             {{ semForm.first_monday || '选一个周一' }}
@@ -5937,7 +5943,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         />
       </div>
 
-      <p v-if="semErr" class="mt-3 text-xs text-red-400">{{ semErr }}</p>
+      <p v-if="semErr" class="mt-3 text-xs text-red-600 dark:text-red-400">{{ semErr }}</p>
       <div class="mt-4 flex gap-2.5">
         <button
           class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
@@ -6000,7 +6006,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </button>
           <button
             data-clear-confirm
-            class="rounded-xl border border-red-400 bg-red-400/10 py-2.5 text-sm font-medium text-red-500 transition active:scale-[0.98]"
+            class="rounded-xl border border-red-400 bg-red-400/10 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 transition active:scale-[0.98]"
             @click="doClearData"
           >
             确认清除
@@ -6029,7 +6035,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             取消
           </button>
           <button
-            class="rounded-xl border border-red-400 bg-red-400/10 py-2.5 text-sm font-medium text-red-500 transition active:scale-[0.98]"
+            class="rounded-xl border border-red-400 bg-red-400/10 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 transition active:scale-[0.98]"
             @click="doDeleteLecture"
           >
             删除
@@ -6059,7 +6065,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition"
                 :class="onboardStepNo === i + 1
                   ? 'bg-primary-500/10 font-semibold text-primary-600'
-                  : 'text-ink-dim/70'"
+                  : 'text-ink-dim'"
               >
                 <span
                   class="flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold"
@@ -6099,7 +6105,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             <p class="text-sm font-semibold">直接填学期信息，自己加课</p>
             <p class="mt-1 text-xs text-ink-dim">三步走：先填学期与节次表 → 再拍课表截图识别（也可以跳过）→ 核对后入库</p>
           </button>
-          <p v-if="obImportMsg" class="mt-2 px-1 text-xs text-red-500">{{ obImportMsg }}</p>
+          <p v-if="obImportMsg" class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">{{ obImportMsg }}</p>
           </div>
 
           <!-- 第 2 步的引导子页：没配 AI Key 时落这里（第一次用的人都没有 Key）。
@@ -6113,7 +6119,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 拍课表识别是把图片交给 DeepSeek 的图片识别能力，读成「星期 × 第几节 × 课程名」。所以要有一个 API Key —— 它和「课堂纪要」共用同一个，配一次两处都能用。
               </p>
               <label class="mt-3 block">
-                <span class="mb-1 block text-[11px] text-ink-dim/80">DeepSeek API Key（只存在这台设备，不会上传）</span>
+                <span class="mb-1 block text-[11px] text-ink-dim">DeepSeek API Key（只存在这台设备，不会上传）</span>
                 <input
                   v-model="llmCfg.key"
                   data-ob-ai-key
@@ -6122,11 +6128,11 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   spellcheck="false"
                   placeholder="sk-…"
                   enterkeyhint="done"
-                  class="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim/40 focus:border-primary-400"
+                  class="w-full rounded-xl border border-line bg-card px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim focus:border-primary-400"
                   @input="onObAiKey"
                 />
               </label>
-              <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim/60">
+              <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">
                 去 platform.deepseek.com 注册后，在「API Keys」里新建一个，复制粘贴到上面即可；识别一张课表通常只要几分钱。
               </p>
               <button
@@ -6143,7 +6149,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 v-if="llmTest.msg"
                 data-ob-ai-test-msg
                 class="mt-1.5 px-1 text-[11px] leading-relaxed"
-                :class="llmTest.ok ? 'text-primary-500' : 'text-red-400'"
+                :class="llmTest.ok ? 'text-primary-600' : 'text-red-600 dark:text-red-400'"
               >{{ llmTest.msg }}</p>
 
               <button
@@ -6154,7 +6160,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               >
                 保存，去识别课表
               </button>
-              <p v-if="obAiErr" data-ob-ai-err class="mt-2 px-1 text-xs text-red-500">{{ obAiErr }}</p>
+              <p v-if="obAiErr" data-ob-ai-err class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">{{ obAiErr }}</p>
 
               <!-- 退路：不想配 Key 也能直接手动建课表（与识别结果走同一套核对/入库链路） -->
               <button
@@ -6227,7 +6233,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 {{ obRecBusy ? '识别中…（大约十几秒，别退出去）' : '选课表截图 / 拍照识别' }}
               </button>
               <p class="mt-1.5 px-1 text-[11px] text-ink-dim">用已配置的 DeepSeek Key（与课堂纪要共用）；识别结果会先给你逐条核对，改完才入库</p>
-              <p v-if="obRecErr" class="mt-2 px-1 text-xs text-red-500" data-ob-rec-err>{{ obRecErr }}</p>
+              <p v-if="obRecErr" class="mt-2 px-1 text-xs text-red-600 dark:text-red-400" data-ob-rec-err>{{ obRecErr }}</p>
 
               <!-- 手动输入入口：不想识别 / 识别不全时，直接手动补课进核对页 -->
               <button
@@ -6278,7 +6284,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               <p class="text-sm font-semibold">共 {{ recPreview.items.length }} 门课，核对后导入</p>
               <p class="mt-1 text-xs text-ink-dim">上半是整周排布，点空格子加课、点课块改课；下半逐条改细节</p>
 
-              <div v-if="recPreview.warnings.length" class="mt-2.5 rounded-xl bg-amber-500/10 px-3 py-2 text-[11px] text-amber-600">
+              <div v-if="recPreview.warnings.length" class="mt-2.5 rounded-xl bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-600">
                 <span v-for="(w, i) in recPreview.warnings" :key="i" class="block">{{ w }}</span>
               </div>
 
@@ -6294,7 +6300,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                     <div
                       v-if="r.type === 'gap'"
                       data-gap
-                      class="flex items-center gap-1.5 bg-ink/[0.04] px-1 text-[9px] font-medium text-ink-dim/80"
+                      class="flex items-center gap-1.5 bg-ink/[0.04] px-1 text-[10px] font-medium text-ink-dim"
                       :style="{ gridColumn: '1 / -1', gridRow: ri + 1 }"
                     >
                       <span class="h-px flex-1 bg-line/70"></span>
@@ -6308,7 +6314,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                         :style="{ gridColumn: 1, gridRow: ri + 1 }"
                       >
                         <span class="text-[10px] font-semibold text-primary-600/90">{{ r.p.no }}</span>
-                        <span class="mt-0.5 text-[8px] text-ink-dim/80">{{ r.p.start }}</span>
+                        <span class="mt-0.5 text-[9px] text-ink-dim">{{ r.p.start }}</span>
                       </div>
                       <div
                         v-for="wd in recCols"
@@ -6340,7 +6346,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   >
                     <span
                       class="block truncate text-[10px] leading-tight font-semibold"
-                      :class="recGrid.hot.has(it) ? 'text-red-500' : ''"
+                      :class="recGrid.hot.has(it) ? 'text-red-600 dark:text-red-400' : ''"
                       :style="{ color: recGrid.hot.has(it) ? '' : palOf(it.c.title).text }"
                     >{{ it.c.title || '未命名' }}</span>
                   </article>
@@ -6348,7 +6354,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 <p
                   v-if="recOverlapNote"
                   data-rec-conflict
-                  class="mt-2 rounded-xl bg-red-500/10 px-3 py-1.5 text-[11px] leading-snug text-red-500"
+                  class="mt-2 rounded-xl bg-red-500/10 px-3 py-1.5 text-[11px] leading-snug text-red-600 dark:text-red-400"
                 >{{ recOverlapNote }}</p>
               </div>
 
@@ -6400,14 +6406,14 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                           </select>
                         </label>
                       </div>
-                      <p class="mt-1.5 text-[11px]" :class="recTimeRange(it) ? 'text-ink-dim' : 'text-red-400'">
+                      <p class="mt-1.5 text-[11px]" :class="recTimeRange(it) ? 'text-ink-dim' : 'text-red-600 dark:text-red-400'">
                         {{ recTimeRange(it) ? '上课时间 ' + recTimeRange(it) : '节次超出当前节次表，导入时会跳过这门课' }}
                       </p>
                       <div class="mt-2 space-y-2">
                         <input v-model="it.location" maxlength="30" placeholder="地点（可留空）" class="min-w-0 w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
                         <input v-model="it.teacher" maxlength="20" placeholder="教师（可留空）" class="min-w-0 w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
                       </div>
-                      <p v-if="recItemHot(it)" data-item-conflict class="mt-1.5 text-[11px] leading-snug text-red-500">与同一格的另一门课重叠：留一门，或者下面改成别的节次</p>
+                      <p v-if="recItemHot(it)" data-item-conflict class="mt-1.5 text-[11px] leading-snug text-red-600 dark:text-red-400">与同一格的另一门课重叠：留一门，或者下面改成别的节次</p>
                     </div>
                     <button
                       type="button"
@@ -6422,7 +6428,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               </div>
 
               <p v-if="recPreview.notes.length" class="mt-2.5 text-[11px] text-ink-dim">图片里看不清的地方：{{ recPreview.notes.join('；') }}</p>
-              <p v-if="obRecErr" class="mt-2.5 text-xs text-red-400">{{ obRecErr }}</p>
+              <p v-if="obRecErr" class="mt-2.5 text-xs text-red-600 dark:text-red-400">{{ obRecErr }}</p>
 
               <div class="mt-4 flex gap-2.5">
                 <button
@@ -6458,7 +6464,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 >
                   <span class="min-w-0">
                     <span class="block text-sm font-semibold">开学时间</span>
-                    <span class="mt-0.5 block truncate text-[11px]" :class="obStartHint.bad ? 'text-red-400' : 'text-ink-dim'">{{ obStartHint.t }}</span>
+                    <span class="mt-0.5 block truncate text-[11px]" :class="obStartHint.bad ? 'text-red-600 dark:text-red-400' : 'text-ink-dim'">{{ obStartHint.t }}</span>
                   </span>
                   <span class="shrink-0 text-xs font-medium" :class="obForm.first_monday ? 'text-primary-600' : 'text-ink-dim'">{{ obForm.first_monday || '选日期' }}</span>
                 </button>
@@ -6491,7 +6497,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
                 </button>
 
-                <p v-if="obErr" class="mt-2.5 text-xs text-red-400" data-ob-err>{{ obErr }}</p>
+                <p v-if="obErr" class="mt-2.5 text-xs text-red-600 dark:text-red-400" data-ob-err>{{ obErr }}</p>
                 <div class="mt-4 flex gap-2.5">
                   <button
                     class="rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
@@ -6588,14 +6594,14 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   </button>
                 </div>
 
-                <p v-if="obErr" class="mt-2.5 text-xs text-red-400" data-ob-err>{{ obErr }}</p>
+                <p v-if="obErr" class="mt-2.5 text-xs text-red-600 dark:text-red-400" data-ob-err>{{ obErr }}</p>
               </div>
               </Transition>
             </div>
           </div>
           </Transition>
 
-                    <p class="mt-6 text-center text-[11px] text-ink-dim/70">这个选择只记一次，之后随时可以在「我的」页切换示例或导入</p>
+                    <p class="mt-6 text-center text-[11px] text-ink-dim">这个选择只记一次，之后随时可以在「我的」页切换示例或导入</p>
           <input ref="onboardFile" type="file" accept=".json,application/json" class="hidden" @change="onOnboardFile" />
           <input ref="obRecFile" type="file" accept="image/*" class="hidden" @change="onObRecFile" />
         </div>

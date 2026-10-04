@@ -233,7 +233,7 @@ defineExpose({ value })
         type="button"
         :data-wheel-val="v"
         class="flex h-10 w-full shrink-0 cursor-pointer items-center justify-center gap-1 tabular-nums"
-        :class="v === value ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim/60'"
+        :class="v === value ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim'"
         @click="pick(v)"
       >
         {{ v }}<span v-if="unit" class="text-xs font-normal text-ink-dim">{{ unit }}</span>

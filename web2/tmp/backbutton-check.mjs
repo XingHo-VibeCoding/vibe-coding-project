@@ -39,9 +39,10 @@ try {
   const fire = () => page.evaluate(() => window.Capacitor.Plugins.App._fire())
   const exits = () => page.evaluate(() => window.Capacitor.Plugins.App._exited || 0)
   const activeTab = () => page.evaluate(() => {
-    const btns = [...document.querySelectorAll('nav button')]
-    const i = btns.findIndex((b) => b.className.includes('text-primary-500'))
-    return i < 0 ? '' : (btns[i].innerText || '').trim()
+    /* 用 data-active 认当前 tab（原先按 class 里的 text-primary-500 找，
+       2026-10-04 A4 把主色文字换成 primary-600 后这条选择器就失效了） */
+    const b = document.querySelector('nav button[data-active]')
+    return b ? (b.innerText || '').trim() : ''
   })
   const masks = () => page.evaluate(() => document.querySelectorAll('div.fixed.inset-0.bg-black\\/40').length)
 

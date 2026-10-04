@@ -49,9 +49,9 @@ const fire = () => page.evaluate(() => window.Capacitor.Plugins.App._fire())
 const exits = () => page.evaluate(() => window.Capacitor.Plugins.App._exited || 0)
 const overflow = () => page.evaluate(() => document.body.style.overflow)
 const activeTab = () => page.evaluate(() => {
-  const btns = [...document.querySelectorAll('nav button')]
-  const i = btns.findIndex((b) => b.className.includes('text-primary-500'))
-  return i < 0 ? '' : (btns[i].innerText || '').trim()
+  /* 用 data-active 认当前 tab（原先按 class 里的 text-primary-500 找，主色文字换成 primary-600 后会失效） */
+  const b = document.querySelector('nav button[data-active]')
+  return b ? (b.innerText || '').trim() : ''
 })
 const box = (sel) => page.evaluate((s) => {
   const el = document.querySelector(s)

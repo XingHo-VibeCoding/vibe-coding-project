@@ -293,7 +293,7 @@ defineExpose({ display })
             v-memo="[h === hour]"
             type="button"
             class="flex h-10 w-full shrink-0 cursor-pointer items-center justify-center tabular-nums"
-            :class="h === hour ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim/60'"
+            :class="h === hour ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim'"
             @click="pickHour(i)"
           >
             {{ pad(h) }}
@@ -312,7 +312,7 @@ defineExpose({ display })
             v-memo="[m === min]"
             type="button"
             class="flex h-10 w-full shrink-0 cursor-pointer items-center justify-center tabular-nums"
-            :class="m === min ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim/60'"
+            :class="m === min ? 'text-xl font-semibold text-primary-600' : 'text-lg text-ink-dim'"
             @click="pickMin(i)"
           >
             {{ pad(m) }}

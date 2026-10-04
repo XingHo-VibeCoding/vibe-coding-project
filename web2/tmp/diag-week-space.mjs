@@ -51,7 +51,7 @@ const m = await page.evaluate(() => {
     gridSection: r('section.overflow-hidden'),
     gridBody: r('[data-grid]'),
     nav: navB ? { top: +navB.top.toFixed(1), h: +navB.height.toFixed(1) } : null,
-    tabLabel: [...document.querySelectorAll('nav button')].find((b) => b.className.includes('text-primary-500'))?.textContent.trim(),
+    tabLabel: document.querySelector('nav button[data-active]')?.textContent.trim(),
   }
 })
 console.log('空间账:', JSON.stringify(m, null, 1))

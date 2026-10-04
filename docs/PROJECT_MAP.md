@@ -3,7 +3,7 @@
 > 本文件是 AI 助手（DSH / Claude Code / 其他 Agent）的导读。
 > 分工：`AGENTS.md` 管「**怎么和用户配合干活**」（规矩，必须先读），本文件管「**项目是什么、东西在哪、做到哪、有哪些坑**」。两份都读完再动手。
 
-*最后更新：2026-10-04（Day 20，五期 v1.41.7 最小闭环收尾；同日**测试基线归零**：72 个脚本、非 0 退出 0 个）*
+*最后更新：2026-10-04（Day 20，五期 v1.41.7 最小闭环收尾 → **v1.41.8 小屏与暗色可读性修复（A4 全页扫描 278 处 → 0 处）**；同日**测试基线归零**：72 个脚本、非 0 退出 0 个）*
 
 ---
 
@@ -25,7 +25,7 @@ vibe-coding-project/
 ├── js/                  # 主应用核心（见下）
 ├── samples/             # 素材样本
 ├── skills/              # 训练营相关素材
-├── web2/                # 正式版应用（Vite 构建，当前 v1.41.7，已上线）
+├── web2/                # 正式版应用（Vite 构建，当前 v1.41.8，已上线）
 ├── db/                  # schema.sql + seed.sql（PostgreSQL 版，Day 16）
 ├── cloudfunctions/      # 云函数（health=Day15 健康检查，list=Day17 读接口）
 ├── mock-frontend/       # Day15 mock 练习页（线上 = *.tcloudbaseapp.com，不是 web2 本体）
@@ -89,7 +89,8 @@ web2 导出 JSON ──→ 主项目 js/store.js 校验（硬闸门）──→ 
 - **文档同步**：改数据模型或项目范围时，同步更新 设计方案 / `PRD.md` / `TECH_DESIGN.md` 三份。
 - **数据兼容**：动 `store.js` 字段或 `schema_version` 必须带旧数据升级方案，并实测旧数据可读。
 - **验证要实证**：结论要附用户能亲眼确认的证据；web2 发布后的线上实证用版本串/特征串/行为断言，**hash 与字节数不适用**（沙箱重构建，产物必不同）。
-- **测试基线**：`cd web2` 再 `node tmp/day19-baseline.mjs` → 全量 **72 个脚本、非 0 退出 0 个**（2026-10-04 起归零，此前常年红 5 条均已修）。脚本变红**先怀疑脚本自己的陈旧前提**，不是产品坏了：日期敏感（今天没课/周末）、端口写死（dist 静态服务在 **4177**、Vite dev 在 **5180**）、缺 `[data-page="me"]` 作用域（报 `element is outside of the viewport`）、dist 上没有 `/src/…`。排查套路见 `TECH_DESIGN.md` 附录速查最后一行。
+- **界面质量门**：`cd web2` 再 `node tmp/quality-scan.mjs` → **0 处问题**（2 视口 360×640 / 390×844 × 亮/暗 2 主题 × 12 个状态；查异常文案 `NaN` / 横向溢出 / 元素出界 / 触控目标 <24px / 对比度 / 被遮挡 / 浮层超屏）。**改主题色、文案颜色、色板之后必须跑，跑到 0 处**；`SHOT_ALL=1` 出 32 张 `qa-*.png` 肉眼复核。颜色规则见 `TECH_DESIGN.md` §2.2.1（说明文字实色、主色当文字用 `primary-600`、暗色单独看）。
+- **测试基线**：`cd web2` 再 `node tmp/day19-baseline.mjs` → 全量 **72 个脚本、非 0 退出 0 个**（2026-10-04 起归零，此前常年红 5 条均已修）。脚本变红**先怀疑脚本自己的陈旧前提**，不是产品坏了：日期敏感（今天没课/周末）、端口写死（dist 静态服务在 **4177**、Vite dev 在 **5180**）、缺 `[data-page="me"]` 作用域（报 `element is outside of the viewport`）、dist 上没有 `/src/…`。排查套路见 `TECH_DESIGN.md` 附录速查最后一行。**状态断言别 match class 名**（当前 tab 用 `nav button[data-active]`）。
 
 ## 七、新 Agent 的第一个任务（建议）
 

@@ -65,7 +65,7 @@ onBeforeUnmount(() => {
       <span class="min-w-0 flex-1 truncate" :class="current ? '' : 'text-ink-dim/40'">{{ current || placeholder }}</span>
       <svg
         viewBox="0 0 16 16"
-        class="h-3.5 w-3.5 shrink-0 text-ink-dim/50 transition-transform duration-200"
+        class="h-3.5 w-3.5 shrink-0 text-ink-dim transition-transform duration-200"
         :class="open ? 'rotate-180' : ''"
         fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
       ><path d="M4 6l4 4 4-4" /></svg>
@@ -87,7 +87,7 @@ onBeforeUnmount(() => {
               <span class="min-w-0 flex-1 truncate">{{ o.label }}</span>
               <svg
                 v-if="o.id === modelValue"
-                viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-primary-500"
+                viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-primary-600"
                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
               ><path d="M3 8.5l3.5 3.5L13 5" /></svg>
             </button>

@@ -1,0 +1,85 @@
+
+========================================================================
+## 360x640 / light
+========================================================================
+  [today] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 0 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
+  [week] 无问题
+  [week-list] 无问题
+  [me] 无问题
+  [me-open] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 1 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）1 处：44×24 button[data-listen-notify-toggle].relative.h-6.w-11
+  [sheet-evt] 0 处问题 
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：73×28 40分 / 73×28 45分 / 73×28 60分 / 73×28 90分
+  [sheet-todo] 无问题
+  [habit-sheet] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 0 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）2 处：48×24 关闭 / 65×26 ＋ 添加
+  [sheet-review] 无问题
+  [sheet-detail] 无问题
+  [add-pick] 无问题
+  [sheet-add] 无问题
+
+========================================================================
+## 360x640 / dark
+========================================================================
+  [today] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 0 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
+  [week] 无问题
+  [week-list] 无问题
+  [me] 无问题
+  [me-open] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 1 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）1 处：44×24 button[data-listen-notify-toggle].relative.h-6.w-11
+  [sheet-evt] 0 处问题 
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：73×28 40分 / 73×28 45分 / 73×28 60分 / 73×28 90分
+  [sheet-todo] 无问题
+  [habit-sheet] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 0 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）2 处：48×24 关闭 / 65×26 ＋ 添加
+  [sheet-review] 无问题
+  [sheet-detail] 无问题
+  [add-pick] 无问题
+  [sheet-add] 无问题
+
+========================================================================
+## 390x844 / light
+========================================================================
+  [today] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 0 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
+  [week] 无问题
+  [week-list] 无问题
+  [me] 无问题
+  [me-open] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 1 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）1 处：44×24 button[data-listen-notify-toggle].relative.h-6.w-11
+  [sheet-evt] 0 处问题 
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：80×28 40分 / 80×28 45分 / 80×28 60分 / 80×28 90分
+  [sheet-todo] 无问题
+  [habit-sheet] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 0 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）2 处：48×24 关闭 / 65×26 ＋ 添加
+  [sheet-review] 无问题
+  [sheet-detail] 无问题
+  [add-pick] 无问题
+  [sheet-add] 0 处问题 
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：46×28 40分 / 46×28 45分 / 45×28 60分 / 45×28 90分
+
+========================================================================
+## 390x844 / dark
+========================================================================
+  [today] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 0 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
+  [week] 无问题
+  [week-list] 无问题
+  [me] 无问题
+  [me-open] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 1 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）1 处：44×24 button[data-listen-notify-toggle].relative.h-6.w-11
+  [sheet-evt] 0 处问题 
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：80×28 40分 / 80×28 45分 / 80×28 60分 / 80×28 90分
+  [sheet-todo] 无问题
+  [habit-sheet] 0 处问题 （对比度判定另跳过 半透明 1 / 渐变底 0 / 颜色解析失败 0 处）
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）2 处：48×24 关闭 / 65×26 ＋ 添加
+  [sheet-review] 无问题
+  [sheet-detail] 无问题
+  [add-pick] 无问题
+  [sheet-add] 0 处问题 
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：46×28 40分 / 46×28 45分 / 45×28 60分 / 45×28 90分
+
+========================================================================
+合计：0 处问题；截图 32 张（tmp/qa-today-light-360x640.png, tmp/qa-week-light-360x640.png, tmp/qa-week-list-light-360x640.png, tmp/qa-me-light-360x640.png, tmp/qa-me-open-light-360x640.png, tmp/qa-sheet-evt-light-360x640.png, tmp/qa-habit-sheet-light-360x640.png, tmp/qa-sheet-review-light-360x640.png, tmp/qa-today-dark-360x640.png, tmp/qa-week-dark-360x640.png, tmp/qa-week-list-dark-360x640.png, tmp/qa-me-dark-360x640.png, tmp/qa-me-open-dark-360x640.png, tmp/qa-sheet-evt-dark-360x640.png, tmp/qa-habit-sheet-dark-360x640.png, tmp/qa-sheet-review-dark-360x640.png, tmp/qa-today-light-390x844.png, tmp/qa-week-light-390x844.png, tmp/qa-week-list-light-390x844.png, tmp/qa-me-light-390x844.png, tmp/qa-me-open-light-390x844.png, tmp/qa-sheet-evt-light-390x844.png, tmp/qa-habit-sheet-light-390x844.png, tmp/qa-sheet-review-light-390x844.png, tmp/qa-today-dark-390x844.png, tmp/qa-week-dark-390x844.png, tmp/qa-week-list-dark-390x844.png, tmp/qa-me-dark-390x844.png, tmp/qa-me-open-dark-390x844.png, tmp/qa-sheet-evt-dark-390x844.png, tmp/qa-habit-sheet-dark-390x844.png, tmp/qa-sheet-review-dark-390x844.png）
