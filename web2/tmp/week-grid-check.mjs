@@ -19,6 +19,12 @@ function t(name, cond, extra) {
   results.push([name, !!cond])
   console.log((cond ? 'PASS ' : 'FAIL ') + name + (extra ? '  → ' + extra : ''))
 }
+/* 日期敏感断言的出口：不伪装成通过，也不判失败，单独计数并说明原因 */
+let skipped = 0
+function skip(name, why) {
+  skipped++
+  console.log('SKIP ' + name + '  → ' + why)
+}
 
 const URL = 'http://127.0.0.1:4177/'
 
@@ -83,7 +89,10 @@ try {
   const cols = await page.locator('[data-grid] [data-cell]').evaluateAll((els) =>
     [...new Set(els.map((e) => e.dataset.cell.split('-')[0]))].length
   )
-  t('A2. 列数 = 6（周一~周五 + 周六有课自动补）', cols === 6, String(cols))
+  /* 2026-10-04：网格永远给「今天」留一列。今天若是周日、而周日无课，就会多出这一列
+     （6 → 7）。旧断言写死 6，于是每逢周日必红。期望值改成按「今天是否补列」算。 */
+  const expectColsA2 = 6 + (TODAY_WD === 7 ? 1 : 0)
+  t('A2. 列数 = 6（周一~周五 + 周六有课自动补）；今天=周日时再补今天列 = 7', cols === expectColsA2, String(cols))
   t('A3. 行数 = 13 节（每列 13 个格子）', cells / cols === 13, `${cells}/${cols} = ${cells / cols}`)
   const axis1 = await page.locator('[data-axis="1"]').innerText()
   const axis13 = await page.locator('[data-axis="13"]').innerText()
@@ -187,7 +196,11 @@ try {
     return s.scrollWidth <= s.clientWidth + 1
   })))
   const cell2 = await box(page2, '[data-cell="1-0"]')
-  t('G3. 5 列时每列更宽（≥60px，课名容得下）', cell2.width >= 60, `${cell2.width.toFixed(1)}px`)
+  if (TODAY_WD > 5) {
+    skip('G3. 5 列时每列更宽（≥60px，课名容得下）', '今天是周末 → 网格为今天补一列，本轮不是 5 列，宽度断言不适用')
+  } else {
+    t('G3. 5 列时每列更宽（≥60px，课名容得下）', cell2.width >= 60, `${cell2.width.toFixed(1)}px`)
+  }
   await ctx2.close()
 } catch (e) {
   console.log('ERROR:', e.message)
@@ -195,7 +208,7 @@ try {
 }
 
 const fail = results.filter((r) => !r[1])
-console.log(`\n=== 周课表网格：${results.length - fail.length}/${results.length} 通过 ===`)
+console.log(`\n=== 周课表网格：${results.length - fail.length}/${results.length} 通过${skipped ? `（另有 ${skipped} 项日期敏感跳过）` : ''} ===`)
 if (fail.length) console.log('失败：' + fail.map((r) => r[0]).join(' / '))
 await browser.close()
 process.exit(fail.length ? 1 : 0)

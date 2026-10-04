@@ -10,6 +10,10 @@ const { chromium } = require('C:/Users/26502/.workbuddy/binaries/node/workspace/
 let pass = 0, fail = 0
 function t(name, ok) { if (ok) { pass++; console.log('PASS  ' + name) } else { fail++; console.log('FAIL  ' + name) } }
 
+/* 2026-10-04：原来硬编码 http://127.0.0.1:4190/ —— 没有任何东西监听那个端口，
+   脚本必然 ERR_CONNECTION_REFUSED 而永久变红。改成和其它脚本同一口径。 */
+const BASE = process.env.TW_URL || 'http://127.0.0.1:4177/'
+
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
 const errors = []
@@ -47,15 +51,30 @@ await page.addInitScript(`
   localStorage.setItem('web2.onboarded', '1')
 `)
 
-await page.goto('http://127.0.0.1:4190/', { waitUntil: 'domcontentloaded' })
+/* 2026-10-04：文件头写着「让 APK 内真实的 shell.js 顶层桥代码自己执行挂载」，
+   但 readFileSync 一直是**死导入**——dist 构建里不含 shell.js，于是
+   Capacitor.Plugins.Transcriber 永远挂不上，本脚本必然两条 FAIL。
+   这里把壳工程里的真实 shell.js 注入进去（它自带 isNativePlatform 守卫，
+   在假 Capacitor 之后执行，正好复现 App 里的真实时序）。 */
+let shellSrc = ''
+try {
+  shellSrc = readFileSync('D:/Document/Project/vibe-coding-project-app/www-shell/shell.js', 'utf8')
+} catch (e) {
+  console.log('SKIP | 全部断言 ← 找不到壳工程的 www-shell/shell.js（' + e.message + '）')
+  await browser.close()
+  process.exit(0)
+}
+await page.addInitScript(shellSrc)
+
+await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(800)
 await page.locator('nav button').nth(2).click()
 await page.waitForTimeout(400)
 
 // 1. 桥已由 shell.js 顶层代码挂上（模拟环境里 shell.js 是真实文件）
 t('1. shell.js 顶层桥已挂 Plugins.Transcriber', await page.evaluate(() => !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Transcriber)))
-// 2. 网页侧判定支持，转写按钮渲染
-const btn = page.locator('li button:has-text("转写")')
+// 2. 网页侧判定支持，转写按钮渲染（限定「我的」页：今日页也有一张课堂录音卡）
+const btn = page.locator('[data-page="me"] li button:has-text("转写")')
 t('2. 转写按钮渲染（trSupported=true）', await btn.count() >= 1)
 // 3. 点转写 → isModelReady=true 直接识别 → 文字稿落库
 await btn.first().click()
@@ -66,7 +85,7 @@ await page.waitForFunction(() => {
 t('3. 转写完成：状态 transcribed', true)
 t('4. 文字稿经桥正确回传', (await page.evaluate(() => JSON.parse(localStorage.getItem('web2.lectures'))[0].transcript)) === '桥时序验证文字稿。')
 // 5. 完成后文字稿自动展开
-t('5. 界面可见文字稿正文', (await page.locator('text=桥时序验证文字稿。').count()) >= 1)
+t('5. 界面可见文字稿正文', (await page.locator('[data-page="me"]').getByText('桥时序验证文字稿。').count()) >= 1)
 t('6. 无页面报错', errors.length === 0)
 if (errors.length) console.log('  pageerror:', errors[0].slice(0, 200))
 

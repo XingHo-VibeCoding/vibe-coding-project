@@ -1,5 +1,5 @@
 /* M2 第 3/4 步：录音界面 playwright 验证（假 Capacitor 插件注入，浏览器里跑全链路）
-   跑法：先 node serve.js（PORT=4187）再 node tmp/m2-record-ui-check.js
+   跑法：先起 dist 静态服务（默认 4177，可用 TW_URL 覆盖）再 node tmp/m2-record-ui-check.js
    说明：真实录音能力由真机验证（浏览器不承担），这里验的是 UI 状态机 + 数据落盘 + 试听 URL 解析 + 错误路径。
    第 4 步新增：试听 URL 必须是 Filesystem.getUri → convertFileSrc 后的 _capacitor_file_ 形式。 */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
@@ -8,6 +8,11 @@ const URL = 'http://127.0.0.1:4177/'
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 let pass = 0, fail = 0
 const t = (name, cond) => { if (cond) { pass++; console.log('PASS  ' + name) } else { fail++; console.log('FAIL  ' + name) } }
+
+/* 所有定位都限定在「我的」页内：今日页也有一张「课堂录音」卡（按钮文案一模一样），
+   不限定就会点到当前不可见的今日页那张 —— Playwright 会一直报
+   "element is outside of the viewport" 直到 30s 超时（2026-10-04 确诊）。 */
+const me = (pg) => pg.locator('[data-page="me"]')
 
 const EXPECT_URL = 'https://localhost/_capacitor_file_/data/user/0/com.llltl6.schedule/files/lectures/rec_fake.aac'
 
@@ -67,19 +72,19 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL, { waitUntil: 'load' })
   await page.click('nav button >> nth=2') // 我的
   await page.waitForTimeout(400)
-  const entry = page.locator('section', { hasText: '课堂录音' }).first()
+  const entry = me(page).locator('section', { hasText: '课堂录音' }).first()
   t('A1 我的页出现「课堂录音」入口', await entry.isVisible())
-  t('A2 浏览器环境列表为空（无场次）', (await page.locator('text=试听').count()) === 0)
-  await page.click('button:has-text("开始录音")')
+  t('A2 浏览器环境列表为空（无场次）', (await me(page).locator('text=试听').count()) === 0)
+  await me(page).locator('button:has-text("开始录音")').first().click()
   await page.waitForTimeout(300)
-  t('A3 浏览器环境点开始给「需在 App 内使用」提示', await page.locator('text=需在 App 内使用').first().isVisible())
-  t('A4 未产生任何场次', (await page.locator('text=试听').count()) === 0 && (await page.evaluate(() => localStorage.getItem('web2.lectures'))) === null)
+  t('A3 浏览器环境点开始给「需在 App 内使用」提示', await me(page).locator('text=需在 App 内使用').first().isVisible())
+  t('A4 未产生任何场次', (await me(page).locator('text=试听').count()) === 0 && (await page.evaluate(() => localStorage.getItem('web2.lectures'))) === null)
   /* 录音中断标签：种一条未结束的场次 */
   await page.evaluate(() => localStorage.setItem('web2.lectures', JSON.stringify([{ id: 'lec_broken', status: 'recording', started_at: '2026-09-26T03:00:00.000Z', title: '中断的录音', ended_at: null, duration_ms: 0 }])))
   await page.reload({ waitUntil: 'load' })
   await page.click('nav button >> nth=2')
   await page.waitForTimeout(400)
-  t('A5 未正常结束的场次显示「录音中断」', await page.locator('text=录音中断').first().isVisible())
+  t('A5 未正常结束的场次显示「录音中断」', await me(page).locator('text=录音中断').first().isVisible())
   await ctx.close()
 }
 
@@ -93,23 +98,26 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.click('nav button >> nth=2')
   await page.waitForTimeout(400)
 
-  await page.click('button:has-text("开始录音")')
+  await me(page).locator('button:has-text("开始录音")').first().click()
   await page.waitForTimeout(500)
-  t('B1 点开始后按钮变「停止并保存」', await page.locator('button:has-text("停止并保存")').isVisible())
-  t('B2 出现录音中提示', (await page.locator('text=锁屏也会继续录').count()) > 0)
-  t('B3 列表立即出现「录音中」场次', (await page.locator('text=录音中').count()) > 0)
-  const dur1 = await page.locator('.tabular-nums').first().innerText()
+  t('B1 点开始后按钮变「停止并保存」', await me(page).locator('button:has-text("停止并保存")').isVisible())
+  t('B2 出现录音中提示', (await me(page).locator('text=锁屏也会继续录').count()) > 0)
+  t('B3 列表立即出现「录音中」场次', (await me(page).locator('text=录音中').count()) > 0)
+  const dur1 = await me(page).locator('.tabular-nums').first().innerText()
   await page.waitForTimeout(2200)
-  const dur2 = await page.locator('.tabular-nums').first().innerText()
+  const dur2 = await me(page).locator('.tabular-nums').first().innerText()
   t('B4 计时器在走字（' + dur1 + ' → ' + dur2 + '）', dur1 !== dur2)
   t('B5 计时初始为 00:0x 形状', /^00:0\d$/.test(dur1.trim()))
 
-  await page.click('button:has-text("停止并保存")')
+  await me(page).locator('button:has-text("停止并保存")').click()
   await page.waitForTimeout(600)
-  t('B6 停止后按钮回到「开始录音」', await page.locator('button:has-text("开始录音")').isVisible())
-  t('B7 出现「已保存」提示且含时长', (await page.locator('text=已保存').first().innerText()).indexOf('2:03') !== -1)
-  t('B8 场次状态变「已录完 · 待转写」', (await page.locator('text=待转写').count()) > 0)
-  t('B9 计时区消失', (await page.locator('.tabular-nums').count()) === 0)
+  t('B6 停止后按钮回到「开始录音」', await me(page).locator('button:has-text("开始录音")').isVisible())
+  /* 2026-10-04：提示语后来精简成「录音已保存。」（时长搬到列表行里显示），
+     旧断言还在提示语里找 '2:03'，属陈旧断言 —— 改成查「提示还在 + 行里有时长」。 */
+  const savedRow = await me(page).locator('li', { hasText: '待转写' }).first().innerText()
+  t('B7 提示「录音已保存」，且列表行带时长 02:03', (await me(page).locator('text=录音已保存').first().isVisible()) && savedRow.indexOf('2:03') !== -1)
+  t('B8 场次状态变「已录完 · 待转写」', (await me(page).locator('text=待转写').count()) > 0)
+  t('B9 计时区消失', (await me(page).locator('.tabular-nums').count()) === 0)
 
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.lectures') || '[]'))
   t('B10 落盘 1 条场次', saved.length === 1)
@@ -121,21 +129,21 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   t('B15 状态仍为 recording（M3 才推进 transcribing）', lec.status === 'recording')
 
   /* 试听 —— 第 4 步修复核心：相对路径必须转成 _capacitor_file_ URL 才能被 <audio> 播 */
-  await page.click('button:has-text("试听")')
+  await me(page).locator('button:has-text("试听")').first().click()
   await page.waitForTimeout(900)
   const audioSrc = await page.evaluate(() => (window.__audios[0] ? window.__audios[0].src : ''))
   t('B16 试听 URL 是 WebView 可访问形式（_capacitor_file_ + 绝对路径）', audioSrc === EXPECT_URL)
   const fsCalls = await page.evaluate(() => window.__fsCalls)
   t('B17 getUri 以 DATA 目录 + 相对路径调用', fsCalls.some((c) => c[0] === 'getUri' && c[1] === 'DATA' && c[2] === 'lectures/rec_fake.aac'))
   /* 浏览器里 https://localhost 连不上 → 必然播放失败，验证「失败也要说清是哪一环」的探测链路 */
-  const failMsg = await page.locator('text=试听失败').first().innerText().catch(() => '')
+  const failMsg = await me(page).locator('text=试听失败').first().innerText().catch(() => '')
   t('B18 播放失败时就地提示走 stat 探测分支（' + failMsg.slice(0, 28) + '）', fsCalls.some((c) => c[0] === 'stat') && failMsg.indexOf('无法播放') !== -1)
 
   /* 刷新后仍在（模拟 App 重启） */
   await page.reload({ waitUntil: 'load' })
   await page.click('nav button >> nth=2')
   await page.waitForTimeout(500)
-  t('B19 重启后场次仍在且状态为已录完', (await page.locator('text=待转写').count()) > 0)
+  t('B19 重启后场次仍在且状态为已录完', (await me(page).locator('text=待转写').count()) > 0)
   await ctx.close()
 }
 

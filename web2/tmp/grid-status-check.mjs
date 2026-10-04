@@ -29,7 +29,12 @@ const startEnded = new Date(now.getTime() - 90 * 60000) // 已结束：90 分钟
 const endEnded = new Date(now.getTime() - 50 * 60000)
 
 const COURSES = []
-for (let wd = 1; wd <= 5; wd++) {
+/* 2026-10-04：原来只铺周一~周五。今天若是周末（周日），「覆盖当前时刻」的课里
+   没有一门落在今天列 → 蓝框数 0，A1/A2/A3 必红（且这是断言造得不全，不是功能坏）。
+   改成：周一~周五 + 今天（若今天是周末）。 */
+const COVER_WDS = [1, 2, 3, 4, 5]
+if (TODAY_WD > 5) COVER_WDS.push(TODAY_WD)
+for (const wd of COVER_WDS) {
   COURSES.push({ id: `cov${wd}`, type: 'course', semester_id: 'sem1', title: `覆盖课${wd}`, location: '教1-101', weekday: wd, start_time: hm(startCover), duration: 60, week_rule: 'every' })
 }
 COURSES.push({ id: 'endedToday', type: 'course', semester_id: 'sem1', title: '今天已结束', location: '教1-102', weekday: TODAY_WD, start_time: hm(startEnded), duration: Math.round((endEnded - startEnded) / 60000), week_rule: 'every' })
@@ -80,7 +85,7 @@ t('B1 今天已结束的课变暗（past 口径保留）', dimToday.length === 1
 t('B2 别的列同时刻已结束的课不变暗', dimOther.length === 1 && !dimOther[0].dim)
 
 const otherCov = cards.filter((c) => c.title.startsWith('覆盖课') && c.wd !== TODAY_WD)
-t('C1 其他列的覆盖课全部无蓝框', otherCov.length === 4 && otherCov.every((c) => !c.now), `共 ${otherCov.length} 张`)
+t('C1 其他列的覆盖课全部无蓝框', otherCov.length === COVER_WDS.length - 1 && otherCov.every((c) => !c.now), `共 ${otherCov.length} 张 / 应 ${COVER_WDS.length - 1} 张`)
 
 await browser.close()
 const fails = results.filter((r) => !r[1])
