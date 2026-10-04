@@ -3,7 +3,7 @@
 > 本文件是 AI 助手（DSH / Claude Code / 其他 Agent）的导读。
 > 分工：`AGENTS.md` 管「**怎么和用户配合干活**」（规矩，必须先读），本文件管「**项目是什么、东西在哪、做到哪、有哪些坑**」。两份都读完再动手。
 
-*最后更新：2026-10-02（Day 17）*
+*最后更新：2026-10-04（Day 20，五期 v1.41.7 最小闭环收尾）*
 
 ---
 
@@ -25,12 +25,12 @@ vibe-coding-project/
 ├── js/                  # 主应用核心（见下）
 ├── samples/             # 素材样本
 ├── skills/              # 训练营相关素材
-├── web2/                # 正式版应用（Vite 构建，当前 v1.38.0，已上线）
+├── web2/                # 正式版应用（Vite 构建，当前 v1.41.7，已上线）
 ├── db/                  # schema.sql + seed.sql（PostgreSQL 版，Day 16）
 ├── cloudfunctions/      # 云函数（health=Day15 健康检查，list=Day17 读接口）
 ├── mock-frontend/       # Day15 mock 练习页（线上 = *.tcloudbaseapp.com，不是 web2 本体）
 ├── .workbuddy/          # 工具临时区（检查脚本/备份），被 .gitignore 忽略，有意保留不清理
-└── docs/                # api-contract.md（接口契约）、Day15-复盘.md、本文件
+└── docs/                # api-contract.md（接口契约）、Day15-复盘.md、真机复验清单.md、本文件
 ```
 
 `js/` 逐文件（主应用是硬闸门所在）：
@@ -58,6 +58,8 @@ vibe-coding-project/
 | 5 | 复盘 | 🔄 进行中（Day 20，v1.41.7 最小闭环：四题引导 + 本机日精进 + 每晚轻提醒；AI 引导式对话与 `reviews` 云表留后续） |
 
 后端线（跟五期并行）：Day 15 `/api/health` 上线 → Day 16 建库灌数 → Day 17 `/api/list` 读接口上线（契约见 `docs/api-contract.md`，只实现了表里的 1、2 号接口，3–5 号还是占位）。
+
+📱 **攒着等手机连上验的项**（状态框勿扰时段 / 精确提醒引导 / 时间感三件套 / 每日复盘提醒链路）见 `docs/真机复验清单.md`——电脑上验不了，别重复怀疑是代码坏了。
 
 ## 四、数据流（一条线记住）
 
