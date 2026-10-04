@@ -17,6 +17,12 @@ function t(name, cond) {
   results.push([name, !!cond])
   console.log((cond ? 'PASS ' : 'FAIL ') + name)
 }
+/* 日期敏感项：示例数据 web2/src/data/mock.js 的 weekCourses 无周日，
+   周日跑时今天页一条安排都没有，点「今天页第一条安排」的断言无从谈起。 */
+function skip(name, why) {
+  results.push([name, true, why])
+  console.log('SKIP ' + name + ' ← ' + why)
+}
 
 /* 假 App 桥：只为拿到 backButton 回调（与 backbutton-check.mjs 同款） */
 const fakeAppPlugin = `
@@ -90,9 +96,10 @@ try {
 
   /* ---------- C. 遮罩锚点统一：底部浮层各 1 个 data-sheet-mask ---------- */
   /* 2026-10-03 Step 6：外壳收进 components/BottomSheet.vue，App.vue 里不再有字面量，
-     改为「7 处都走 <BottomSheet>」+「锚点写在组件里」两条静态断言。 */
-  t('C1. 静态：7 个浮层都走 BottomSheet，data-sheet-mask 在组件里',
-    (readFileSync(APP, 'utf8').match(/<BottomSheet/g) || []).length === 7 &&
+     改为「N 处都走 <BottomSheet>」+「锚点写在组件里」两条静态断言。
+     2026-10-04 五期复盘加了第 8 个（data-sheet-review），计数由 7 改 8。 */
+  t('C1. 静态：8 个浮层都走 BottomSheet，data-sheet-mask 在组件里',
+    (readFileSync(APP, 'utf8').match(/<BottomSheet/g) || []).length === 8 &&
       readFileSync(SHEET, 'utf8').includes('data-sheet-mask'))
   /* 打卡浮层（今日页「管理 ›」）—— 种子数据带 1 个习惯 */
   await page.locator('nav button', { hasText: '今日' }).click()
@@ -152,15 +159,18 @@ try {
   await page2.goto(BASE, { waitUntil: 'domcontentloaded' })
   await page2.waitForTimeout(900)
   const overflow2 = () => page2.evaluate(() => document.body.style.overflow)
-  t('C5. 课程详情浮层自带 data-sheet-mask（点今天页第一条安排）', await (async () => {
-    if ((await page2.locator('[data-today-item]').count()) === 0) return false
-    await page2.locator('[data-today-item]').first().click()
-    await page2.waitForTimeout(500)
-    const ok = (await page2.locator('[data-sheet-mask]').count()) === 1 && (await page2.locator('[data-sheet-detail]').count()) === 1
-    await page2.locator('[data-sheet-mask]').click({ position: { x: 10, y: 10 } })
-    await page2.waitForTimeout(500)
-    return ok
-  })())
+  if ((await page2.locator('[data-today-item]').count()) === 0) {
+    skip('C5. 课程详情浮层自带 data-sheet-mask（点今天页第一条安排）', '今天页没有安排（示例数据无周日课）')
+  } else {
+    t('C5. 课程详情浮层自带 data-sheet-mask（点今天页第一条安排）', await (async () => {
+      await page2.locator('[data-today-item]').first().click()
+      await page2.waitForTimeout(500)
+      const ok = (await page2.locator('[data-sheet-mask]').count()) === 1 && (await page2.locator('[data-sheet-detail]').count()) === 1
+      await page2.locator('[data-sheet-mask]').click({ position: { x: 10, y: 10 } })
+      await page2.waitForTimeout(500)
+      return ok
+    })())
+  }
   /* 待办编辑浮层（今天页「＋ 添加待办」） */
   await page2.locator('button', { hasText: '添加待办' }).first().click()
   await page2.waitForTimeout(450)
@@ -192,5 +202,6 @@ try {
 await browser.close()
 
 const fails = results.filter(([, ok]) => !ok)
-console.log(`\n结果：${results.length - fails.length} 过 / ${fails.length} 挂`)
+const skips = results.filter(([, , why]) => why)
+console.log(`\n结果：${results.length - fails.length - skips.length} 过 / ${fails.length} 挂${skips.length ? ` / ${skips.length} 跳过（日期敏感）` : ''}`)
 process.exit(fails.length ? 1 : 0)

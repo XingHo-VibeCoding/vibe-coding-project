@@ -344,7 +344,7 @@ web2 (App.vue watch / visibilitychange)
 > **2026-10-03 真机反馈三连修的落点**（对应 1.39.1 → 1.39.2 → 1.39.3 三个包）：① 播放不出声 → 改「读盘 → Blob」；② 导入后"大小对不上" → Filesystem 不传 `encoding`；③ 停止后遍数被清空 → `pauseListen`/`clearListen` 拆开；④ 通知栏没通知 → `enabled` 默认 `true` + 卡上加开关（此前默认 `false` 且界面上没开关，练耳通知永远排不出来）；⑤ 安装器版本号没更新 → 壳 `build.gradle` 同步。
 > **明确不做**：通知里的一键播放——它与 L6「不自动播放」直接冲突，已按 2026-10-02 的用户决策去掉，**不要再加回来**。
 
-> 预留但一期不使用的表：`habits_records`（三期）、`lectures`（二期）、`reviews`（五期）。数据模型已按方案建全，此处不实现。
+> 预留但一期不使用的表：`habits_records`（三期）、`lectures`（二期）、`reviews`（五期）。数据模型已按方案建全，此处不实现。**Day 20 说明**：五期的每日复盘先只落本机 `web2.review`（见 §3.7），**仍未启用 `reviews` 云表**——归档到云端留后续。
 >
 > **四期（练耳）不在此列**：练耳数据走 web2 本机独立键、**不建云表**，字段定义见 §3.5。
 
@@ -362,6 +362,26 @@ web2 (App.vue watch / visibilitychange)
 
 - **只存本机、不进 `exportAll()` / `importAll()`**：备份带走的是课程数据；主题是「这台设备」的偏好，跟着备份走会在换设备导入时被意外覆盖。
 - 皮肤机制：`app.js` 启动时按 `getTheme()` 给 `<html>` 设/删 `data-theme` 属性；颜色全部在 `css/theme-anime.css` 里以变量覆盖实现（只动品牌色系 8 个变量），**没有任何组件级样式**，红绿警示色、字号、圆角均不变。默认主题不设属性，走 `style.css` 原变量——分享出去的链接看到的永远是蓝白版。
+
+### 3.7 `web2.review` / `web2.review.set`（每日复盘，五期 Day 20 定稿）
+
+**`web2.review`** —— 复盘存档数组（本机，**不进导出**）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| date | string `YYYY-MM-DD` | 一天一条；同一天再复盘是**覆盖**，不新增 |
+| mood | number | 状态五档 `1 很累😞 / 2 一般😐 / 3 还行🙂 / 4 不错😄 / 5 很爽🤩`；`0` = 这题跳过了（**与 1 区分**，不是「很差」） |
+| answers | object | `{proud, keep, focus}`：今天最值得记的一件事 / 没做完的 / 明天最重要的一件事；空串 = 跳过 |
+| stats | object | 生成当时的当日数据快照 `{courses, todosDone, todosTotal, habitsDone, habitsTotal, listenToday}`（**只读快照**，用于回看时对得上当时的日精进） |
+| summary | string | 本地模板拼出的日精进正文（不联网） |
+| created_at / updated_at | string ISO | 首次生成 / 最后一次改 |
+
+**`web2.review.set`** —— 设置：`{enabled: boolean, at: 'HH:MM'}`，默认 `{enabled:true, at:'23:00'}`；`at` 只给三档 `21:00 / 22:00 / 23:00`。
+
+- **只存本机、不进 `exportAll()`**：口径同 §3.6 的 `ui`、§3.5 的练耳——复盘是个人反思，导出给主项目的数据保持「课程 + 日程 + 待办」的干净契约；将来要归档再扩 `reviews` 云表（见 §3.5 末尾的预留说明）。
+- **日精进本地生成，不联网**：先一句当日数据（`今天上了 N 节课，待办完成 x/y，打卡 a/b，练耳听满 n 段。`；空项不写，全空写「今天没有排课、也没有待办和打卡」），再按有值追加状态 / 最值得记的 / 没做完的 / 明天最重要的一件事。**AI 润色留后续**（复用 `summarizer.js` 的同一条 LLM 通路，不新开）。
+- **不产生隐式破坏性操作**：四题里只有第四题（明天最重要的一件事）带「转待办」，转出的是**明天**的待办且**连点不叠加**（同内容不重复建）；第三题「没做完的」**只记进日精进、不动任何待办**。
+- **提醒**：渠道 `review-reminder`（importance 3：响、不弹横幅，符合「轻提醒」口径），批次标记 `web2-review`；`noticeItem({date,at})` 生成 `{key:'r_<date>', title:'今天过得怎么样？', ...}`，`noticeDate()` 对「今天这一刻已经过了」的日子直接跳过（**不补发**）。点通知（`extra.src === 'web2-review'`）打开应用并**直达复盘浮层**。与课前提醒（`web2-m5`）、练耳提醒（`web2-listen`）三批互不干扰。
 
 ---
 
@@ -413,7 +433,7 @@ web2 (App.vue watch / visibilitychange)
 > **节次排布规则（Day 8 B 方案）**：`Rules.effectivePeriods(semester)` → 有生效节次表返回数组（缺字段回落默认 10 节），删空返回 `null`（视图不画格子）；`Rules.courseRows(course, periods)` → 返回 `{start, span}`：开始时间精确匹配节次起点就落到那一行，结束时刻落在哪节的区间内就占到哪节，跨几节占几行、至少 1 行。填错时间（不在任何节次内）时就近吸附，卡片仍显示真实时间。轴行高与课程格子共用 CSS 变量 `--period-row-h`，改一处两边一起对齐。
 | `Views.showConflict(list)` / `Views.toast(msg, type)` | 冲突提示 / 轻提示 |
 
-### 4.2 web2 数据层与本机键（Day 15 起开发主线，四期 Day 18 补）
+### 4.2 web2 数据层与本机键（Day 15 起开发主线，四期 Day 18 补，五期 Day 20 补）
 
 > §4.1 的 `Store` / `Rules` / `Ics` / `Views` 是**主项目（根目录 vanilla，Day 14 起封存）**的内部接口。Day 15 起正式版在 `web2/`（Vue 3 + Vite），数据层在 `web2/src/data/`，**不塞进主项目 `store.js`**。
 
@@ -427,7 +447,9 @@ web2 (App.vue watch / visibilitychange)
 | **碎片练耳（四期）** | **新建 `web2/src/data/listen.js`**（纯逻辑）+ **`web2/src/data/listenStore.js`**（平台桥：落盘 / 读盘 / 解析可播地址） | 键 `web2.listen` / `web2.listen.set`；**与 `notify.js` 同构**（纯逻辑 + 插件调用分离，node 单测友好）。`listenStore.js` 用 Capacitor Filesystem：`writeClipBytes`（写 `listen/<file>`、`Directory.Data`、**不传 `encoding`**——传了会被当字符串写，见 §3.5 真机踩坑②）、`readClipBase64` + `makeClipBlobUrl`（读盘 → Blob URL，App.vue 的「播放」按钮走这条）、`statClipFile`（导入后回读大小核对）、`resolveListenUri`（`getUri` → `convertFileSrc`，**只作退回路径**）；拿不到插件时如实返回"不是 App"。字段定义见 §3.5 |
 | **常驻状态框（Day 19）** | **新建 `web2/src/data/statusFrame.js`**（纯逻辑 + 桥） | 键 `web2.frame`（`{enabled}`）/ `web2.frame.marks`（`{date, classDone[], listenDone[]}`，**隔天自动作废**）；本机数据、不进导出。纯逻辑导出 `buildFrameSnapshot()`（把今天的课 / 待办数 / 到期练耳段归一化成原生要画的那份快照）、`sanitizeFrameSettings` / `sanitizeMarks`；桥导出 `frameAvailable` / `pushFrame` / `setFrameEnabled` / `frameRunning` / `consumeFrameActions` / `onFrameActions`（无桥一律 `{ok:false,unsupported:true}` 且不抛）。原生侧与数据流见 §2.4 |
 
-**约定**：本机数据（练耳/录音/打卡/通知/LLM 配置）一律**独立键 + 不进导出**——这类数据是「这台设备上的生命记录」，跟着备份走会在换设备导入时被意外覆盖（口径同 §3.6 的 `ui`）。
+| **每日复盘（五期 Day 20）** | **新建 `web2/src/data/review.js`**（纯逻辑，**不 import 任何模块**，`notify.js` 反向 import 它） | 键 `web2.review`（存档数组）/ `web2.review.set`（`{enabled,at}`）；本机数据、不进导出。纯逻辑导出：`newRecord` / `summarize`（日精进模板，先数据后四题）/ `moodOf` / `sanitizeRecord` / `sanitizeStats` / `upsertReview`（同日覆盖）/ `findReview` / `loadReviews` / `saveReviews` / `sanitizeSettings` / `loadSettings` / `saveSettings` / `noticeItem` / `noticeDate`；渠道常量 `REVIEW_CHANNEL='review-reminder'`、批次标记 `REVIEW_TAG='web2-review'`。字段定义见 §3.7 |
+
+**约定**：本机数据（练耳/录音/打卡/通知/LLM 配置/复盘）一律**独立键 + 不进导出**——这类数据是「这台设备上的生命记录」，跟着备份走会在换设备导入时被意外覆盖（口径同 §3.6 的 `ui`）。
 
 
 **`App`（入口 · app.js）**：绑定按钮与表单事件，串起「取数据 → 校验 → 存数据 → 重渲染」四步。
@@ -662,7 +684,9 @@ flowchart TD
 | **加原生能力 / 改常驻通知（Day 19 状态框起）** | 壳仓三处必须一起改：`vibe-coding-project-app/scripts/native/*.kt`（原生真本）、`scripts/patch-android.js`（拷贝列表 + `PERMS` + manifest 的 service/receiver 声明 + `MainActivity` 模板的 `registerPlugin`）、`web2/src/data/statusFrame.js` + `web2/src/App.vue`（网页侧快照 / 动作接线）、`TECH_DESIGN.md` §2.4、`PRD.md` F13/A14、`大学生日程助手-设计方案.md` 第五节 | **只改 `android/` 里的文件等于白改**（那是 `patch-android.js` 的生成物）。`registerPlugin` 必须在 `super.onCreate` **之前**，否则真机 `unable to find plugin`。常驻用 `specialUse` 型前台服务（**别用 `dataSync`**：Android 15 有 6 小时超时），manifest 要带 `android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE` + 权限 `FOREGROUND_SERVICE_SPECIAL_USE`。**文案在原生算**（后台 WebView 会被冻结）；通知栏**只允许一条常驻**（录音时状态框让位、由录音通知承载）。验证：`web2/tmp/status-frame-check.mjs`（36 项，含假 `StatusFrame` 桥）+ 真机 |
 | **出 APK（Day 18 真机验收起）** | 网页：`web2/package.json` 的 `version`；壳：`vibe-coding-project-app/android/app/build.gradle` 的 `versionCode` / `versionName`；构建：`cd web2 && npm run build` → 壳 `npm run sync` → `cd android` 且 **`JAVA_HOME` 必须是 JDK 21**（`D:\Tools\zulu21.52.203-ca-jdk21.0.12.1-win_x64`，先 `gradlew.bat --stop` 踢掉跑在 JDK 25 上的 daemon）→ `gradlew.bat assembleDebug --console=plain`；归档到壳 `dist-apk\schedule-v<版本>-<日期>.apk`；校验 `web2/tmp/verify-apk.py <APK路径>`（需捆绑 python + `PYTHONIOENCODING=utf-8`） | **两处版号必须一起改**，否则安装器显示不一致；`@capacitor/filesystem` 要 Java 21 工具链，JDK 25 会报 `Cannot find a Java installation … languageVersion=21`；产物时间没刷新就不要复制归档（曾复制出假包） |
 
+| **五期每日复盘加字段 / 改调度（Day 20 起）** | `TECH_DESIGN.md` §3.7 + §4.2、`web2/src/data/review.js`（纯逻辑，**不 import 任何模块**）、`web2/src/data/notify.js`（只加渠道常量 import 与 `createChannel`）、`web2/src/App.vue`（今日页收尾卡 + 「我的」复盘行 + 复盘 `BottomSheet`）、`大学生日程助手-设计方案.md` 第五节、`PRD.md` 五节五期 | **不动主项目 `store.js`、不加云表**（`reviews` 表继续预留）；复盘存档只落本机 `web2.review`，**不进导出**。日精进先本地模板拼，接 AI 润色只换 `summarize` 一处、复用 `summarizer.js` 的同一条 LLM 通路。四题里只有第四题可转待办（转明天、连点不叠加），**第三题只记录绝不动待办**。验证：`web2/tmp/review-check.mjs`（44 项，含 G 段假通知桥排程）、目视 `web2/tmp/review-shot.mjs` |
+
 ---
 
-*最后更新：2026-10-04（**v1.41.6「时间感」三件套**：今日页活进度条 `data-now-bar` + 周课表「现在」游标 `data-now-line`（`nowLineY`，非本周不画）+ 今日页学期进度带 `data-term-ribbon`（`termInfo`，无总周数不出现、无开学日不显示「距期末」）+ 设置里「跟着时间自动换」主题（`web2.theme.auto`，`AUTO_SLOTS` 四档，只在跨时段那一刻接管）；`lively-check.mjs` 31 过 / 0 挂；出包 `schedule-v1.41.6-20261004.apk`）。同日（**v1.41.5 可听时段跟随作息边界**：`listen.js` 新增 `awakeWindow(settings)`，`freeSlots()` 的 `dayFrom/dayTo` 缺省跟随勿扰边界——跨零点勿扰取补集（默认 `23:00–07:00` → `07:00–23:00`），同日勿扰/不设回落 `08:00–22:00`（§3.5 空闲槽层同步）；`listen-unit.mjs` 加 6 项 → **165 过 / 0 挂**，`listen-ui-check` 92/0、`step3-check` 15/0、`today-rec-entry-check` 10/10、`notify-unit-check` 21/0、`status-frame-check` 48/0；出包 `schedule-v1.41.5-20261004.apk`）。同日（**v1.41.4 精确提醒引导**：通知链路新增 `exactAlarmState()` / `askExactAlarm()`（`checkExactNotificationSetting` / `changeExactNotificationSetting`），「我的 → 课前提醒」按需给琥珀色提示 + `data-exact-ask`，授权后重排课前提醒与练耳提醒；老壳/浏览器无此能力时不显示、不影响正常排程；`exact-alarm-check.mjs` 19 过 / 0 挂，并顺手清了 `notify-ui-check.mjs` 一条渠道数陈旧断言 → 28 过 / 0 挂）。同日（**v1.41.3 状态框勿扰字段类型修正**（§2.4 硬性纪律第 4 条、§4.2 字段表同步）：`dndStart/dndEnd` 从 `'HH:MM'` 字符串改成当日分钟数（拿不到就整个省掉这个键，0 保留），原生 `JSONObject.optInt` 不再解析失败回落默认值；`status-frame-check.mjs` 加 A9–A13 → 48 过 / 0 挂）。此前 2026-10-03（**常驻通知栏状态框（Day 19，v1.41.0）**：新增壳仓 `scripts/native/StatusFrame{Store,Service,Receiver,Plugin}.kt` + 网页 `web2/src/data/statusFrame.js`，通知栏常驻一条状态条（以课程为主轴、待办插课间）、三枚按钮、录音时让位成一条录音态通知；`specialUse` 型前台服务 + 快照/待领动作队列的数据流、三处联动纪律见新增 §2.4，§4.2 与附录速查同步。**v1.41.1 真机反馈修正**（§2.4 末尾两条硬性纪律）：按钮动作必须有 App 内可见回执（`data-frame-toast` + 录音中 `data-rec-banner`）；领动作补 `window focus` / Capacitor `appStateChange`·`resume` 与前台 6 秒兜底轮询（下拉通知栏不触发 `visibilitychange`）——`status-frame-check.mjs` 加 C 段 7 项 → 43 过 / 0 挂。**v1.41.2 真机根因修正**（§2.4 硬性纪律第 3 条）：`JSArray.from(JSONArray)` 在 Android 上恒返回 `null`（`JSONObject.put(key,null)` 随即删掉该 key），`frameActions` 事件与 `consumeActions` 两条回传通道只发出 `{}` → 壳仓 `StatusFramePlugin.toJsArray()` 逐项构造；网页 `consumeFrameActions()` 把"回值里没有 `actions` 数组"判成失败并当场弹回执，`initFrame()` 改为先挂监听与 6 秒轮询、再推快照。真机实测（PJE110）动作回传、回执浮层、录音小条 `data-rec-banner` 与真实开录（计时到 40 秒）全部打通；出包 `schedule-v1.41.2-20261003.apk`（37,416,225 B，sha256 `b23e5ab9…c53f3`）。此前同日：界面改版（方案 C）底部 5 tab → 3 tab——今日 / 周课表 / 我的；打卡改今日页浮层、日程清单并进周课表页「其他日程」子视图；今日页重排为行动流；7 个二级页浮层外壳抽成 `web2/src/components/BottomSheet.vue`；背景滚动锁收敛为 `syncBodyScrollLock()`、返回键链补齐三级并加 tab 守卫。此前同日：四期记账口径改为"放满一遍会话自动记账"、停止＝暂停、到点提醒开关默认开；真机踩坑三条）*
+*最后更新：2026-10-04（**v1.41.7 每日复盘最小闭环（五期开工）**：新增 `web2/src/data/review.js`（纯逻辑，**不 import 任何模块**；`notify.js` 反向 import 它的渠道常量）——四题引导（最值得记的一件事 / 状态五档 / 没做完的 / 明天最重要的一件事）、日精进本地模板拼（不联网）、同日**覆盖**式存档、「我的」可回看全部；第四题一键转明天待办（连点不叠加），**第三题只记录、绝不动待办**；键 `web2.review` / `web2.review.set`（新增 §3.7、§4.2 新增行，附录速查新增一行），**不进导出**，`reviews` 云表继续预留；渠道 `review-reminder`（importance 3，轻提醒）+ 批次 `web2-review`，与 `web2-m5` / `web2-listen` 三批互不干扰，点通知直达复盘浮层；`review-check.mjs` **44 过 / 0 挂**；出包 `schedule-v1.41.7-20261004.apk`）。同日（**v1.41.6「时间感」三件套**：今日页活进度条 `data-now-bar` + 周课表「现在」游标 `data-now-line`（`nowLineY`，非本周不画）+ 今日页学期进度带 `data-term-ribbon`（`termInfo`，无总周数不出现、无开学日不显示「距期末」）+ 设置里「跟着时间自动换」主题（`web2.theme.auto`，`AUTO_SLOTS` 四档，只在跨时段那一刻接管）；`lively-check.mjs` 31 过 / 0 挂；出包 `schedule-v1.41.6-20261004.apk`）。同日（**v1.41.5 可听时段跟随作息边界**：`listen.js` 新增 `awakeWindow(settings)`，`freeSlots()` 的 `dayFrom/dayTo` 缺省跟随勿扰边界——跨零点勿扰取补集（默认 `23:00–07:00` → `07:00–23:00`），同日勿扰/不设回落 `08:00–22:00`（§3.5 空闲槽层同步）；`listen-unit.mjs` 加 6 项 → **165 过 / 0 挂**，`listen-ui-check` 92/0、`step3-check` 15/0、`today-rec-entry-check` 10/10、`notify-unit-check` 21/0、`status-frame-check` 48/0；出包 `schedule-v1.41.5-20261004.apk`）。同日（**v1.41.4 精确提醒引导**：通知链路新增 `exactAlarmState()` / `askExactAlarm()`（`checkExactNotificationSetting` / `changeExactNotificationSetting`），「我的 → 课前提醒」按需给琥珀色提示 + `data-exact-ask`，授权后重排课前提醒与练耳提醒；老壳/浏览器无此能力时不显示、不影响正常排程；`exact-alarm-check.mjs` 19 过 / 0 挂，并顺手清了 `notify-ui-check.mjs` 一条渠道数陈旧断言 → 28 过 / 0 挂）。同日（**v1.41.3 状态框勿扰字段类型修正**（§2.4 硬性纪律第 4 条、§4.2 字段表同步）：`dndStart/dndEnd` 从 `'HH:MM'` 字符串改成当日分钟数（拿不到就整个省掉这个键，0 保留），原生 `JSONObject.optInt` 不再解析失败回落默认值；`status-frame-check.mjs` 加 A9–A13 → 48 过 / 0 挂）。此前 2026-10-03（**常驻通知栏状态框（Day 19，v1.41.0）**：新增壳仓 `scripts/native/StatusFrame{Store,Service,Receiver,Plugin}.kt` + 网页 `web2/src/data/statusFrame.js`，通知栏常驻一条状态条（以课程为主轴、待办插课间）、三枚按钮、录音时让位成一条录音态通知；`specialUse` 型前台服务 + 快照/待领动作队列的数据流、三处联动纪律见新增 §2.4，§4.2 与附录速查同步。**v1.41.1 真机反馈修正**（§2.4 末尾两条硬性纪律）：按钮动作必须有 App 内可见回执（`data-frame-toast` + 录音中 `data-rec-banner`）；领动作补 `window focus` / Capacitor `appStateChange`·`resume` 与前台 6 秒兜底轮询（下拉通知栏不触发 `visibilitychange`）——`status-frame-check.mjs` 加 C 段 7 项 → 43 过 / 0 挂。**v1.41.2 真机根因修正**（§2.4 硬性纪律第 3 条）：`JSArray.from(JSONArray)` 在 Android 上恒返回 `null`（`JSONObject.put(key,null)` 随即删掉该 key），`frameActions` 事件与 `consumeActions` 两条回传通道只发出 `{}` → 壳仓 `StatusFramePlugin.toJsArray()` 逐项构造；网页 `consumeFrameActions()` 把"回值里没有 `actions` 数组"判成失败并当场弹回执，`initFrame()` 改为先挂监听与 6 秒轮询、再推快照。真机实测（PJE110）动作回传、回执浮层、录音小条 `data-rec-banner` 与真实开录（计时到 40 秒）全部打通；出包 `schedule-v1.41.2-20261003.apk`（37,416,225 B，sha256 `b23e5ab9…c53f3`）。此前同日：界面改版（方案 C）底部 5 tab → 3 tab——今日 / 周课表 / 我的；打卡改今日页浮层、日程清单并进周课表页「其他日程」子视图；今日页重排为行动流；7 个二级页浮层外壳抽成 `web2/src/components/BottomSheet.vue`；背景滚动锁收敛为 `syncBodyScrollLock()`、返回键链补齐三级并加 tab 守卫。此前同日：四期记账口径改为"放满一遍会话自动记账"、停止＝暂停、到点提醒开关默认开；真机踩坑三条）*
 

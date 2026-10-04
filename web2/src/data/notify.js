@@ -22,6 +22,8 @@
    设置存 web2.notify（本机，不进导出——通知能力是设备相关的，口径同 web2.llm）。 */
 
 import { currentWeekNo, minOf } from './store.js'
+/* 复盘提醒的渠道 id 用 review.js 里那一份（那边同时供 App.vue 排程用），避免同一个字符串写两处 */
+import { REVIEW_CHANNEL } from './review.js'
 
 export const NOTIFY_KEY = 'web2.notify'
 const NOTIFY_DEFAULTS = { enabled: true, minutesBefore: 10 }
@@ -107,6 +109,8 @@ export async function ensureNotifyEnv() {
     await p.createChannel({ id: 'task-done', name: '完成通知', importance: 3 })
     // 练耳复习提醒：与课前提醒同级（要响、要弹横幅），安静时段由练耳自己的勿扰时段兜
     await p.createChannel({ id: LISTEN_CHANNEL, name: '练耳复习提醒', importance: 4 })
+    // 每日复盘提醒：设计口径是「23:00 轻提醒」，所以 importance 3（响、不弹横幅），别把人从桌前拽起来
+    await p.createChannel({ id: REVIEW_CHANNEL, name: '每日复盘提醒', importance: 3 })
     await p.registerActionTypes({
       types: [{ id: 'class-reminder', actions: [{ id: 'START_REC', title: '开始录音' }] }],
     })

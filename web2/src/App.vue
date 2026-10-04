@@ -11,6 +11,7 @@ import { buildIcs, downloadText } from './data/ics.js'
 import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL, exactAlarmState, askExactAlarm } from './data/notify.js'
 import { loadClips, saveClips, loadSettings as loadListenSettings, saveSettings as saveListenSettings, reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey, minOf as minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices, parseIntervals, formatIntervals, intInRange, isTimeStr, DEFAULTS as LISTEN_DEFAULTS } from './data/listen.js'
 import { fileToBase64, writeClipBytes, resolveListenUri, makeClipBlobUrl, statClipFile } from './data/listenStore.js'
+import { loadReviews, saveReviews, upsertReview, findReview, loadSettings as loadReviewSettings, saveSettings as saveReviewSettings, newRecord, summarize as summarizeReview, MOODS, QUESTIONS, noticeItem, noticeDate, REVIEW_TAG, REVIEW_CHANNEL } from './data/review.js'
 /* Day 19 状态框：只依赖 listen.js 的两个小工具（todayKey / minOf），没有循环依赖 */
 import {
   frameAvailable,
@@ -164,6 +165,7 @@ onMounted(() => {
   if (stripRef.value) for (const page of stripRef.value.children) ro.observe(page)
   refreshLectures() // 录音场次列表（二期 M2）
   initListen() // 碎片练耳：列表 + 设置（四期）
+  initReview() // 五期：每日复盘存档 + 设置（纯本机，无桥也能用）
   // 转写中途被杀（重启/冻结后杀进程）的场次回退「待转写」——
   // 状态机不允许 transcribing 重进，不回退就永远没有转写按钮（真机实证）
   let stuckTr = false
@@ -452,9 +454,12 @@ async function initNotify() {
     if (actionId === 'START_REC') startRec() // 幂等：已在录音则 startRec 直接 return
     /* 练耳复习提醒：无按钮，点通知只回「我的」页并把练耳卡展开——**不自动播放**（L6） */
     if (extra && extra.src === LISTEN_TAG) listenOpen.value = true
+    /* 每日复盘提醒（五期）：无按钮，点通知直接把复盘浮层打开 */
+    if (extra && extra.src === REVIEW_TAG) openReview('ask')
   })
   await applyNotifySchedule()
   await applyListenSchedule()
+  await applyReviewSchedule()
 }
 
 /* ---------------- 常驻通知栏状态框（Day 19，路线 3：原生前台服务 specialUse） ----------------
@@ -1163,6 +1168,163 @@ async function applyListenSchedule() {
 }
 /* 导入 / 点「已听」/ 改设置 → 重排（saveClips/loadClips 返回新数组，引用变化即触发） */
 watch([listenClips, listenSettings], () => { applyListenSchedule() })
+
+/* ---------------- 五期：每日复盘（2026-10-04） ----------------
+   它归哪一层、进哪个页：数据层 `web2/src/data/review.js`（纯逻辑 + 本机 localStorage），
+   入口放今日页最底部（晚间主动收个尾）与「我的」页·设置折叠里的「每日复盘」行（开关 / 时间 / 历史）。
+   存档只在本机（键 `web2.review`），**不进主项目导出**——导出给主项目的数据保持课程/日程/待办的干净口径，
+   复盘属于「个人反思」，将来要归档再扩 reviews 表与 store.js。
+   日精进是**模板汇总**（不联网）：把当日课程/待办/打卡/练耳串成一段话，AI 润色留到后面再说。 */
+const reviewSheet = ref(null) // { mode:'ask'|'result'|'history', step, mood, answers, stats, record }
+const reviewHistory = ref([])
+const reviewSettings = ref(loadReviewSettings())
+const reviewMsg = ref('')
+const reviewMsgBad = ref(false)
+const REVIEW_AT_CHOICES = ['21:00', '22:00', '23:00']
+const WD_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+const todayReview = computed(() => findReview(reviewHistory.value, todayStr))
+const reviewStepTotal = QUESTIONS.length
+
+function weekdayLabelOf(dKey) {
+  const d = new Date(String(dKey) + 'T00:00:00')
+  return Number.isNaN(d.getTime()) ? '' : WD_LABELS[d.getDay()] || ''
+}
+function refreshReviews() {
+  reviewHistory.value = loadReviews()
+}
+function setReviewMsg(text, bad = false) {
+  reviewMsg.value = text
+  reviewMsgBad.value = !!bad
+}
+function moodLabelOf(v) {
+  const m = MOODS.find((x) => x.v === Number(v))
+  return m ? `${m.emoji} ${m.label}` : ''
+}
+function initReview() {
+  try {
+    refreshReviews()
+    reviewSettings.value = loadReviewSettings()
+  } catch {
+    reviewHistory.value = []
+  }
+}
+/* 复盘要用的当日快照：课程数 / 待办完成 / 打卡 / 练耳。
+   练耳没有「按天」的账（clip 只有累积 played_count），只能按 last_played_at 落在今天算「今天听过几段」*/
+function reviewStatsNow() {
+  const listened = listenClips.value.filter((c) => String(c.last_played_at || '').slice(0, 10) === todayStr).length
+  return {
+    courses: todayCourses.value.length,
+    todosDone: doneCount.value,
+    todosTotal: todos.value.length,
+    habitsDone: habits.value.filter((h) => h.records && h.records[habitToday]).length,
+    habitsTotal: habits.value.length,
+    listenToday: listened,
+  }
+}
+function openReview(mode = 'ask') {
+  setReviewMsg('')
+  if (mode === 'history') {
+    reviewSheet.value = { mode: 'history' }
+    return
+  }
+  const exist = todayReview.value
+  if (mode === 'result' && exist) {
+    reviewSheet.value = { mode: 'result', record: exist }
+    return
+  }
+  /* 今天已经复盘过就带出旧答案（改一改，而不是从头再问一遍） */
+  reviewSheet.value = {
+    mode: 'ask',
+    step: 0,
+    mood: exist ? exist.mood : 0,
+    answers: Object.assign({ proud: '', keep: '', focus: '' }, exist ? exist.answers : {}),
+    stats: reviewStatsNow(),
+    startedAt: Date.now(),
+  }
+}
+function closeReview() {
+  reviewSheet.value = null
+}
+function reviewSetAnswer(key, val) {
+  const s = reviewSheet.value
+  if (!s) return
+  s.answers[key] = val
+}
+function reviewNext() {
+  const s = reviewSheet.value
+  if (!s || s.mode !== 'ask') return
+  if (s.step < reviewStepTotal - 1) s.step += 1
+  else reviewFinish()
+}
+function reviewBack() {
+  const s = reviewSheet.value
+  if (!s || s.mode !== 'ask' || s.step <= 0) return
+  s.step -= 1
+}
+/* 生成日精进并落盘：同一天重做就覆盖（upsertReview 会把首次 created_at 留下来） */
+function reviewFinish() {
+  const s = reviewSheet.value
+  if (!s) return
+  const rec = newRecord({
+    date: todayStr,
+    mood: s.mood,
+    answers: s.answers,
+    stats: s.stats || reviewStatsNow(),
+    now: Date.now(),
+  })
+  rec.summary = summarizeReview(rec, { weekdayLabel: weekdayLabelOf(todayStr) })
+  reviewHistory.value = upsertReview(reviewHistory.value, rec)
+  saveReviews(reviewHistory.value)
+  refreshReviews()
+  reviewSheet.value = { mode: 'result', record: rec }
+  setReviewMsg('日精进已存好 · 想改随时再来')
+}
+function toggleReviewNotify() {
+  reviewSettings.value = saveReviewSettings(Object.assign({}, reviewSettings.value, { enabled: !reviewSettings.value.enabled }))
+}
+function setReviewAt(t) {
+  if (reviewSettings.value.at === t) return
+  reviewSettings.value = saveReviewSettings(Object.assign({}, reviewSettings.value, { at: t }))
+}
+/* 每晚一条轻提醒：排未来 7 天，每天一条（今天那一刻已过就不排今天，不补发）。
+   与课前提醒、练耳提醒**各用各的标记**（REVIEW_TAG），applySchedule 只清自己那一批；不带按钮。 */
+async function applyReviewSchedule() {
+  if (!notifyOk) return
+  const cfg = reviewSettings.value
+  const now = new Date()
+  const items = []
+  for (let i = 0; i < 7; i += 1) {
+    const dKey = i === 0 ? todayStr : addDaysKey(todayStr, i)
+    const at = noticeDate({ date: dKey, at: cfg.at, now })
+    if (at) items.push(noticeItem({ date: dKey, at }))
+  }
+  await applySchedule(items, { src: REVIEW_TAG, channelId: REVIEW_CHANNEL, actionTypeId: null, enabled: cfg.enabled })
+}
+watch(reviewSettings, () => { applyReviewSchedule() })
+
+/* 「明天最重要的一件事」→ 明天的待办：一句话的产物要落成一件能执行的事 */
+function reviewFocusText() {
+  const s = reviewSheet.value
+  const rec = s && s.record ? s.record : todayReview.value
+  const fromRec = rec && rec.answers ? String(rec.answers.focus || '').trim() : ''
+  if (fromRec) return fromRec
+  return s && s.answers ? String(s.answers.focus || '').trim() : ''
+}
+function reviewAddTodo() {
+  const title = reviewFocusText()
+  if (!title) {
+    setReviewMsg('先写下「明天最重要的一件事」，再转待办。', true)
+    return
+  }
+  if (todos.value.some((t) => !t.done && String(t.title).trim() === title)) {
+    setReviewMsg('明天待办里已经有这条了。')
+    return
+  }
+  addTodo({ title, due_date: tomorrowStr() })
+  reloadDataset()
+  setReviewMsg(`已加进明天待办：${title}`)
+}
 /* 今天要提醒的练耳建议（L2 空闲槽标记）：
    用 notify.js 的排程项（buildScheduleItems 的输出，形态 { at, title, ... }）
    反推今天几点到几点有空 → 空闲槽 ∩ 今日到期音频 → "几点可放几段"。
@@ -2964,6 +3126,8 @@ const nowLineY = computed(() => {
 })
 
 const undoneCount = computed(() => todos.value.filter((t) => !t.done).length)
+/* 五期·每日复盘第 3 题要把「没做完的」摆出来（继续还是放掉得有据可依） */
+const undoneTodos = computed(() => todos.value.filter((t) => !t.done))
 
 /* 状态框（Day 19）：数据变动 → 重推快照。注册点必须在 todayCourses(2431) / listenDue(1088) /
    undoneCount(2760) 之后 —— 这三个 computed 在 setup 里是 const，提前 watch 会撞 TDZ
@@ -3804,6 +3968,47 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </button>
         </div>
         <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-400' : 'text-primary-500'">{{ recMsg }}</p>
+      </section>
+
+      <!-- ===== 每日复盘（五期）=====
+           放今日页最底部：白天它是「收个尾」的入口，晚上 23:00 的轻提醒点开就是它。
+           存档只在本机（web2.review），不进主项目导出。 -->
+      <section data-today-review class="mt-4">
+        <div class="mb-2 flex items-baseline justify-between">
+          <h2 class="text-sm font-semibold text-ink">今天收个尾 <span class="text-xs font-normal text-ink-dim">· 每日复盘</span></h2>
+          <button
+            v-if="reviewHistory.length"
+            data-review-open-history
+            class="text-[11px] text-ink-dim/80 transition active:scale-95"
+            @click="openReview('history')"
+          >日精进 {{ reviewHistory.length }} 篇 ›</button>
+        </div>
+        <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
+          <template v-if="todayReview">
+            <p data-today-review-summary class="whitespace-pre-line text-[12.5px] leading-relaxed text-ink">{{ todayReview.summary }}</p>
+            <div class="mt-3 flex items-center gap-2">
+              <button
+                data-review-start
+                class="rounded-full bg-ink/5 px-3.5 py-1.5 text-xs font-medium transition active:scale-95"
+                @click="openReview('ask')"
+              >改一改</button>
+              <button
+                data-review-open-result
+                class="rounded-full bg-primary-500 px-3.5 py-1.5 text-xs font-medium text-white shadow-md shadow-primary-500/25 transition active:scale-95"
+                @click="openReview('result')"
+              >转待办 / 再看一遍</button>
+            </div>
+          </template>
+          <template v-else>
+            <p class="text-[12.5px] leading-relaxed text-ink-dim/90">花 2 分钟给今天收个尾：今天怎么样、明天最重要的一件事。写完会生成一段「日精进」存下来。</p>
+            <button
+              data-review-start
+              class="mt-3 w-full rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+              @click="openReview('ask')"
+            >开始复盘</button>
+          </template>
+          <p v-if="reviewMsg" data-review-card-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-400' : 'text-primary-500'">{{ reviewMsg }}</p>
+        </div>
       </section>
     </main>
 
@@ -4735,6 +4940,45 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <p v-if="notifyMsg" class="mt-2 text-[11px]" :class="notifyMsgBad ? 'text-red-400' : 'text-primary-500'">{{ notifyMsg }}</p>
         </div>
 
+        <!-- 每日复盘（五期）：每晚一条轻提醒 + 提醒时间 + 日精进历史入口 -->
+        <div data-review-row class="border-t border-line p-4" :class="notifyOk ? '' : 'opacity-50'">
+          <div class="flex items-center gap-3.5">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+              <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h8.5A1.5 1.5 0 0113 4v9.5H4.5A1.5 1.5 0 013 12V2.5z" /><path d="M5.5 6h5M5.5 9h3.5" /></svg>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium">每日复盘</span>
+              <span class="block text-[11px] leading-relaxed text-ink-dim/70">每晚轻提醒一次，点开花 2 分钟收个尾，生成当天的日精进。存档只在本机，不进导出。</span>
+            </span>
+            <button
+              v-if="notifyOk"
+              data-review-toggle
+              class="relative h-6 w-11 shrink-0 rounded-full transition"
+              :class="reviewSettings.enabled ? 'bg-primary-500' : 'bg-ink/15'"
+              :aria-label="reviewSettings.enabled ? '关闭每日复盘提醒' : '打开每日复盘提醒'"
+              @click="toggleReviewNotify"
+            >
+              <span class="absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all" :class="reviewSettings.enabled ? 'left-[22px]' : 'left-0.5'"></span>
+            </button>
+          </div>
+          <div class="mt-3 flex items-center gap-2">
+            <span class="text-[11px] text-ink-dim/80">提醒</span>
+            <button
+              v-for="t in REVIEW_AT_CHOICES"
+              :key="t"
+              :data-review-at="t"
+              class="rounded-full px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
+              :class="reviewSettings.at === t ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink'"
+              @click="setReviewAt(t)"
+            >{{ t }}</button>
+            <button
+              data-review-history
+              class="ml-auto rounded-full bg-ink/5 px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
+              @click="openReview('history')"
+            >日精进 {{ reviewHistory.length }} 篇</button>
+          </div>
+        </div>
+
         <!-- 精确提醒（Android 12+）：没有 SCHEDULE_EXACT_ALARM 时只能排非精确闹钟，系统给最多
              1 小时的浮动窗口，提醒可能晚到。只在真在排提醒、又真没权限时才出现（见 exactHint）；
              允许之后警告撤掉，只留一行回执（exactMsg 还在内存里，下次启动自然清掉）。 -->
@@ -5443,6 +5687,138 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           {{ todoForm.id ? '保存修改' : '添加' }}
         </button>
       </div>
+    </BottomSheet>
+
+    <!-- ===== 每日复盘浮层（五期）=====
+         一页一题（四题、可跳过）→ 生成日精进 → 关键句一键转明天待办；
+         历史模式在同一张浮层里翻（不做第二张浮层）。 -->
+    <BottomSheet
+      :open="!!reviewSheet"
+      sheet-attr="data-sheet-review"
+      @close="closeReview"
+    >
+      <template v-if="reviewSheet">
+        <!-- 四题 -->
+        <template v-if="reviewSheet.mode === 'ask'">
+          <div class="flex items-baseline justify-between">
+            <p class="text-base font-bold">今天收个尾</p>
+            <span data-review-step class="text-[11px] text-ink-dim/70">{{ reviewSheet.step + 1 }} / {{ reviewStepTotal }}</span>
+          </div>
+          <div class="mt-2 flex gap-1">
+            <span
+              v-for="(q, i) in QUESTIONS"
+              :key="q.key"
+              class="h-1 flex-1 rounded-full"
+              :class="i <= reviewSheet.step ? 'bg-primary-500' : 'bg-ink/10'"
+            ></span>
+          </div>
+          <p data-review-q class="mt-4 text-sm font-semibold">{{ QUESTIONS[reviewSheet.step].title }}</p>
+          <p class="mt-1 text-[11px] leading-relaxed text-ink-dim/80">{{ QUESTIONS[reviewSheet.step].hint }}</p>
+
+          <!-- 今天状态：五档，点一下就答完 -->
+          <div v-if="QUESTIONS[reviewSheet.step].kind === 'mood'" class="mt-4 flex items-center justify-between gap-2">
+            <button
+              v-for="m in MOODS"
+              :key="m.v"
+              :data-review-mood="m.v"
+              class="flex flex-1 flex-col items-center gap-1 rounded-xl border py-2.5 transition active:scale-95"
+              :class="reviewSheet.mood === m.v ? 'border-primary-500 bg-primary-50' : 'border-line'"
+              @click="reviewSheet.mood = m.v"
+            >
+              <span class="text-lg leading-none">{{ m.emoji }}</span>
+              <span class="text-[10px]" :class="reviewSheet.mood === m.v ? 'text-primary-600' : 'text-ink-dim/80'">{{ m.label }}</span>
+            </button>
+          </div>
+
+          <!-- 没做完的：把未完成待办列出来，让「继续还是放掉」是有据可依的选择 -->
+          <div v-else-if="QUESTIONS[reviewSheet.step].kind === 'keep'" class="mt-4">
+            <div v-if="undoneTodos.length" class="mb-3 space-y-1.5 rounded-xl bg-ink/5 p-3">
+              <p v-for="t in undoneTodos" :key="t.id" class="truncate text-[12px] text-ink-dim/90">· {{ t.title }}</p>
+            </div>
+            <p v-else class="mb-3 rounded-xl bg-ink/5 p-3 text-[12px] text-ink-dim/90">今天没有没做完的事，挺好。</p>
+            <div class="flex items-center gap-2">
+              <button
+                v-for="c in ['明天接着做', '今天就到这儿']"
+                :key="c"
+                :data-review-keep="c"
+                class="rounded-full px-3.5 py-1.5 text-xs font-medium transition active:scale-95"
+                :class="reviewSheet.answers.keep === c ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink'"
+                @click="reviewSetAnswer('keep', c)"
+              >{{ c }}</button>
+            </div>
+          </div>
+
+          <!-- 自由文本两题 -->
+          <textarea
+            v-else
+            data-review-input
+            rows="3"
+            class="mt-4 w-full rounded-xl border border-line bg-card p-3 text-[13px] leading-relaxed outline-none focus:border-primary-500"
+            :placeholder="QUESTIONS[reviewSheet.step].placeholder || '写一句就行，不想写就跳过'"
+            :value="reviewSheet.answers[QUESTIONS[reviewSheet.step].key]"
+            @input="reviewSetAnswer(QUESTIONS[reviewSheet.step].key, $event.target.value)"
+          ></textarea>
+
+          <div class="mt-4 flex items-center gap-2">
+            <button
+              v-if="reviewSheet.step > 0"
+              data-review-back
+              class="rounded-xl bg-ink/5 px-4 py-2.5 text-sm font-medium transition active:scale-95"
+              @click="reviewBack"
+            >上一步</button>
+            <button
+              data-review-skip
+              class="rounded-xl bg-ink/5 px-4 py-2.5 text-sm font-medium transition active:scale-95"
+              @click="reviewNext"
+            >跳过</button>
+            <button
+              data-review-next
+              class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+              @click="reviewNext"
+            >{{ reviewSheet.step + 1 >= reviewStepTotal ? '生成日精进' : '下一题' }}</button>
+          </div>
+        </template>
+
+        <!-- 日精进（刚生成 / 看今天这篇） -->
+        <template v-else-if="reviewSheet.mode === 'result'">
+          <div class="flex items-baseline justify-between">
+            <p class="text-base font-bold">今天的日精进</p>
+            <span class="text-[11px] text-ink-dim/70">{{ reviewSheet.record.date }}</span>
+          </div>
+          <p data-review-summary class="mt-3 whitespace-pre-line rounded-xl bg-ink/5 p-3 text-[12.5px] leading-relaxed text-ink">{{ reviewSheet.record.summary }}</p>
+          <p v-if="reviewMsg" data-review-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-400' : 'text-primary-500'">{{ reviewMsg }}</p>
+          <div class="mt-4 flex items-center gap-2">
+            <button
+              data-review-todo
+              class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
+              @click="reviewAddTodo"
+            >「明天最重要的一件事」转待办</button>
+            <button
+              data-review-done
+              class="rounded-xl bg-ink/5 px-4 py-2.5 text-sm font-medium transition active:scale-95"
+              @click="closeReview"
+            >完成</button>
+          </div>
+        </template>
+
+        <!-- 日精进历史 -->
+        <template v-else>
+          <div class="flex items-baseline justify-between">
+            <p class="text-base font-bold">日精进 · 全部</p>
+            <span class="text-[11px] text-ink-dim/70">共 {{ reviewHistory.length }} 篇 · 只在本机</span>
+          </div>
+          <p v-if="!reviewHistory.length" class="mt-3 text-[12.5px] leading-relaxed text-ink-dim/90">还没有复盘记录。从今天开始，每晚花 2 分钟收个尾。</p>
+          <div v-else data-review-history-list class="mt-3 max-h-[58vh] space-y-2.5 overflow-y-auto">
+            <div v-for="r in reviewHistory" :key="r.date" data-review-history-item class="rounded-xl border border-line p-3">
+              <div class="flex items-baseline justify-between">
+                <span class="text-xs font-semibold">{{ r.date }}{{ weekdayLabelOf(r.date) ? ' · ' + weekdayLabelOf(r.date) : '' }}</span>
+                <span class="text-[11px] text-ink-dim/70">{{ moodLabelOf(r.mood) }}</span>
+              </div>
+              <p class="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-ink-dim/90">{{ r.summary }}</p>
+            </div>
+          </div>
+        </template>
+      </template>
     </BottomSheet>
 
     <!-- 独立日程添加面板：今日视图「＋ 添加日程」唤起 -->

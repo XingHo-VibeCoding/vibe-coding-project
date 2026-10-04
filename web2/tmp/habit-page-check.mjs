@@ -69,7 +69,12 @@ t('5. 宽限期内未打的历史格全部 open', openKeys.length === expectOpen
 if (!IS_MONDAY) {
   /* 今天周一时「明天」在本周内是 future；其余天同理——直接取本周最后一天（周日）判断 */
   const SUN = (() => { const d = new Date(MONDAY + 'T00:00:00'); d.setDate(d.getDate() + 6); return keyOf(d) })()
-  t('6. 本周日（未来）→ future', (await stateOf(SUN)) === 'future', await stateOf(SUN))
+  if (SUN === TODAY) {
+    /* 今天就是周日时，本周最后一格＝今天，本周内根本没有「未来」格可测 */
+    console.log('SKIP | 6. 本周日（未来）→ future（今天恰是周日，本周没有未来格）')
+  } else {
+    t('6. 本周日（未来）→ future', (await stateOf(SUN)) === 'future', await stateOf(SUN))
+  }
 }
 
 /* 7. 补卡：点第一个 open 格 → 变 back，落盘 backfilled */

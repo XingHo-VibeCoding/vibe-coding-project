@@ -65,11 +65,11 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.goto(URL, { waitUntil: 'load' })
   await page.waitForTimeout(1000)
   const n = await page.evaluate(() => window.__notify)
-  t('A1 建了三个通知渠道（课前提醒 + 完成通知 + 练耳复习提醒）', n.channels.join() === 'class-reminder,task-done,listen-reminder')
+  t('A1 建了四个通知渠道（课前提醒 + 完成通知 + 练耳复习提醒 + 每日复盘提醒）', n.channels.join() === 'class-reminder,task-done,listen-reminder,review-reminder', n.channels.join())
   t('A2 注册了带「开始录音」按钮的 action 组', n.actionTypes.includes('class-reminder'))
   t('A3 已有权限时不重复申请（permReq=0）', n.permReq === 0)
   t('A4 按示例课表排了程（>10 条）', n.scheduled.length > 10)
-  t('A5 每条都带渠道 + actionTypeId + 本应用标记', n.scheduled.every((x) => x.channelId === 'class-reminder' && x.actionTypeId === 'class-reminder' && x.extra && x.extra.src === 'web2-m5'))
+  t('A5 课前提醒那批每条都带渠道 + actionTypeId + 本应用标记', n.scheduled.filter((x) => x.extra && x.extra.src === 'web2-m5').length > 0 && n.scheduled.filter((x) => x.extra && x.extra.src === 'web2-m5').every((x) => x.channelId === 'class-reminder' && x.actionTypeId === 'class-reminder'))
   t('A6 排程时刻都是未来', n.scheduled.every((x) => new Date(x.schedule.at).getTime() > Date.now() - 60000))
   await page.locator('nav button', { hasText: '我的' }).click() // 2026-10-02 加第 4 个 tab 后序号会变，按文案选
   await page.waitForTimeout(400)
@@ -86,7 +86,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.click('button[aria-label="课前提醒开关"]')
   await page.waitForTimeout(400)
   let n2 = await page.evaluate(() => window.__notify)
-  t('B1 关开关后清空了已排通知', n2.cancelled.length > 0 && n2.scheduled.length === 0)
+  t('B1 关开关后清空了课前提醒那批（练耳/复盘那几批各归各的，不动）', n2.cancelled.length > 0 && n2.scheduled.filter((x) => x.extra && x.extra.src === 'web2-m5').length === 0)
   t('B2 开关视觉为关', (await page.locator('button[aria-label="课前提醒开关"]').getAttribute('class')).includes('bg-ink/15'))
 
   /* ---------- C：开回 + 改 15 分钟 → 重排 ---------- */
