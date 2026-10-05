@@ -30,10 +30,18 @@ ok('「今日」上的未完成徽标还在', /\d/.test(labels[0]))
 console.log('\n[B] 课表页：周课表 / 日程清单 分段')
 await page.locator('nav button', { hasText: '周课表' }).click()
 await page.waitForTimeout(500)
-ok('分段控件存在', await page.locator('[data-week-sub]').count() === 1)
+/* Stage 8：旧的 [data-week-sub] 分段控件已整条移除，顶部改成「周次切换 + ＋ 选单入口」。
+   断言守的是同一件事：顶部导航骨架存在（原来叫分段控件、现在叫周次切换+＋）。 */
+ok('顶部是周次切换 + ＋ 选单入口（旧分段控件已移除）',
+  await page.locator('[data-week-label]').count() === 1
+  && await page.locator('[data-week-add]').count() === 1
+  && await page.locator('[data-week-sub]').count() === 0)
 ok('默认停在「周课表」', await page.locator('[data-week-grid], [data-week-label]').count() > 0)
 const listVisibleBefore = await page.locator('[data-list-page]').isVisible().catch(() => false)
 ok('默认不显示日程清单', !listVisibleBefore)
+/* [data-week-sub-list] 现在只在 ＋ 选单里出现，先点 ＋ 开选单再点该项 */
+await page.$eval('[data-week-add]', (el) => el.click())
+await page.waitForTimeout(300)
 await page.locator('[data-week-sub-list]').click()
 await page.waitForTimeout(400)
 ok('切到「日程清单」后清单出现', await page.locator('[data-list-page]').isVisible())

@@ -142,13 +142,23 @@ try {
   await page.waitForTimeout(700)
   await page.locator('nav button', { hasText: '周课表' }).click()
   await page.waitForTimeout(400)
-  await page.locator('[data-mine-rec]').click()
+  /* Stage 8：课表页识别入口收进「＋」选单，进识别页要走 ＋ → 选单里的识别项。 */
+  await page.locator('[data-week-add]').click()
+  await page.waitForTimeout(300)
+  await page.locator('[data-week-menu-scan]').click()
   await page.waitForTimeout(400)
   t('I1. 课表页识别入口、缺 Key → 落到配置页（不再只给红字）', await page.locator('[data-ob-ai-key]').isVisible())
   t('I2. mine 模式下配置页给「取消识别」出口', await page.locator('[data-mine-rec-cancel]').isVisible())
   await page.locator('[data-mine-rec-cancel]').click()
   await page.waitForTimeout(400)
-  t('I3. 取消后整层关掉、回到课表页', await page.locator('[data-mine-rec]').isVisible())
+  /* I3 语义不变：取消后整层关掉、回到课表页。改版后识别入口在选单里，先确认「＋」在，
+     再点开选单确认识别入口可达。 */
+  const backAddI3 = await page.locator('[data-week-add]').isVisible()
+  if (!(await page.locator('[data-week-menu]').count())) {
+    await page.locator('[data-week-add]').click()
+    await page.waitForTimeout(300)
+  }
+  t('I3. 取消后整层关掉、回到课表页（＋ 在、选单里识别入口可达）', backAddI3 && (await page.locator('[data-mine-rec]').isVisible()))
   await ctx.close()
 
   /* ============ ⑩ 识别页被兜底拦进配置页 → 配好滑回识别页（反向动画） ============ */

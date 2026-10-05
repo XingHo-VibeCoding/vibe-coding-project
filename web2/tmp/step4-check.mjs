@@ -2,8 +2,9 @@
    2026-10-05 Stage 6：「我的」页从功能堆砌改成索引页（1 行学期 + 4 个入口），
    设置内容搬进 data-sub="settings" 的全屏二级页。本脚本随之把「折叠」断言换成「二级页」断言。
    断言：
-   ① 课表页右上「＋」= 拍课表识别入口（就是原来的 data-mine-rec，另带 data-week-add）；
-      「我的」页不再有识别入口；切到「其他日程」子视图时 ＋ 不出现；点它能进出识别流程。
+   ① 课表页右上「＋」= 选单开关（data-week-add）；点开选单里有「拍课表识别」一项，
+      它沿用旧锚点 data-mine-rec，点它才进识别流程。「我的」页不再有识别入口；
+      ＋ 在周课表 / 其他日程两个子视图里都在（它是这一行的固定成员，不属于任一侧）。
    ② 「我的」索引页不再常显任何设置正文；推入设置二级页后主题入口恰一处（色点 4 个、
       点色点真换肤、点明暗按钮真换主题）；数据类入口在设置二级页里、且在设置正文之外。
    ③ 「我的」索引页块序 = 学期行 → 4 个入口（录音 → 练耳 → 待办 → 设置），不再出现功能正文。
@@ -42,19 +43,32 @@ t('A2. 「我的」页已无识别入口 / 拍课表识别文案',
   && !(await ME.innerText()).includes('拍课表识别'))
 await goWeek()
 const plus = page.locator('[data-week-add]')
-t('A3. 课表页有「＋」入口，且沿用 data-mine-rec 锚点',
-  (await plus.count()) === 1 && (await page.locator('[data-mine-rec]').count()) === 1)
+/* Stage 8：＋ 不再是识别入口本体，只是选单开关；识别项搬进 [data-week-menu]。
+   已开则不再点（否则会关掉）。 */
+const openWeekMenu = async () => {
+  if ((await page.locator('[data-week-menu]').count()) === 0) {
+    await page.$eval('[data-week-add]', (el) => el.click())
+    await page.waitForTimeout(300)
+  }
+}
+await openWeekMenu()
+const scanItem = page.locator('[data-week-menu] [data-mine-rec]')
+t('A3. 课表页 ＋ 恰 1 个；点开后选单里「拍课表识别」（data-mine-rec）恰 1 个且可见',
+  (await plus.count()) === 1 && (await scanItem.count()) === 1 && (await scanItem.isVisible()))
 const box = await plus.boundingBox()
 t('A4. ＋ 热区 ≥44×44', !!box && box.width >= 44 && box.height >= 44, box && `${Math.round(box.width)}×${Math.round(box.height)}`)
 t('A5. ＋ 有无障碍名（aria-label）', (await plus.getAttribute('aria-label') || '').includes('拍课表识别'))
+await openWeekMenu()
 await page.locator('[data-week-sub-list]').click()
 await page.waitForTimeout(350)
-t('A6. 切到「其他日程」子视图时 ＋ 不出现', (await page.locator('[data-week-add]').count()) === 0)
+t('A6. 切到「其他日程」子视图时 ＋ 仍在（它是这行的固定成员，两视图共用同一颗）',
+  (await page.locator('[data-week-add]').count()) === 1)
 await page.locator('[data-week-sub-week]').click()
 await page.waitForTimeout(350)
 
-// 进识别流程 → 取消 → 回到课表页
-await page.locator('[data-week-add]').click()
+// 进识别流程 → 取消 → 回到周课表视图
+await openWeekMenu()
+await page.locator('[data-week-menu-scan]').click()
 await page.waitForTimeout(500)
 const inFlow = (await page.locator('[data-ob-summary]').count()) > 0 || (await page.locator('[data-ob-ai-key]').count()) > 0
 t('A7. 点 ＋ 真的进识别页（摘要页或缺 Key 的配置页）', inFlow)

@@ -72,21 +72,39 @@ console.log('B 明细:', JSON.stringify(B))
 t('B1 网格底边在底部导航之上（≥6px 间隙）', B.gap >= 6, `间隙 ${B.gap}px`)
 t('B2 网格填满剩余空间（间隙 ≤14px，不留大空档）', B.gap <= 14, `间隙 ${B.gap}px`)
 
-/* ---- H 锁死 + 紧凑头部（2026-10-01 用户要求：头部多缩、课表锁死） ---- */
+/* ---- H 锁死 + 课表页问候卡收起（Stage 8 起：课表页不要那张与今日页重复的问候卡，
+        整张头部在课表页收成 0 高，网格拿回整屏；今日页头部照旧） ---- */
 const H = await page.evaluate(() => {
-  const h = document.querySelector('header').getBoundingClientRect()
+  const hdr = document.querySelector('header')
+  const wrap = hdr && hdr.parentElement
+  const main = document.querySelector('main[data-page="week"]')
+  /* 问候语「可见」= 真的能被点到：header 被 0fr + overflow:hidden 裁掉后，
+     h1 自己的 rect 仍是布局原值（height>0、top 在视口里），只能问命中测试。 */
+  let greetingVisible = false
   const h1 = document.querySelector('header h1')
+  if (h1) {
+    const r = h1.getBoundingClientRect()
+    const cx = r.left + r.width / 2
+    const cy = r.top + r.height / 2
+    if (r.width > 0 && r.height > 0 && cy >= 0 && cy < window.innerHeight) {
+      const hit = document.elementFromPoint(cx, cy)
+      greetingVisible = !!(hit && hdr.contains(hit))
+    }
+  }
   return {
-    headerH: +h.height.toFixed(1),
-    h1Size: getComputedStyle(h1).fontSize,
+    headerVisibleH: wrap ? +wrap.getBoundingClientRect().height.toFixed(1) : -1,
+    headerNaturalH: +hdr.getBoundingClientRect().height.toFixed(1),
+    mainTop: main ? +main.getBoundingClientRect().top.toFixed(1) : -1,
+    greetingVisible,
     locked: document.body.style.overflow === 'hidden',
     scrollable: document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight,
   }
 })
 console.log('H 明细:', JSON.stringify(H))
 t('H1 周课表页锁死文档滚动（body overflow hidden）', H.locked, `scrollable=${H.scrollable}px`)
-t('H2 紧凑头部生效（header ≤115px，旧版 ~140px）', H.headerH <= 115, `${H.headerH}px`)
-t('H3 问候语降为单行小字号（紧凑态）', parseFloat(H.h1Size) < 24, H.h1Size)
+t('H2 课表页问候卡收起（可见高度 ≤2px，卡片本体仍在 DOM 里只是被裁掉）', H.headerVisibleH <= 2, `可见 ${H.headerVisibleH}px / 自然高 ${H.headerNaturalH}px`)
+t('H3 课表页没有可见的问候语（今日页那句不在这里重复）', H.greetingVisible === false, `greetingVisible=${H.greetingVisible}`)
+t('H4 课表页从页面顶端开始（收起的头部不留空白）', H.mainTop <= 2, `mainTop=${H.mainTop}px`)
 
 /* ---- C/D/E 卡片文字多行 ---- */
 const cards = await page.evaluate((longName) => {

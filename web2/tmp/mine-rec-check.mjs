@@ -85,16 +85,30 @@ try {
   await page.goto(URL, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
 
+  /* Stage 8：识别入口的路径从「点 ＋ 直接进识别页」改成「点 ＋ 打开选单 → 点选单里的识别项」。
+     语义不变——入口仍从课表页右上「＋」出发，只是多一层选单，所以断言前先点开选单。 */
+  const ensureWeekMenu = async () => {
+    if (!(await page.locator('[data-week-menu]').count())) {
+      await page.locator('[data-week-add]').click()
+      await page.waitForTimeout(300)
+    }
+  }
+  const enterMineRec = async () => {
+    await ensureWeekMenu()
+    await page.locator('[data-week-menu-scan]').click()
+    await page.waitForTimeout(400)
+  }
+
   // 1. 入口
   t('A1. 已引导用户直接进应用（无引导层）', !(await page.locator('text=欢迎来到日程助手').isVisible().catch(() => false)))
   const mineNav = page.locator('nav button', { hasText: '周课表' })
   await mineNav.click()
   await page.waitForTimeout(400)
-  t('A2. 课表页右上「＋」有识别入口', await page.locator('[data-mine-rec]').isVisible())
+  await ensureWeekMenu()
+  t('A2. 课表页右上「＋」选单里有识别入口', await page.locator('[data-mine-rec]').isVisible())
 
-  // 2. 点开 → 识别页：换算表用当前学期的
-  await page.locator('[data-mine-rec]').click()
-  await page.waitForTimeout(400)
+  // 2. 进识别页：换算表用当前学期的
+  await enterMineRec()
   const sum = (await page.locator('[data-ob-summary]').innerText()).replace(/\s+/g, ' ')
   console.log('   mine 识别页摘要：', sum)
   t('B1. 摘要用学期节次表（共 10 节）', sum.includes('共 10 节'))
@@ -105,12 +119,15 @@ try {
   // 3. 取消识别
   await page.locator('[data-mine-rec-cancel]').click()
   await page.waitForTimeout(400)
-  t('C1. 取消后回到应用（课表页可见）', await page.locator('[data-mine-rec]').isVisible())
+  /* C1 语义不变：取消后回到课表页。Stage 8 后识别入口收进选单，所以先确认「＋」在，
+     再点开选单确认识别入口仍可达（等价于旧版直接断言 [data-mine-rec] 可见）。 */
+  const backAdd = await page.locator('[data-week-add]').isVisible()
+  await ensureWeekMenu()
+  t('C1. 取消后回到课表页（＋ 在、选单里识别入口仍可达）', backAdd && (await page.locator('[data-mine-rec]').isVisible()))
   t('C2. 引导层已关闭', !(await page.locator('[data-ob-summary]').isVisible().catch(() => false)))
 
   // 4. 再进 → 识别 → 确认页
-  await page.locator('[data-mine-rec]').click()
-  await page.waitForTimeout(300)
+  await enterMineRec()
   await page.locator('input[accept="image/*"]').setInputFiles(IMG)
   await page.waitForTimeout(1000)
   t('D1. 进入核对页', await page.locator('text=核对后导入').isVisible())

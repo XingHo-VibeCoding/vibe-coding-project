@@ -44,6 +44,11 @@ const LP = page.locator('[data-list-page]')
 async function openOther(p) {
   await p.locator('nav button', { hasText: '周课表' }).click()
   await p.waitForTimeout(450)
+  /* Stage 8：[data-week-sub-list] 收进 ＋ 选单，先点 ＋ 开选单（已开则不重复点，否则会关掉） */
+  if ((await p.locator('[data-week-menu]').count()) === 0) {
+    await p.$eval('[data-week-add]', (el) => el.click())
+    await p.waitForTimeout(300)
+  }
   await p.locator('[data-week-sub-list]').click()
   await p.waitForTimeout(500)
 }
@@ -72,6 +77,8 @@ await hint.click()
 await page.waitForTimeout(500)
 t('B2. 点提示行 → 切回周课表（清单消失、周次条回来）',
   (await page.locator('[data-week-label]').count()) === 1 && (await page.locator('[data-list-page]').count()) === 0)
+await page.$eval('[data-week-add]', (el) => el.click())
+await page.waitForTimeout(300)
 await page.locator('[data-week-sub-list]').click()
 await page.waitForTimeout(500)
 

@@ -274,7 +274,8 @@ const tab = async (p, label) => { await p.locator('nav button', { hasText: label
 const waitSheet = async (p, sel) => { try { await p.locator(sel).first().waitFor({ state: 'visible', timeout: 2500 }); return true } catch { return false } }
 
 /* 「加课程 / 加循环日程」菜单是**长按周网格空格子**长出来的（App.vue:3451 gridDown → 400ms → firePick），
-   不是点按钮；`[data-week-add]` 是「拍课表识别」的另一个入口，点它会进识别页而不是这个菜单。 */
+   不是点按钮；`[data-week-add]` 现在打开的是「＋ 选单」（Stage 8），拍课表识别是选单里的一项
+   （data-week-menu-scan / data-mine-rec），不是点它直接进识别页。 */
 async function openAddPick(p) {
   await tab(p, '周课表')
   const cells = p.locator('main[data-page="week"] [data-cell]')
@@ -300,7 +301,7 @@ async function openAddPick(p) {
 const STATES = [
   { id: 'today', scope: null, open: async (p) => { await tab(p, '今日') } },
   { id: 'week', scope: null, open: async (p) => { await tab(p, '周课表') } },
-  { id: 'week-list', scope: null, open: async (p) => { await tab(p, '周课表'); await p.locator('[data-week-sub-list]').first().click(); await p.waitForTimeout(420) } },
+  { id: 'week-list', scope: null, open: async (p) => { await tab(p, '周课表'); await p.locator('[data-week-add]').first().click(); await p.waitForTimeout(300); await p.locator('[data-week-sub-list]').first().click(); await p.waitForTimeout(420) } },
   { id: 'me', scope: null, open: async (p) => { await tab(p, '我的') } },
   {
     id: 'me-open', scope: null, open: async (p) => {
@@ -316,7 +317,9 @@ const STATES = [
   { id: 'sheet-evt', scope: '[data-sheet-evt]', open: async (p) => { await tab(p, '今日'); await p.locator('button', { hasText: '添加日程' }).first().click(); await waitSheet(p, '[data-sheet-evt]') } },
   { id: 'sheet-todo', scope: '[data-sheet-todo]', open: async (p) => { await tab(p, '今日'); await p.locator('button', { hasText: '添加待办' }).first().click(); await waitSheet(p, '[data-sheet-todo]') } },
   { id: 'habit-sheet', scope: '[data-habit-sheet]', open: async (p) => { await tab(p, '今日'); await p.locator('[data-today-habit-more]').first().click(); await waitSheet(p, '[data-habit-sheet]') } },
-  { id: 'sheet-review', scope: '[data-sheet-review]', open: async (p) => { await tab(p, '今日'); await p.locator('[data-review-start]').first().click(); await waitSheet(p, '[data-sheet-review]') } },
+  /* 复盘入口只在「晚上且今天课上完了」才出现（Stage 2 起 heroMode==='review' 才有这颗钮：
+     App.vue 的 REVIEW_FROM = 18*60）。所以这个状态得先把时间拨到 21:30，否则入口根本不存在。 */
+  { id: 'sheet-review', scope: '[data-sheet-review]', open: async (p) => { await p.goto(BASE + '?t=21:30', { waitUntil: 'domcontentloaded' }); await p.waitForTimeout(800); await tab(p, '今日'); await p.locator('[data-review-start]').first().click(); await waitSheet(p, '[data-sheet-review]') } },
   {
     id: 'sheet-detail', scope: '[data-sheet-detail]', open: async (p) => {
       await tab(p, '周课表')

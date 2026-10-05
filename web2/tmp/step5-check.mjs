@@ -140,6 +140,9 @@ try {
   /* 课表「其他日程」子视图 */
   await page.locator('nav button', { hasText: '周课表' }).click()
   await page.waitForTimeout(450)
+  /* Stage 8：「其他日程」从顶部段控搬进 「＋」选单，先点开选单再选这一项（语义不变）。 */
+  await page.locator('[data-week-add]').click()
+  await page.waitForTimeout(300)
   await page.locator('[data-week-sub-list]').click()
   await page.waitForTimeout(500)
   t('D5. 已切到「其他日程」子视图（此视图可上下滚，不该锁滚动）',

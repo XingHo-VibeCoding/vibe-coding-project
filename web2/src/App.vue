@@ -81,9 +81,41 @@ function switchTab(key) {
    日程清单是要上下滚的，所以切换时重算一遍 body overflow 与网格顶。 */
 function setWeekSub(v) {
   weekSub.value = v
+  closeWeekMenu()
   syncBodyScrollLock()
   setTimeout(measureGridTop, 320)
 }
+
+/* ---------------- 课表页右上「＋」选单（Stage 8） ----------------
+   原来「周课表 / 其他日程」占着一整条分段位、＋ 又直接进拍课表识别；用户 m12154 批准的设计是：
+   顶部只留周次切换，加课 / 加日程 / 拍课表识别 / 其他日程都收进 ＋ 选单（网格拿回整屏）。
+   ＋ 是「拍课表识别」的旧家（data-week-add + data-mine-rec 锚点都还在，只是移进了选单）。 */
+const weekMenuOpen = ref(false)
+function toggleWeekMenu() { weekMenuOpen.value = !weekMenuOpen.value }
+function closeWeekMenu() { weekMenuOpen.value = false }
+/* 手动加课 / 长按加课的默认落点：本周第 1 节，星期取今天（不在本周就用周一）。
+   表单里星期与开始时间都能改，这里只求「点开就能填」。 */
+function menuAddSlot() {
+  const per = periods.value[0]
+  const wd = weekOffset.value === 0 ? ((today.getDay() + 6) % 7) + 1 : 1
+  return { wd, min: per && per.start ? minOf(per.start) : 8 * 60 }
+}
+function menuAddCourse() { closeWeekMenu(); const s = menuAddSlot(); openAdd(s.wd, s.min) }
+function menuAddEvent() { closeWeekMenu(); openEventAdd() }
+function menuScan() { closeWeekMenu(); mineRecStart() }
+function menuOpenList() { closeWeekMenu(); setWeekSub('list') }
+/* 点选单以外的地方就收起（capture 阶段监听：即使点在 inert 页面里也算「点别处」）。
+   ＋ 自己排除掉，否则同一次点击会先关再开、看起来没反应。 */
+function onWeekMenuAway(e) {
+  const t = e.target
+  if (t && t.closest && (t.closest('[data-week-menu]') || t.closest('[data-week-add]'))) return
+  closeWeekMenu()
+}
+watch(weekMenuOpen, (open) => {
+  if (open) document.addEventListener('click', onWeekMenuAway, true)
+  else document.removeEventListener('click', onWeekMenuAway, true)
+})
+onBeforeUnmount(() => document.removeEventListener('click', onWeekMenuAway, true))
 
 /* ---------------- 页高自适应 ----------------
    三页并排常驻后，平移层高度会被最高的周课表撑起，今日/我的下面拖出一大段
@@ -270,6 +302,8 @@ function closeTopmostLayer() {
   // 注意：展开块切走/关页后看不见——不可见的状态绝不能吞掉返回键
   if (tab.value === 'me' && meSub.value === 'listen' && listenSettingsOpen.value) { listenSettingsOpen.value = false; return true }
   if (meSub.value) { closeMeSub(); return true }
+  // Stage 8：课表页 ＋ 选单是周课表视图里最细的一层，先收它再收子视图
+  if (tab.value === 'week' && weekMenuOpen.value) { weekMenuOpen.value = false; return true }
   if (tab.value === 'week' && weekSub.value === 'list') { setWeekSub('week'); return true }
   return false
 }
@@ -3082,7 +3116,9 @@ const gridCourses = computed(() => courseItems(weekVisible.value, periods.value)
    为什么不再用常数 WEEK_CHROME=274：真机差异太多——外壳状态栏让位、系统字体缩放把
    头部/周次条撑高，常数在谁家都不准（v1.32.1/v1.32.2 连续两版「小幅上下拖」都栽在
    常数与真机对不上）。实测一步到位：不管上方占了多少，网格永远正好填满剩余空间，
-   夹到 [300, 620]：小屏不至于把行挤成一条线，大屏也不至于拉得空荡。
+   夹到 [300, 760]：小屏不至于把行挤成一条线，大屏也不至于拉得空荡。
+   （Stage 8 把上限从 620 提到 760：课表页的问候卡收起了，腾出来的那 ~110px 本来就是要
+   还给网格的；仍卡 620 的话网格底下会留一条 35px 空档 —— week-fit-check 的 B2 守着。）
    兜底：gridTop 还没量到（首帧）时用 WEEK_CHROME + satPx 估算。 */
 const WEEK_CHROME = 274
 const winH = ref(typeof window !== 'undefined' ? window.innerHeight : 800)
@@ -3093,7 +3129,7 @@ const satPx = ref(0)
 const gridTop = ref(0) // [data-grid] 顶边的文档坐标（含外壳让位、头部实际高度），measureGridTop 实测
 const gridH = computed(() => {
   const top = gridTop.value > 0 ? gridTop.value : WEEK_CHROME + satPx.value
-  return Math.max(300, Math.min(620, winH.value - top - navH.value - 8))
+  return Math.max(300, Math.min(760, winH.value - top - navH.value - 8))
 })
 function measureNavH() {
   const nav = document.querySelector('nav')
@@ -3636,6 +3672,15 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
     <!-- 头部问候卡：今日页完整版（大问候语 + 状态气泡 + 今日概要）；周课表/我的页紧凑版
          （2026-10-01 用户要求「上方卡片收缩时多缩一点，给课表多腾空间」——原来只有
          气泡和概要会收，问候语和 padding 常驻不动，头部占 ~140px；紧凑版收掉 ~50px） -->
+    <!-- Stage 8：课表页不需要问候卡（今日页那句在这儿是重复的），整张头部在课表页收起，
+         网格拿回整屏。用与今日页主体同一套 grid-rows 塌缩，0fr 时 overflow-hidden 把
+         卡片连同 mt-3 外边距一起裁掉，所以收起后不残留一条空白。 -->
+    <div
+      class="grid transition-[grid-template-rows] duration-[280ms]"
+      :class="tab === 'week' ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'"
+      style="transition-timing-function: cubic-bezier(0.3, 0.75, 0.3, 1)"
+    >
+      <div class="min-h-0 overflow-hidden">
     <header
       class="relative mx-4 mt-3 overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-50 to-primary-100 shadow-sm transition-all duration-[280ms]"
       :class="tab === 'today' ? 'px-5 pb-5 pt-5' : 'px-5 pb-3 pt-3.5'"
@@ -3774,6 +3819,8 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         </div>
       </div>
     </header>
+      </div>
+    </div>
 
     <!-- 内容平移层（Day 11 二轮）：三页并排各占 1/3，translateX 跟随 tab，连点改道可打断。
          2026-10-01 加左右滑动手势：swipeDx 并进 translateX 跟手，swiping 时关 transform
@@ -4111,62 +4158,106 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
          留 pb-28(112px) 会让文档比屏幕高 44px → 用户能上下滑出一片空白
          （2026-10-01 实测：390×844 下 pb-28 时 maxScroll=44）。 -->
     <main data-page="week" class="w-1/3 px-4 pt-4 pb-16" :inert="tab !== 'week'">
-      <!-- 课表 / 日程 分段切换（2026-10-03 方案 C Step 1：原「日程」页并入本页） -->
-      <div class="mb-3 flex items-center gap-2">
-        <div data-week-sub class="grid flex-1 grid-cols-2 gap-1 rounded-2xl border border-line bg-card p-1 shadow-sm">
+      <!-- Stage 8（用户 m12154 拍的版）：顶部只留周次切换 + 右上 ＋ 选单。
+           原来占一整条分段位的「周课表 / 其他日程」并进 ＋ 选单（手动加课 / 加日程 / 拍课表识别 / 其他日程），
+           与今日页重复的问候卡在课表页也不再出现（头部整体只在别的页显示）→ 网格拿回整屏。 -->
+      <div class="relative mb-3 flex items-stretch gap-2">
+        <!-- 周次切换（周课表视图）/ 回周课表（其他日程视图） -->
+        <section v-if="weekSub === 'week'" class="flex flex-1 items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
           <button
-            type="button"
+            data-week-prev
+            class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
+            @click="weekOffset--"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
+          </button>
+          <p class="text-sm font-semibold" data-week-label>
+            第 {{ weekNo }} 周
+            <span class="ml-1 text-xs font-normal text-ink-dim">/ 共 {{ semester.totalWeeks }} 周</span>
+          </p>
+          <button
+            data-week-next
+            class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
+            @click="weekOffset++"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+          </button>
+        </section>
+        <section v-else class="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
+          <button
             data-week-sub-week
-            class="rounded-xl py-1.5 text-sm font-medium transition"
-            :class="weekSub === 'week' ? 'bg-primary-500 text-white shadow-sm' : 'text-ink-dim'"
-            @click="setWeekSub('week')"
-          >周课表</button>
-          <button
             type="button"
-            data-week-sub-list
-            class="rounded-xl py-1.5 text-sm font-medium transition"
-            :class="weekSub === 'list' ? 'bg-primary-500 text-white shadow-sm' : 'text-ink-dim'"
-            @click="setWeekSub('list')"
-          >其他日程</button>
-        </div>
-      <!-- 拍课表识别（第三步）：2026-10-03 方案 C Step 4 从「我的」页搬到课表页右上角。
-           仍复用识别页/核对页，用当前学期节次表换算，导入走增量；原锚点保留不动，
-           另给 data-week-add 表明新家。 -->
-      <button
-        v-if="weekSub === 'week'"
-        data-week-add
-        data-mine-rec
-        type="button"
-        title="拍课表识别"
-        aria-label="拍课表识别：截图课表自动加课"
-        class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-card text-primary-600 shadow-sm transition active:scale-95"
-        @click="mineRecStart"
-      >
-        <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5v9M3.5 8h9" /></svg>
-      </button>
-      </div>
+            class="flex items-center gap-1 rounded-xl px-2 py-1.5 text-sm font-medium text-primary-600 transition active:bg-ink/10"
+            @click="setWeekSub('week')"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
+            周课表
+          </button>
+          <p class="flex-1 text-sm font-semibold text-ink">其他日程</p>
+        </section>
 
-      <!-- 周次切换 -->
-      <section v-if="weekSub === 'week'" class="flex items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
+        <!-- 右上「＋」：加课 / 加日程 / 拍课表识别 / 其他日程 都在选单里
+             （data-week-add 是它的旧锚点，data-mine-rec 跟着识别那一项搬进选单） -->
         <button
-          data-week-prev
-          class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
-          @click="weekOffset--"
+          data-week-add
+          type="button"
+          title="添加"
+          aria-label="添加：加课 / 加日程 / 拍课表识别 / 其他日程"
+          aria-haspopup="menu"
+          :aria-expanded="weekMenuOpen ? 'true' : 'false'"
+          class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-card text-primary-600 shadow-sm transition active:scale-95"
+          @click="toggleWeekMenu"
         >
-          <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
+          <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5v9M3.5 8h9" /></svg>
         </button>
-        <p class="text-sm font-semibold" data-week-label>
-          第 {{ weekNo }} 周
-          <span class="ml-1 text-xs font-normal text-ink-dim">/ 共 {{ semester.totalWeeks }} 周</span>
-        </p>
-        <button
-          data-week-next
-          class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
-          @click="weekOffset++"
+
+        <!-- ＋ 选单：就地弹在 ＋ 下方（absolute 相对本行，不跟平移层的 transform 打架）。
+             选中任一项、点别处（document 监听）、按返回键都会收起。 -->
+        <div
+          v-if="weekMenuOpen"
+          data-week-menu
+          class="absolute right-0 top-[52px] z-40 w-44 overflow-hidden rounded-2xl border border-line bg-card py-1 shadow-xl"
         >
-          <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
-        </button>
-      </section>
+          <button
+            data-week-menu-course
+            type="button"
+            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-ink/5"
+            @click="menuAddCourse"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="10.5" rx="2" /><path d="M2.5 6.5h11M8 9v3M6.5 10.5h3" /></svg>
+            手动加课
+          </button>
+          <button
+            data-week-menu-event
+            type="button"
+            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-ink/5"
+            @click="menuAddEvent"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M3 8h10M3 11.5h6" /></svg>
+            加日程
+          </button>
+          <button
+            data-week-menu-scan
+            data-mine-rec
+            type="button"
+            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-ink/5"
+            @click="menuScan"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6V4.5A1.5 1.5 0 014.5 3H6M10 3h1.5A1.5 1.5 0 0113 4.5V6M13 10v1.5A1.5 1.5 0 0111.5 13H10M6 13H4.5A1.5 1.5 0 013 11.5V10M3.5 8h9" /></svg>
+            拍课表识别
+          </button>
+          <button
+            v-if="weekSub === 'week'"
+            data-week-sub-list
+            type="button"
+            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-ink/5"
+            @click="menuOpenList"
+          >
+            <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5h9M3.5 8h9M3.5 10.5h6" /></svg>
+            其他日程
+          </button>
+        </div>
+      </div>
 
       <!-- 节次网格：行 = 节次、列 = 星期、课程 = 格子 —— 一屏看完，不用上下左右滑。
            课程卡与格子共用同一套坐标系，所以不存在「平行线对不齐」这回事。 -->
