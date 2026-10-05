@@ -14,7 +14,7 @@ const app = useApp()
   <BottomSheet
     :open="!!app.detail"
     sheet-attr="data-sheet-detail"
-    handle-class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"
+    handle-class="mx-auto mb-4 h-1 w-9 rounded-full bg-soft-2"
     @close="app.detail = null"
   >
     <div class="flex items-start justify-between gap-3">
@@ -45,7 +45,7 @@ const app = useApp()
         </p>
       </div>
       <button
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/5 text-ink-dim transition active:scale-90"
+        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-soft text-ink-dim transition active:scale-90"
         @click="app.detail = null"
       >
         <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
@@ -62,7 +62,7 @@ const app = useApp()
           </p>
         </div>
       </div>
-      <div class="flex items-center gap-3 rounded-xl bg-ink/[0.04] px-3.5 py-3">
+      <div class="flex items-center gap-3 rounded-xl bg-soft px-3.5 py-3">
         <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 shrink-0 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-11A.5.5 0 012 14z" /><path d="M6 14.5V9h4v5.5" /></svg>
         <div class="min-w-0">
           <p class="text-sm font-medium">{{ app.detail.place || '未填写地点' }}</p>

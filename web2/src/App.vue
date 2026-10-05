@@ -908,8 +908,8 @@ const HABIT_CELL_CLS = {
   back: 'border border-primary-400 bg-primary-50 text-primary-600',
   today: 'border-2 border-primary-400 text-primary-600',
   open: 'border border-dashed border-primary-300 text-primary-600',
-  future: 'bg-ink/[0.04] text-ink-dim/30',
-  locked: 'bg-ink/[0.06] text-ink-dim/45',
+  future: 'bg-soft text-ink-dim/30',
+  locked: 'bg-soft-2 text-ink-dim/45',
 }
 const habitTodayText = (() => {
   const d = new Date(habitToday + 'T00:00:00')
@@ -3989,6 +3989,9 @@ provide(APP_CTX, reactive({
          就不在 #app 里了 —— 不加这行，真机上页头「‹ 返回」会压在系统时间上（v1.42 真机复验 S6 抓到，
          浏览器里 --sat=0 所以看不出）。 -->
     <Teleport to="body">
+    <!-- 二级页推入（美术收口，约定 2a）：从右整屏推进来、返回时推回去（.push-* 在 style.css）。
+         原来这里没有 Transition，切换是瞬时的。只动 transform，不碰布局。 -->
+    <Transition name="push">
     <div v-if="meSub" data-sub-page :data-sub="meSub" class="fixed inset-0 z-40 flex flex-col bg-canvas" :style="{ paddingTop: 'var(--sat, 0px)' }">
       <header class="flex shrink-0 items-center gap-2 border-b border-line bg-card/90 px-3 py-2.5 backdrop-blur">
         <button type="button" data-sub-back class="flex h-9 shrink-0 items-center gap-0.5 rounded-full pl-1 pr-2 text-sm text-ink-dim transition active:scale-95" @click="closeMeSub">
@@ -4009,6 +4012,7 @@ provide(APP_CTX, reactive({
         <SettingsPanel v-else />
       </div>
     </div>
+    </Transition>
     </Teleport>
     </div><!-- /内容平移层 -->
 

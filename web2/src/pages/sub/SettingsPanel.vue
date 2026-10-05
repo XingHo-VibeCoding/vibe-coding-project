@@ -68,7 +68,7 @@ const {
       <section class="order-2 divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
 
         <!-- 导入主项目数据 -->
-        <label class="flex cursor-pointer items-center gap-3.5 p-4 active:bg-ink/5">
+        <label class="flex cursor-pointer items-center gap-3.5 p-4 active:bg-soft">
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11V2M4.5 5.5L8 2l3.5 3.5M3 11v2.5A.5.5 0 003.5 14h9a.5.5 0 00.5-.5V11" /></svg>
           </span>
@@ -83,7 +83,7 @@ const {
         <!-- 恢复示例数据（仅导入态出现） -->
         <button
           v-if="source === 'import'"
-          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-ink/5"
+          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-soft"
           @click="onClearImport"
         >
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
@@ -95,7 +95,7 @@ const {
         <!-- 导出回写主项目（仅导入态出现）：勾选过的待办随文件带走 -->
         <button
           v-if="source === 'import'"
-          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-ink/5"
+          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-soft"
           @click="onExportBack"
         >
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
@@ -109,7 +109,7 @@ const {
 
         <!-- 导出日历 .ics：把课表装进系统日历 -->
         <button
-          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-ink/5"
+          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-soft"
           @click="onExportIcs"
         >
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
@@ -148,7 +148,7 @@ const {
             <button
               type="button"
               data-theme-toggle
-              class="flex shrink-0 items-center gap-1.5 rounded-full bg-ink/5 px-3 py-2 text-xs font-medium text-ink-dim transition active:scale-95"
+              class="flex shrink-0 items-center gap-1.5 rounded-full bg-soft px-3 py-2 text-xs font-medium text-ink-dim transition active:scale-95"
               @click="toggleTheme"
             >
               <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h9M9.5 2.5L12 5l-2.5 2.5M13 11H4M6.5 8.5L4 11l2.5 2.5" /></svg>
@@ -184,7 +184,7 @@ const {
               role="switch"
               :aria-checked="autoTheme ? 'true' : 'false'"
               class="relative h-6 w-11 shrink-0 rounded-full transition"
-              :class="autoTheme ? 'bg-primary-500' : 'bg-ink/15'"
+              :class="autoTheme ? 'bg-primary-500' : 'bg-soft-2'"
               @click="setAutoTheme(!autoTheme)"
             >
               <span
@@ -199,7 +199,7 @@ const {
         <div class="p-4">
           <button
             type="button"
-            class="flex w-full items-center gap-3.5 text-left active:bg-ink/5"
+            class="flex w-full items-center gap-3.5 text-left active:bg-soft"
             @click="llmInputOpen = !llmInputOpen"
           >
             <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
@@ -269,7 +269,7 @@ const {
         <!-- 清除数据并重置（危险项：二次确认后回到初始设定，无法恢复） -->
         <button
           data-clear-entry
-          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-ink/5"
+          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-soft"
           @click="confirmClear = true"
         >
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-red-400/10">
@@ -310,7 +310,7 @@ const {
           <button
             v-if="notifyOk"
             class="relative h-6 w-11 shrink-0 rounded-full transition"
-            :class="notifySettings.enabled ? 'bg-primary-500' : 'bg-ink/15'"
+            :class="notifySettings.enabled ? 'bg-primary-500' : 'bg-soft-2'"
             aria-label="课前提醒开关"
             @click="toggleNotify"
           >
@@ -327,11 +327,11 @@ const {
               v-for="m in [5, 10, 15]"
               :key="m"
               class="rounded-full px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
-              :class="notifySettings.minutesBefore === m ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink'"
+              :class="notifySettings.minutesBefore === m ? 'bg-primary-500 text-white' : 'bg-soft text-ink'"
               @click="setNotifyLead(m)"
             >{{ m }} 分钟</button>
             <button
-              class="ml-auto rounded-full bg-ink/5 px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
+              class="ml-auto rounded-full bg-soft px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
               :class="notifyTesting ? 'opacity-60' : ''"
               @click="onTestNotify"
             >{{ notifyTesting ? '发送中…' : '发测试通知' }}</button>
@@ -354,7 +354,7 @@ const {
               v-if="notifyOk"
               data-review-toggle
               class="relative h-6 w-11 shrink-0 rounded-full transition"
-              :class="reviewSettings.enabled ? 'bg-primary-500' : 'bg-ink/15'"
+              :class="reviewSettings.enabled ? 'bg-primary-500' : 'bg-soft-2'"
               :aria-label="reviewSettings.enabled ? '关闭每日复盘提醒' : '打开每日复盘提醒'"
               @click="toggleReviewNotify"
             >
@@ -368,12 +368,12 @@ const {
               :key="t"
               :data-review-at="t"
               class="rounded-full px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
-              :class="reviewSettings.at === t ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink'"
+              :class="reviewSettings.at === t ? 'bg-primary-500 text-white' : 'bg-soft text-ink'"
               @click="setReviewAt(t)"
             >{{ t }}</button>
             <button
               data-review-history
-              class="ml-auto rounded-full bg-ink/5 px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
+              class="ml-auto rounded-full bg-soft px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
               @click="openReview('history')"
             >日精进 {{ reviewHistory.length }} 篇</button>
           </div>
@@ -420,7 +420,7 @@ const {
             <button
               data-frame-toggle
               class="relative h-6 w-11 shrink-0 rounded-full transition"
-              :class="frameSettings.enabled ? 'bg-primary-500' : 'bg-ink/15'"
+              :class="frameSettings.enabled ? 'bg-primary-500' : 'bg-soft-2'"
               aria-label="常驻状态框开关"
               @click="toggleFrame"
             >
@@ -443,7 +443,7 @@ const {
             <span class="block text-[11px] text-ink-dim">检测到 {{ addedDupCount }} 门重复（多次导入叠加），一键删掉多余的</span>
           </div>
           <button
-            class="rounded-full bg-ink/5 px-3 py-1.5 text-xs font-medium transition active:scale-95"
+            class="rounded-full bg-soft px-3 py-1.5 text-xs font-medium transition active:scale-95"
             @click="dedupCourses"
           >一键清理</button>
         </div>

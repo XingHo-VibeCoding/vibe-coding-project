@@ -25,7 +25,7 @@ const app = useApp()
       <button
         type="button"
         data-habit-sheet-close
-        class="rounded-full bg-ink/5 px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
+        class="rounded-full bg-soft px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
         @click="app.habitSheet = false"
       >关闭</button>
     </div>
@@ -41,7 +41,7 @@ const app = useApp()
       </div>
       <p class="pb-1 text-xs text-ink-dim">今日已打卡</p>
     </div>
-    <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
+    <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-soft-2">
       <div
         class="h-full rounded-full bg-primary-500 transition-all duration-300"
         :style="{ width: app.habits.length ? (app.habitTodayDone / app.habits.length) * 100 + '%' : '0%' }"
@@ -175,7 +175,7 @@ const app = useApp()
         <span class="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-primary-500 align-[-1px]" />当天打卡
         <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-primary-400 bg-primary-50 align-[-1px]" />事后补卡
         <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-dashed border-primary-300 align-[-1px]" />可补
-        <span class="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-ink/[0.06] align-[-1px]" />已锁定
+        <span class="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-soft-2 align-[-1px]" />已锁定
       </p>
     </div>
     <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">

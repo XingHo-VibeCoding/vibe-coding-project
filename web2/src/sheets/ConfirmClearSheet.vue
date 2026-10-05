@@ -14,7 +14,7 @@ const app = useApp()
       v-if="app.confirmClear"
       class="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
     >
-      <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"></div>
+      <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-soft-2"></div>
       <h2 class="text-lg font-bold">确认清除全部数据</h2>
       <p class="mt-2 text-xs text-ink-dim">将清空学期、课程、日程与待办并回到初始设定，无法恢复。API Key、主题与通知设置会保留。</p>
       <div class="mt-5 grid grid-cols-2 gap-2.5">

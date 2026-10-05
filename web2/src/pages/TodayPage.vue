@@ -134,7 +134,7 @@ const {
           今天没有课程安排～
         </p>
         <button
-          class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-2.5 text-xs font-medium text-ink-dim transition active:bg-ink/5"
+          class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-2.5 text-xs font-medium text-ink-dim transition active:bg-soft"
           @click="openEventAdd"
         >
           ＋ 添加日程（班会、聚餐这类）
@@ -208,7 +208,7 @@ const {
           没有待办，轻松自在～
         </p>
         <button
-          class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-3 text-sm font-medium text-ink-dim transition active:bg-ink/5"
+          class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-3 text-sm font-medium text-ink-dim transition active:bg-soft"
           @click="openTodoAdd"
         >
           ＋ 添加待办
@@ -348,7 +348,7 @@ const {
         <div class="mt-2.5 flex items-center gap-2">
           <button
             data-review-start
-            class="rounded-full bg-ink/5 px-3.5 py-1.5 text-xs font-medium transition active:scale-95"
+            class="rounded-full bg-soft px-3.5 py-1.5 text-xs font-medium transition active:scale-95"
             @click="openReview('ask')"
           >改一改</button>
           <button

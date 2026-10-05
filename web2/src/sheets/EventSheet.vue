@@ -53,7 +53,7 @@ const {
             v-for="d in DURATIONS"
             :key="d"
             class="flex-1 rounded-full py-1.5 text-xs font-medium transition active:scale-95"
-            :class="evtForm.duration === d ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
+            :class="evtForm.duration === d ? 'bg-primary-500 text-white' : 'bg-soft text-ink-dim'"
             @click="evtForm.duration = d"
           >
             {{ d }}分

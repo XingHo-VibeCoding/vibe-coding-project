@@ -63,7 +63,7 @@ const {
         <section v-if="weekSub === 'week'" class="flex flex-1 items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
           <button
             data-week-prev
-            class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
+            class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-soft-2"
             @click="weekOffset--"
           >
             <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
@@ -74,7 +74,7 @@ const {
           </p>
           <button
             data-week-next
-            class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
+            class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-soft-2"
             @click="weekOffset++"
           >
             <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
@@ -84,7 +84,7 @@ const {
           <button
             data-week-sub-week
             type="button"
-            class="flex items-center gap-1 rounded-xl px-2 py-1.5 text-sm font-medium text-primary-600 transition active:bg-ink/10"
+            class="flex items-center gap-1 rounded-xl px-2 py-1.5 text-sm font-medium text-primary-600 transition active:bg-soft-2"
             @click="setWeekSub('week')"
           >
             <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
@@ -118,7 +118,7 @@ const {
           <button
             data-week-menu-course
             type="button"
-            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-ink/5"
+            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-soft"
             @click="menuAddCourse"
           >
             <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="10.5" rx="2" /><path d="M2.5 6.5h11M8 9v3M6.5 10.5h3" /></svg>
@@ -127,7 +127,7 @@ const {
           <button
             data-week-menu-event
             type="button"
-            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-ink/5"
+            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-soft"
             @click="menuAddEvent"
           >
             <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M3 8h10M3 11.5h6" /></svg>
@@ -137,7 +137,7 @@ const {
             data-week-menu-scan
             data-mine-rec
             type="button"
-            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-ink/5"
+            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-soft"
             @click="menuScan"
           >
             <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6V4.5A1.5 1.5 0 014.5 3H6M10 3h1.5A1.5 1.5 0 0113 4.5V6M13 10v1.5A1.5 1.5 0 0111.5 13H10M6 13H4.5A1.5 1.5 0 013 11.5V10M3.5 8h9" /></svg>
@@ -147,7 +147,7 @@ const {
             v-if="weekSub === 'week'"
             data-week-sub-list
             type="button"
-            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-ink/5"
+            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-soft"
             @click="menuOpenList"
           >
             <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5h9M3.5 8h9M3.5 10.5h6" /></svg>
@@ -206,7 +206,7 @@ const {
             <div
               v-if="r.type === 'gap'"
               data-gap
-              class="flex items-center gap-1.5 bg-ink/[0.04] px-1 text-[10px] font-medium text-ink-dim"
+              class="flex items-center gap-1.5 bg-soft px-1 text-[10px] font-medium text-ink-dim"
               :style="{ gridColumn: '1 / -1', gridRow: ri + 1 }"
             >
               <span class="h-px flex-1 bg-line/70"></span>
@@ -218,7 +218,7 @@ const {
             <template v-else>
               <div
                 :data-axis="r.p.no"
-                class="flex flex-col items-center justify-center overflow-hidden bg-ink/[0.02] leading-none"
+                class="flex flex-col items-center justify-center overflow-hidden bg-soft leading-none"
                 :style="{ gridColumn: 1, gridRow: ri + 1 }"
               >
                 <span class="text-[10px] font-semibold text-primary-600/90">第{{ r.p.no }}节</span>
@@ -319,7 +319,7 @@ const {
       v-if="listFixedCount"
       type="button"
       data-list-week-hint
-      class="mb-2 flex w-full items-center justify-between rounded-2xl border border-dashed border-line bg-card/60 px-3.5 py-2.5 text-left transition active:bg-ink/5"
+      class="mb-2 flex w-full items-center justify-between rounded-2xl border border-dashed border-line bg-card/60 px-3.5 py-2.5 text-left transition active:bg-soft"
       @click="setWeekSub('week')"
     >
       <span class="min-w-0 truncate text-xs text-ink-dim">还有 {{ listFixedCount }} 项固定安排在周课表里（不在这里重复）</span>

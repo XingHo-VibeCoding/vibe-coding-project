@@ -20,6 +20,11 @@
   --color-canvas: #f5f7fa;
   --color-card: #ffffff;
   --color-line: rgba(0, 0, 0, 0.05);
+  /* 次要块/轨道的实色底（2026-10-05 美术收口）：原来用 bg-ink/5、bg-ink/[0.04] 这类 alpha 档，
+     叠在卡片白底或浅灰画布上得到的实际灰度随主题漂移，且 A4 扫描判定那层底上的次要文字不达 AA。
+     改成两个逐主题固定的不透明 token：soft = 原 /5…/[0.04] 那档浅底，soft-2 = 原 /10…/15 那档（进度轨道、禁用块）。 */
+  --color-soft: #eef0f4;
+  --color-soft-2: #e3e6ec;
   --color-ink: #1c2333;
   /* 次要文字：原 #6b7486 在卡片白底上 4.7 达标，但在浅灰底(bg-ink/5、bg-ink/[0.04])上只有 4.1–4.4。
      压深到 #626b7d 后，白底 5.4 / 浅灰底 4.9–5.0，全量次要文字都过 WCAG AA。
@@ -32,6 +37,8 @@
   --color-canvas: #0c111d;
   --color-card: #161d2c;
   --color-line: rgba(255, 255, 255, 0.09);
+  --color-soft: #202839;
+  --color-soft-2: #2a3244;
   --color-ink: #e8ecf5;
   --color-ink-dim: #94a0b8;
 
@@ -55,6 +62,8 @@ html[data-accent='lavender'] {
   --color-primary-600: #6244c2;
   --color-primary-700: #4c3399;
   --color-canvas: #f7f5fc;
+  --color-soft: #f0ecfa;
+  --color-soft-2: #e6e0f5;
 }
 .dark[data-accent='lavender'] {
   --color-primary-50: #241d40;
@@ -63,6 +72,8 @@ html[data-accent='lavender'] {
   --color-primary-600: #b7a5f5;
   --color-canvas: #0e0c17;
   --color-card: #191530;
+  --color-soft: #241f3d;
+  --color-soft-2: #2e2850;
 }
 
 /* 樱花粉 */
@@ -76,6 +87,8 @@ html[data-accent='pink'] {
   --color-primary-600: #c94a86;
   --color-primary-700: #a33868;
   --color-canvas: #fcf5f8;
+  --color-soft: #f8ecf3;
+  --color-soft-2: #f2dde8;
 }
 .dark[data-accent='pink'] {
   --color-primary-50: #3c2130;
@@ -84,6 +97,8 @@ html[data-accent='pink'] {
   --color-primary-600: #f5a8c9;
   --color-canvas: #170d12;
   --color-card: #241620;
+  --color-soft: #2f1d28;
+  --color-soft-2: #3b2531;
 }
 
 /* 薄荷绿 */
@@ -97,6 +112,8 @@ html[data-accent='mint'] {
   --color-primary-600: #1e9270;
   --color-primary-700: #177257;
   --color-canvas: #f3faf7;
+  --color-soft: #e9f4ef;
+  --color-soft-2: #d8ebe2;
 }
 .dark[data-accent='mint'] {
   --color-primary-50: #143229;
@@ -105,6 +122,8 @@ html[data-accent='mint'] {
   --color-primary-600: #8fd9c0;
   --color-canvas: #0b1411;
   --color-card: #13211c;
+  --color-soft: #1b2a24;
+  --color-soft-2: #24352e;
 }
 
 /* 全局：手机 app 质感基线 */
@@ -150,6 +169,18 @@ body {
 .slide-enter-from,
 .slide-leave-to {
   transform: translateY(100%);
+}
+
+/* 二级页推入（美术收口，约定 2a）：从右整屏推进来、返回时推回去。
+   与 .slide 同曲线家族（0.28s cubic-bezier(.32,.72,.35,1)），只是方向换成 X。
+   只做 transform，不动布局，所以推入过程中点里面的东西也稳。 */
+.push-enter-active,
+.push-leave-active {
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0.35, 1);
+}
+.push-enter-from,
+.push-leave-to {
+  transform: translateX(100%);
 }
 
 /* 自建下拉面板动效（DropdownSelect.vue）：从触发器方向淡入 + 轻缩放；

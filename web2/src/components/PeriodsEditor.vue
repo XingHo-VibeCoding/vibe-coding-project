@@ -161,7 +161,7 @@ defineExpose({ groups })
         <span class="h-px flex-1 bg-line"></span>
       </div>
 
-      <div class="rounded-xl border border-line bg-ink/[0.02] p-2.5">
+      <div class="rounded-xl border border-line bg-soft p-2.5">
         <div class="flex items-baseline justify-between">
           <span class="text-xs font-semibold">
             第 {{ g.nos[0] }}<template v-if="g.nos.length > 1">–{{ g.nos[g.nos.length - 1] }}</template> 节

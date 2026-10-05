@@ -58,7 +58,7 @@ onBeforeUnmount(() => {
   <div ref="root" class="relative">
     <button
       type="button"
-      class="flex w-full items-center justify-between gap-2 rounded-xl border border-line bg-card px-3 py-2.5 text-left text-sm text-ink outline-none transition focus:border-primary-400 active:bg-ink/[0.03]"
+      class="flex w-full items-center justify-between gap-2 rounded-xl border border-line bg-card px-3 py-2.5 text-left text-sm text-ink outline-none transition focus:border-primary-400 active:bg-soft"
       :class="open ? 'border-primary-400' : ''"
       @click="toggle"
     >

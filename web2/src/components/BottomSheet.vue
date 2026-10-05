@@ -21,7 +21,7 @@ const props = defineProps({
   maskAttr: { type: String, default: '' },
   panelClass: { type: String, default: 'p-5 pb-10' },
   handle: { type: Boolean, default: true },
-  handleClass: { type: String, default: 'mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15' },
+  handleClass: { type: String, default: 'mx-auto mb-3 h-1 w-9 rounded-full bg-soft-2' },
 })
 defineEmits(['close'])
 

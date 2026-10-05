@@ -97,7 +97,7 @@ const {
               </span>
               <button
                 v-if="l.clips && l.clips.length"
-                class="shrink-0 rounded-full bg-ink/5 px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
+                class="shrink-0 rounded-full bg-soft px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
                 @click="playLec(l)"
               >
                 {{ playingId === l.id ? '暂停' : '试听' }}
@@ -113,7 +113,7 @@ const {
             </div>
             <!-- 转写进行中：进度条 + 阶段说明（下载模型 / 识别） -->
             <div v-if="trBusyId === l.id" class="mt-2">
-              <div class="h-1.5 overflow-hidden rounded-full bg-ink/10">
+              <div class="h-1.5 overflow-hidden rounded-full bg-soft-2">
                 <div class="h-full rounded-full bg-primary-500 transition-[width] duration-300" :style="{ width: trPercent + '%' }"></div>
               </div>
               <p class="mt-1 text-[11px] text-ink-dim">{{ trLabel }}</p>
@@ -127,7 +127,7 @@ const {
                 <button
                   class="shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium transition active:scale-95"
                   :class="[
-                    l.summary ? 'bg-ink/5' : 'bg-primary-500 text-white',
+                    l.summary ? 'bg-soft' : 'bg-primary-500 text-white',
                     sumBusyId && sumBusyId !== l.id ? 'is-dim' : '',
                   ]"
                   @click="startSummary(l)"
@@ -137,7 +137,7 @@ const {
               </div>
               <p
                 v-if="trOpenId === l.id"
-                class="mt-1.5 whitespace-pre-wrap rounded-xl bg-ink/[0.04] p-3 text-[12px] leading-relaxed"
+                class="mt-1.5 whitespace-pre-wrap rounded-xl bg-soft p-3 text-[12px] leading-relaxed"
               >{{ l.transcript }}</p>
               <!-- 生成中：转圈 + 阶段说明 + 取消（LLM 调用是真网络请求，必须可掐断） -->
               <div v-if="sumBusyId === l.id" class="mt-2 flex items-center gap-2 text-[11px] text-ink-dim">
@@ -160,7 +160,7 @@ const {
                 <div v-if="l.summary.terms && l.summary.terms.length" class="mt-2.5">
                   <p class="text-[11px] font-semibold text-ink-dim">概念术语</p>
                   <div class="mt-1 flex flex-wrap gap-1.5">
-                    <span v-for="(t, i) in l.summary.terms" :key="'t' + i" class="rounded-full bg-ink/[0.06] px-2 py-0.5 text-[11px]" :title="t.note">{{ t.term }}</span>
+                    <span v-for="(t, i) in l.summary.terms" :key="'t' + i" class="rounded-full bg-soft-2 px-2 py-0.5 text-[11px]" :title="t.note">{{ t.term }}</span>
                   </div>
                 </div>
                 <div v-if="l.summary.homework && l.summary.homework.length" class="mt-2.5">

@@ -56,7 +56,7 @@ const {
           </section>
 
           <button
-            class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-3 text-sm font-medium text-ink-dim transition active:bg-ink/5"
+            class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-3 text-sm font-medium text-ink-dim transition active:bg-soft"
             @click="openTodoAdd"
           >
             ＋ 添加待办

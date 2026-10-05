@@ -56,14 +56,14 @@ const {
 
         <template v-if="listenOpen">
           <!-- 到点提醒开关（2026-10-03 补：以前默认关且没有开关，通知永远不响） -->
-          <div class="mt-3 flex items-center gap-3 rounded-xl bg-ink/[0.04] px-3 py-2.5">
+          <div class="mt-3 flex items-center gap-3 rounded-xl bg-soft px-3 py-2.5">
             <span class="min-w-0 flex-1">
               <span class="block text-[12px] font-medium">到点提醒我去听</span>
               <span class="block text-[11px] text-ink-dim">到复习日合并成一条「今天有 N 段待复习」</span>
             </span>
             <button
               class="relative h-6 w-11 shrink-0 rounded-full transition"
-              :class="listenSettings.enabled ? 'bg-primary-500' : 'bg-ink/15'"
+              :class="listenSettings.enabled ? 'bg-primary-500' : 'bg-soft-2'"
               data-listen-notify-toggle
               :aria-pressed="listenSettings.enabled ? 'true' : 'false'"
               @click="toggleListenNotify"
@@ -77,7 +77,7 @@ const {
 
           <!-- 练耳设置面板（2026-10-03 补：这几项原来只能改代码里的 DEFAULTS） -->
           <button
-            class="mt-2.5 flex w-full items-center justify-between rounded-xl bg-ink/[0.03] px-3 py-2 text-[12px] font-medium text-ink-dim transition active:scale-[0.99]"
+            class="mt-2.5 flex w-full items-center justify-between rounded-xl bg-soft px-3 py-2 text-[12px] font-medium text-ink-dim transition active:scale-[0.99]"
             data-listen-settings-toggle
             :aria-expanded="listenSettingsOpen ? 'true' : 'false'"
             @click="listenSettingsOpen = !listenSettingsOpen"
@@ -86,7 +86,7 @@ const {
             <span class="text-[11px] text-ink-dim">{{ listenSettingsOpen ? '收起' : '展开' }}</span>
           </button>
 
-          <div v-if="listenSettingsOpen" data-listen-settings class="mt-2 space-y-2.5 rounded-xl bg-ink/[0.04] px-3 py-3">
+          <div v-if="listenSettingsOpen" data-listen-settings class="mt-2 space-y-2.5 rounded-xl bg-soft px-3 py-3">
             <div class="flex items-center gap-2">
               <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">连放遍数</span>
               <div class="flex gap-1.5">
@@ -94,7 +94,7 @@ const {
                   v-for="n in [3, 4, 5]"
                   :key="n"
                   class="h-7 rounded-lg px-2.5 text-[12px] font-medium transition active:scale-95"
-                  :class="listenSettings.repeatTimes === n ? 'bg-primary-500 text-white' : 'bg-ink/[0.06] text-ink-dim'"
+                  :class="listenSettings.repeatTimes === n ? 'bg-primary-500 text-white' : 'bg-soft-2 text-ink-dim'"
                   :data-listen-repeat="n"
                   @click="onListenRepeat(n)"
                 >{{ n }} 遍</button>
@@ -158,7 +158,7 @@ const {
               <span class="text-[11px] text-ink-dim">分钟以下不排（太碎听不完）</span>
             </div>
             <button
-              class="w-full rounded-lg bg-ink/[0.06] py-2 text-[12px] font-medium text-ink-dim transition active:scale-[0.99]"
+              class="w-full rounded-lg bg-soft-2 py-2 text-[12px] font-medium text-ink-dim transition active:scale-[0.99]"
               data-listen-settings-reset
               @click="resetListenSettings"
             >恢复默认</button>
@@ -171,7 +171,7 @@ const {
           </label>
 
           <!-- L2：空闲槽建议时段（哪些空档能放几段） -->
-          <div v-if="listenClips.length" data-listen-slots class="mt-3 rounded-xl bg-ink/[0.04] px-3 py-2.5">
+          <div v-if="listenClips.length" data-listen-slots class="mt-3 rounded-xl bg-soft px-3 py-2.5">
             <p v-if="listenSuggestions.suggestions.length" class="text-[11px] font-medium text-ink-dim">
               今天可听：{{ listenSuggestions.suggestions.reduce((n, s) => n + s.take, 0) }} 段，挑这些空档去听
             </p>
@@ -207,7 +207,7 @@ const {
               </div>
             </li>
           </ul>
-          <p v-else class="mt-3 rounded-xl bg-ink/[0.04] px-3 py-2.5 text-[11px] text-ink-dim">
+          <p v-else class="mt-3 rounded-xl bg-soft px-3 py-2.5 text-[11px] text-ink-dim">
             还没有音频。导入一段（20 秒–1 分钟最合适），当天就可以开始听。
           </p>
 

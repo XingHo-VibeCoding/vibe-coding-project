@@ -87,7 +87,10 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await page.waitForTimeout(400)
   let n2 = await page.evaluate(() => window.__notify)
   t('B1 关开关后清空了课前提醒那批（练耳/复盘那几批各归各的，不动）', n2.cancelled.length > 0 && n2.scheduled.filter((x) => x.extra && x.extra.src === 'web2-m5').length === 0)
-  t('B2 开关视觉为关', (await page.locator('button[aria-label="课前提醒开关"]').getAttribute('class')).includes('bg-ink/15'))
+  /* 美术收口（2026-10-05）把开关的关态底从 bg-ink/15 换成了实色 token bg-soft-2：
+     断言改成「不是开态主色，且用的是某个 soft 实色底」，避免再被 token 改名绊倒 */
+  const offCls = await page.locator('button[aria-label="课前提醒开关"]').getAttribute('class')
+  t('B2 开关视觉为关', !offCls.includes('bg-primary-500') && /bg-soft(-2)?\b/.test(offCls), offCls.match(/bg-\S+/g)?.join(' '))
 
   /* ---------- C：开回 + 改 15 分钟 → 重排 ---------- */
   const before = n2.scheduled.length

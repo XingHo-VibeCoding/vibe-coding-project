@@ -54,7 +54,7 @@ function pick(c) {
   <div>
     <div class="mb-2 flex items-center justify-between">
       <button
-        class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
+        class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-soft-2"
         aria-label="上个月"
         @click="shift(-1)"
       >
@@ -62,7 +62,7 @@ function pick(c) {
       </button>
       <p class="text-sm font-semibold text-ink">{{ title }}</p>
       <button
-        class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-ink/10"
+        class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-soft-2"
         aria-label="下个月"
         @click="monthShifted = true; shift(1)"
       >
@@ -81,7 +81,7 @@ function pick(c) {
         :class="[
           !c ? 'pointer-events-none' : '',
           c && c.ok && c.key === modelValue ? 'bg-primary-500 font-semibold text-white' : '',
-          c && c.ok && c.key !== modelValue ? 'text-ink active:bg-ink/10' : '',
+          c && c.ok && c.key !== modelValue ? 'text-ink active:bg-soft-2' : '',
           c && !c.ok ? 'text-ink-dim/30' : '',
         ]"
         @click="pick(c)"

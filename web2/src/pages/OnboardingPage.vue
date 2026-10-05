@@ -106,7 +106,7 @@ const {
               >
                 <span
                   class="flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold"
-                  :class="onboardStepNo >= i + 1 ? 'bg-primary-500 text-white' : 'bg-ink/10 text-ink-dim'"
+                  :class="onboardStepNo >= i + 1 ? 'bg-primary-500 text-white' : 'bg-soft-2 text-ink-dim'"
                 >{{ i + 1 }}</span>
                 {{ lb }}
               </div>
@@ -237,7 +237,7 @@ const {
 
               <!-- 本次换算用的节次表：让「节次先设好」这件事在识别前可见、可改。
                    mine 入口 = 当前学期的节次表（recPeriods 已切源）；引导页 = 第 1 步里那张 -->
-              <div class="mt-3 rounded-xl bg-ink/[0.04] px-3 py-2.5" data-ob-summary>
+              <div class="mt-3 rounded-xl bg-soft px-3 py-2.5" data-ob-summary>
                 <p class="text-xs font-semibold">本次换算用的节次表</p>
                 <p class="mt-0.5 text-[11px] text-ink-dim">{{ recFromMine ? '识别结果只给第几节，上课时间按你当前学期的这张表算' : '识别结果只给第几节，上课时间按这张表算' }}</p>
                 <template v-if="recFromMine || obForm.periods.length">
@@ -337,7 +337,7 @@ const {
                     <div
                       v-if="r.type === 'gap'"
                       data-gap
-                      class="flex items-center gap-1.5 bg-ink/[0.04] px-1 text-[10px] font-medium text-ink-dim"
+                      class="flex items-center gap-1.5 bg-soft px-1 text-[10px] font-medium text-ink-dim"
                       :style="{ gridColumn: '1 / -1', gridRow: ri + 1 }"
                     >
                       <span class="h-px flex-1 bg-line/70"></span>
@@ -347,7 +347,7 @@ const {
                     <template v-else>
                       <div
                         :data-raxis="r.p.no"
-                        class="flex flex-col items-center justify-center overflow-hidden bg-ink/[0.02] leading-none"
+                        class="flex flex-col items-center justify-center overflow-hidden bg-soft leading-none"
                         :style="{ gridColumn: 1, gridRow: ri + 1 }"
                       >
                         <span class="text-[10px] font-semibold text-primary-600/90">{{ r.p.no }}</span>

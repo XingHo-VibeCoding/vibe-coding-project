@@ -17,7 +17,7 @@ const app = useApp()
       data-sheet-cell
       class="fixed inset-x-0 bottom-0 z-[60] mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
     >
-      <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
+      <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-soft-2"></div>
       <p class="text-base font-bold" data-cell-where>{{ app.recCellWhere }}</p>
       <p class="mt-0.5 text-xs text-ink-dim">{{ app.recCell.index === null ? '这一格还没有课，填个课名就加上' : '改完记得保存' }}</p>
       <div class="mt-4 space-y-2.5">
@@ -53,7 +53,7 @@ const app = useApp()
               v-for="(w, wi) in app.WDN"
               :key="wi"
               class="flex-1 rounded-lg py-1.5 text-[11px] font-medium transition active:scale-95"
-              :class="app.recCell.weekday === wi + 1 ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
+              :class="app.recCell.weekday === wi + 1 ? 'bg-primary-500 text-white' : 'bg-soft text-ink-dim'"
               @click="app.recCell.weekday = wi + 1"
             >
               {{ w }}

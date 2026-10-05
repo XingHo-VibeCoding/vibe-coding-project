@@ -43,7 +43,7 @@ const {
               v-for="(q, i) in QUESTIONS"
               :key="q.key"
               class="h-1 flex-1 rounded-full"
-              :class="i <= reviewSheet.step ? 'bg-primary-500' : 'bg-ink/10'"
+              :class="i <= reviewSheet.step ? 'bg-primary-500' : 'bg-soft-2'"
             ></span>
           </div>
           <p data-review-q class="mt-4 text-sm font-semibold">{{ QUESTIONS[reviewSheet.step].title }}</p>
@@ -66,17 +66,17 @@ const {
 
           <!-- 没做完的：把未完成待办列出来，让「继续还是放掉」是有据可依的选择 -->
           <div v-else-if="QUESTIONS[reviewSheet.step].kind === 'keep'" class="mt-4">
-            <div v-if="undoneTodos.length" class="mb-3 space-y-1.5 rounded-xl bg-ink/5 p-3">
+            <div v-if="undoneTodos.length" class="mb-3 space-y-1.5 rounded-xl bg-soft p-3">
               <p v-for="t in undoneTodos" :key="t.id" class="truncate text-[12px] text-ink-dim">· {{ t.title }}</p>
             </div>
-            <p v-else class="mb-3 rounded-xl bg-ink/5 p-3 text-[12px] text-ink-dim">今天没有没做完的事，挺好。</p>
+            <p v-else class="mb-3 rounded-xl bg-soft p-3 text-[12px] text-ink-dim">今天没有没做完的事，挺好。</p>
             <div class="flex items-center gap-2">
               <button
                 v-for="c in ['明天接着做', '今天就到这儿']"
                 :key="c"
                 :data-review-keep="c"
                 class="rounded-full px-3.5 py-1.5 text-xs font-medium transition active:scale-95"
-                :class="reviewSheet.answers.keep === c ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink'"
+                :class="reviewSheet.answers.keep === c ? 'bg-primary-500 text-white' : 'bg-soft text-ink'"
                 @click="reviewSetAnswer('keep', c)"
               >{{ c }}</button>
             </div>
@@ -97,12 +97,12 @@ const {
             <button
               v-if="reviewSheet.step > 0"
               data-review-back
-              class="rounded-xl bg-ink/5 px-4 py-2.5 text-sm font-medium transition active:scale-95"
+              class="rounded-xl bg-soft px-4 py-2.5 text-sm font-medium transition active:scale-95"
               @click="reviewBack"
             >上一步</button>
             <button
               data-review-skip
-              class="rounded-xl bg-ink/5 px-4 py-2.5 text-sm font-medium transition active:scale-95"
+              class="rounded-xl bg-soft px-4 py-2.5 text-sm font-medium transition active:scale-95"
               @click="reviewNext"
             >跳过</button>
             <button
@@ -119,7 +119,7 @@ const {
             <p class="text-base font-bold">今天的日精进</p>
             <span class="text-[11px] text-ink-dim">{{ reviewSheet.record.date }}</span>
           </div>
-          <p data-review-summary class="mt-3 whitespace-pre-line rounded-xl bg-ink/5 p-3 text-[12.5px] leading-relaxed text-ink">{{ reviewSheet.record.summary }}</p>
+          <p data-review-summary class="mt-3 whitespace-pre-line rounded-xl bg-soft p-3 text-[12.5px] leading-relaxed text-ink">{{ reviewSheet.record.summary }}</p>
           <p v-if="reviewMsg" data-review-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ reviewMsg }}</p>
           <div class="mt-4 flex items-center gap-2">
             <button
@@ -129,7 +129,7 @@ const {
             >「明天最重要的一件事」转待办</button>
             <button
               data-review-done
-              class="rounded-xl bg-ink/5 px-4 py-2.5 text-sm font-medium transition active:scale-95"
+              class="rounded-xl bg-soft px-4 py-2.5 text-sm font-medium transition active:scale-95"
               @click="closeReview"
             >完成</button>
           </div>

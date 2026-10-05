@@ -23,11 +23,11 @@ const app = useApp()
       <!-- 时间：点哪填哪，左右微调 -->
       <div class="flex items-center gap-2.5">
         <div class="flex flex-1 items-center justify-between rounded-xl border border-line bg-canvas px-2 py-1.5">
-          <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="app.stepStart(-5)">
+          <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-soft-2" @click="app.stepStart(-5)">
             <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
           </button>
           <span class="text-sm font-semibold tabular-nums" data-add-start>{{ app.addForm.start }}</span>
-          <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="app.stepStart(5)">
+          <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-soft-2" @click="app.stepStart(5)">
             <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
           </button>
         </div>
@@ -35,7 +35,7 @@ const app = useApp()
           v-for="d in app.DURATIONS"
           :key="d"
           class="rounded-full px-2.5 py-1.5 text-xs font-medium transition active:scale-95"
-          :class="app.addForm.duration === d ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
+          :class="app.addForm.duration === d ? 'bg-primary-500 text-white' : 'bg-soft text-ink-dim'"
           @click="app.addForm.duration = d"
         >
           {{ d }}分
