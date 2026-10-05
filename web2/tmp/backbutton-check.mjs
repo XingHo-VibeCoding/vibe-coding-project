@@ -23,9 +23,11 @@ window.Capacitor = { Plugins: {
   }
 }}`
 
+const todayKey = (() => { const d = new Date(); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` })()
 const seed = 'localStorage.setItem("web2.onboarded","1");localStorage.setItem("web2.data",' + JSON.stringify(readFileSync('D:/Document/Project/vibe-coding-project/web2/tmp/valid-export.json', 'utf8')) + ');'
-  /* 种一篇日精进：今日页才出现「日精进 1 篇 ›」入口，才能验历史浮层的返回键（v1.41.9 真机反馈） */
-  + 'localStorage.setItem("web2.review",JSON.stringify([{date:"2026-10-01",summary:"测试日精进"}]));'
+  /* 种一篇「今天」的日精进：今日页才出现那一行日精进摘要卡（改一改 / 日精进 1 篇 ›），
+     才能验两种浮层的返回键（v1.41.9 真机反馈；Stage 2 后未复盘时今天页不放日精进卡） */
+  + `localStorage.setItem("web2.review",JSON.stringify([{date:"${todayKey}",summary:"测试日精进"}]));`
 
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })

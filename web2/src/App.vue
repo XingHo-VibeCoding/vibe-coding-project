@@ -2911,6 +2911,47 @@ function minUntil(c) {
   return minOf(c.start) - nowTime.value
 }
 
+/* ---------------- Stage 2：顶卡主体（现在做什么） ----------------
+   顶卡从此一张卡三行：情绪行（greetingText，特色文案不动）→ 主体 → 页脚计数。
+   主体吃掉原来分散在四处的信息（状态气泡 / 今日状态行 / 录音卡 / 复盘卡），三种形态：
+     class  = 有课可上（进行中优先，否则今天最近的一节）——课名 · 地点 · 剩余 + 录音按钮
+     review = 该收尾了（≥18:00 且今天还没复盘，课都上完或已过 21:00）——收个尾 + 开始复盘
+     free   = 今天没有安排——直接说「今天没有课」，副行沿用状态轴的可爱文案
+   复盘不再常驻（用户 m12341）：只有该收尾时才占主体，写完日精进后降成一行「今天的日精进」。 */
+const REVIEW_FROM = 18 * 60
+const heroCourse = computed(
+  () => currentCourse.value || todayCourses.value.find((c) => c.id === nextTodayId.value) || null,
+)
+const allTodayCoursesDone = computed(
+  () => todayCourses.value.length > 0 && todayCourses.value.every((c) => nowTime.value > minOf(c.end)),
+)
+const heroMode = computed(() => {
+  if (
+    !todayReview.value &&
+    nowTime.value >= REVIEW_FROM &&
+    (allTodayCoursesDone.value || !todayCourses.value.length || nowTime.value >= 21 * 60)
+  ) {
+    return 'review'
+  }
+  return heroCourse.value ? 'class' : 'free'
+})
+/* 主体副行：地点 + 进行中剩余 / 下一节倒计时（口径与「接下来」那行一致） */
+const heroSubline = computed(() => {
+  const c = heroCourse.value
+  if (!c) return ''
+  const head = c.place || '—'
+  if (courseStatus(c) === 'now') return `${head} · 还剩 ${Math.max(0, minOf(c.end) - nowTime.value)} 分钟`
+  const until = minUntil(c)
+  return until > 0 && until <= 120 ? `${head} · ${until} 分钟后开始` : head
+})
+/* 主体两行文案：review 形态换成「收个尾」，其余沿用状态行口径（headerCourseText / 状态轴可爱文案） */
+const heroTitle = computed(() => (heroMode.value === 'review' ? '今天收个尾' : headerCourseText.value))
+const heroSub = computed(() => {
+  if (heroMode.value === 'review') return '两分钟：今天怎么样、明天最重要的一件事，写完存成今天的日精进'
+  if (heroMode.value === 'class') return heroSubline.value
+  return (state.value && state.value.text) || '今天没有安排，看看待办和练耳吧'
+})
+
 const dateText = `${today.getMonth() + 1} 月 ${today.getDate()} 日`
 const weekDay = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][today.getDay()]
 
@@ -3559,24 +3600,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             class="font-bold tracking-tight text-ink transition-all duration-[280ms]"
             :class="tab === 'today' ? 'mt-1 text-2xl' : 'mt-0.5 truncate text-lg'"
           >{{ greetingText }}</h1>
-          <!-- 状态气泡：状态轴命中才出现（仅今日页）。收缩容器防瞬间消失：离开今日随 header 一起收起 -->
-          <div
-            class="grid transition-[grid-template-rows] duration-[280ms]"
-            :class="tab === 'today' && state ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
-            style="transition-timing-function: cubic-bezier(0.3, 0.75, 0.3, 1)"
-            :style="{ transitionDelay: tab === 'today' ? '110ms' : '0ms' }"
-          >
-            <div class="min-h-0 overflow-hidden">
-              <p
-                v-if="state"
-                class="mt-2.5 inline-flex max-w-full items-center gap-1 truncate rounded-full bg-card px-3 py-1.5 text-xs font-medium text-primary-600 shadow-sm transition-all duration-[280ms]"
-                :class="tab === 'today' ? 'translate-y-0 opacity-100' : '-translate-y-2 opacity-0'"
-                style="transition-timing-function: cubic-bezier(0.34, 1.45, 0.64, 1)"
-              >
-                {{ state.text }}
-              </p>
-            </div>
-          </div>
+          <!-- Stage 2：原「状态气泡」并入顶卡主体（没课时用它那句可爱话当副行），这里不再单独占一行 -->
         </div>
         <!-- 主题切换：太阳 / 月亮 -->
         <button
@@ -3593,9 +3617,81 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           </svg>
         </button>
       </div>
+      <!-- Stage 2 主体 + 页脚：随 tab 收起（沿用同一套 grid-rows 塌缩，高度动画与原来一致） -->
+      <div
+        class="grid transition-[grid-template-rows] duration-[280ms]"
+        :class="tab === 'today' ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
+        style="transition-timing-function: cubic-bezier(0.3, 0.75, 0.3, 1)"
+        :style="{ transitionDelay: tab === 'today' ? '110ms' : '0ms' }"
+      >
+        <div class="min-h-0 overflow-hidden">
+          <!-- 主体：现在做什么（class 有课 / review 该收尾 / free 没安排）
+               录音钮三种形态都在——无感录音的入口只留这一颗，不随形态消失。
+               data-today-rec 挂在本块上（录音按钮 + 计时 + 提示都算「录音区」），
+               原来那张「课堂录音」大卡压成这里一颗钮（用户 m12341：它不该单独占一张卡）。 -->
+          <div
+            data-today-now
+            data-today-rec
+            class="mt-3 rounded-2xl border border-white/70 bg-card/75 px-3.5 py-3 shadow-sm dark:border-white/10"
+          >
+            <div class="flex items-center gap-3">
+              <span class="min-w-0 flex-1">
+                <span data-header-status class="block truncate text-sm font-semibold text-ink">{{ heroTitle }}</span>
+                <span class="mt-0.5 block truncate text-[11px] text-ink-dim">{{ heroSub }}</span>
+              </span>
+              <div class="flex shrink-0 items-center gap-2">
+                <button
+                  v-if="heroMode === 'review'"
+                  data-review-start
+                  class="rounded-full bg-primary-500 px-3.5 py-2 text-xs font-semibold text-white shadow-sm shadow-primary-500/25 transition active:scale-95"
+                  @click="openReview('ask')"
+                >开始复盘</button>
+                <button
+                  v-if="!recActiveId"
+                  data-today-rec-start
+                  aria-label="开始录音"
+                  class="flex items-center gap-1 rounded-full bg-primary-500 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-primary-500/25 transition active:scale-95"
+                  :class="recSupported ? '' : 'opacity-60'"
+                  @click="startRec"
+                >
+                  <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
+                  录音
+                </button>
+                <button
+                  v-else
+                  data-today-rec-stop
+                  class="flex items-center gap-1 rounded-full bg-red-400 px-3 py-2 text-xs font-semibold text-white shadow-sm transition active:scale-95"
+                  @click="stopRec"
+                >
+                  停止并保存
+                </button>
+              </div>
+            </div>
+            <p v-if="recActiveId" class="mt-1.5 flex items-center gap-1.5 text-[11px] text-red-600 dark:text-red-400">
+              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400"></span>
+              录音中 {{ fmtDur(recElapsed * 1000) }} · 下课 2 分钟自动停 · 锁屏也会继续录
+            </p>
+            <p v-if="recMsg" class="mt-1.5 text-[11px]" :class="recMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ recMsg }}</p>
+          </div>
+          <!-- 页脚计数：原来今天页顶部那条 data-today-strip 整块搬进来（锚点与内部结构不变） -->
+          <section data-today-strip class="mt-2.5 flex items-center gap-3 rounded-2xl border border-line bg-card px-3.5 py-2 shadow-sm">
+            <p class="min-w-0 flex-1 truncate text-xs text-ink-dim">
+              今天 {{ todayCourses.length }} {{ todayRoutineCount ? '项安排' : '节课' }}
+            </p>
+            <span class="shrink-0 text-[11px] text-ink-dim">待办 {{ doneCount }}/{{ todos.length }}</span>
+            <div class="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-primary-100">
+              <div
+                class="h-full rounded-full bg-primary-500 transition-all duration-500"
+                :style="{ width: todos.length ? (doneCount / todos.length) * 100 + '%' : '0%' }"
+              ></div>
+            </div>
+          </section>
+        </div>
+      </div>
       <!-- 学期进度（v1.41.6）：一周点亮一格，一眼看到「学期过到哪了」。
+           Stage 2 起从「顶卡最上面」下沉到主体之后——顶卡第一眼该是「现在做什么」。
            只在今日页出现——周课表/我的页的头部是紧凑版，塞进来会把它们撑高。 -->
-      <div v-if="tab === 'today' && termInfo" data-term-ribbon class="mt-3.5">
+      <div v-if="tab === 'today' && termInfo" data-term-ribbon class="mt-3">
         <div class="flex items-end justify-between gap-2">
           <p class="text-[11px] font-medium text-primary-600/90">
             学期进度 · 第 {{ termInfo.wk }} / {{ termInfo.total }} 周
@@ -3614,28 +3710,6 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             :style="{ height: w === termInfo.wk ? '10px' : '7px' }"
             :title="'第 ' + w + ' 周'"
           ></span>
-        </div>
-      </div>
-      <!-- 今日状态行（2026-10-03 方案 C Step 2 起是**窄条**）：只留一行状态文案
-           （进行中 · X / 下一节 · X HH:MM / 今日安排已结束 / 今天没有课），
-           计数与进度条已搬进今天页顶部的 data-today-strip，不再在卡里重复一遍。
-           向上收缩动效：外层 grid-rows 0fr↔1fr 做高度塌缩（无过冲曲线，防布局闪烁），
-           卡片本体叠加 -translate-y 上飘+淡出用过冲曲线（Q 弹感来源，transform 过冲不撑布局） -->
-      <div
-        class="grid transition-[grid-template-rows] duration-[280ms]"
-        :class="tab === 'today' ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
-        style="transition-timing-function: cubic-bezier(0.3, 0.75, 0.3, 1)"
-        :style="{ transitionDelay: tab === 'today' ? '110ms' : '0ms' }"
-      >
-        <div class="min-h-0 overflow-hidden">
-          <div
-            class="mt-3 rounded-2xl border border-line bg-card px-4 py-2.5 shadow-sm transition-all duration-[280ms]"
-            :class="tab === 'today' ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0'"
-            style="transition-timing-function: cubic-bezier(0.34, 1.45, 0.64, 1)"
-            :style="{ transitionDelay: tab === 'today' ? '110ms' : '0ms' }"
-          >
-            <p data-header-status class="truncate text-sm font-semibold text-ink">{{ headerCourseText }}</p>
-          </div>
         </div>
       </div>
     </header>
@@ -3665,24 +3739,8 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
       :inert="tab !== 'today'"
       :style="todayH ? { height: todayH + 'px' } : null"
     >
-      <!-- 今天进度窄条（2026-10-03 方案 C Step 2）：原来「今天 N 节课 / 待办 d/t + 进度条」
-           长在顶部问候卡里，占 ~78px 且在**所有 tab 上方**常驻。这里压成一窄条搬进今天页，
-           顶部卡只留一行状态文案（进行中 / 下一节 / 今天没有课）。 -->
-      <section
-        data-today-strip
-        class="flex items-center gap-3 rounded-2xl border border-line bg-card px-3.5 py-2.5 shadow-sm"
-      >
-        <p class="min-w-0 flex-1 truncate text-xs text-ink-dim">
-          今天 {{ todayCourses.length }} {{ todayRoutineCount ? '项安排' : '节课' }}
-        </p>
-        <span class="shrink-0 text-[11px] text-ink-dim">待办 {{ doneCount }}/{{ todos.length }}</span>
-        <div class="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-primary-100">
-          <div
-            class="h-full rounded-full bg-primary-500 transition-all duration-500"
-            :style="{ width: todos.length ? (doneCount / todos.length) * 100 + '%' : '0%' }"
-          ></div>
-        </div>
-      </section>
+      <!-- Stage 2：原来这条「今天 N 节课 / 待办 + 进度条」窄条已并进顶卡页脚（同一锚点 data-today-strip），
+           今天页正文从「接下来」开始——首屏第一眼是顶卡的「现在做什么」。 -->
 
       <!-- 接下来：今天剩下的安排（课程 / 循环日程 / 今天的独立日程）。
            2026-10-03 方案 C Step 2：原「今日课程」改名并提到今天页最前——旧版首页把课藏在一张
@@ -3973,92 +4031,37 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         </ul>
       </section>
 
-      <!-- 课堂录音入口（M5 第 2 步）：今日页直达，不用每次绕「我的」；
-           录音中整卡变红显示计时，停录后自动转写→纪要→作业转待办一路到底。
-           2026-10-03 方案 C Step 2：由第一屏下沉到今天页末尾——它的使用时机是「课已经开始」，
-           而第一屏该回答的是「我接下来要上什么」（见上方「接下来」段）。 -->
-      <section
-        class="rounded-2xl border bg-card p-3.5 shadow-sm"
-        :class="recActiveId ? 'border-red-300' : 'border-line'"
-        data-today-rec
-      >
-        <div class="flex items-center gap-3.5">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" :class="recActiveId ? 'bg-red-400/10' : 'bg-primary-50'">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" :class="recActiveId ? 'text-red-600 dark:text-red-400' : 'text-primary-500'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
-          </span>
-          <span class="min-w-0 flex-1">
-            <template v-if="!recActiveId">
-              <span class="block text-sm font-medium">课堂录音</span>
-              <span class="block text-[11px] text-ink-dim">下课 2 分钟自动停；停录后自动转写、纪要、作业转待办</span>
-            </template>
-            <template v-else>
-              <span class="flex items-center gap-2">
-                <span class="h-2 w-2 animate-pulse rounded-full bg-red-400"></span>
-                <span class="text-sm font-semibold tabular-nums">{{ fmtDur(recElapsed * 1000) }}</span>
-              </span>
-              <span class="block text-[11px] text-ink-dim">录音中 · 锁屏也会继续录</span>
-            </template>
-          </span>
-          <button
-            v-if="!recActiveId"
-            data-today-rec-start
-            class="shrink-0 rounded-full bg-primary-500 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
-            :class="recSupported ? '' : 'opacity-60'"
-            @click="startRec"
-          >
-            开始录音
-          </button>
-          <button
-            v-else
-            data-today-rec-stop
-            class="shrink-0 rounded-full bg-red-400 px-4 py-2 text-xs font-medium text-white transition active:scale-95"
-            @click="stopRec"
-          >
-            停止并保存
-          </button>
-        </div>
-        <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ recMsg }}</p>
-      </section>
+      <!-- 课堂录音（M5 第 2 步）：Stage 2 起压成顶卡主体里的一颗「录音」钮（见 header 的 data-today-rec），
+           今天页正文里不再单占一张卡——用户 m12341：「太显眼了」。 -->
 
       <!-- ===== 每日复盘（五期）=====
-           放今日页最底部：白天它是「收个尾」的入口，晚上 23:00 的轻提醒点开就是它。
-           存档只在本机（web2.review），不进主项目导出。 -->
-      <section data-today-review class="mt-4">
-        <div class="mb-2 flex items-baseline justify-between">
-          <h2 class="text-sm font-semibold text-ink">今天收个尾 <span class="text-xs font-normal text-ink-dim">· 每日复盘</span></h2>
+           Stage 2 起不再常驻（用户 m12341：它是每天最后只做一次的事）：
+           该收尾的时候（晚上、还没复盘）入口在顶卡主体里；写完之后只在今天页留这一行「今天的日精进」，
+           想改还能点「改一改」，想回顾点右上「日精进 N 篇」。存档只在本机（web2.review），不进主项目导出。 -->
+      <section v-if="todayReview" data-today-review class="rounded-2xl border border-line bg-card px-3.5 py-3 shadow-sm">
+        <div class="flex items-baseline justify-between gap-2">
+          <p class="text-xs font-semibold text-ink">今天的日精进</p>
           <button
             v-if="reviewHistory.length"
             data-review-open-history
-            class="text-[11px] text-ink-dim transition active:scale-95"
+            class="shrink-0 text-[11px] text-ink-dim transition active:scale-95"
             @click="openReview('history')"
           >日精进 {{ reviewHistory.length }} 篇 ›</button>
         </div>
-        <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
-          <template v-if="todayReview">
-            <p data-today-review-summary class="whitespace-pre-line text-[12.5px] leading-relaxed text-ink">{{ todayReview.summary }}</p>
-            <div class="mt-3 flex items-center gap-2">
-              <button
-                data-review-start
-                class="rounded-full bg-ink/5 px-3.5 py-1.5 text-xs font-medium transition active:scale-95"
-                @click="openReview('ask')"
-              >改一改</button>
-              <button
-                data-review-open-result
-                class="rounded-full bg-primary-500 px-3.5 py-1.5 text-xs font-medium text-white shadow-md shadow-primary-500/25 transition active:scale-95"
-                @click="openReview('result')"
-              >转待办 / 再看一遍</button>
-            </div>
-          </template>
-          <template v-else>
-            <p class="text-[12.5px] leading-relaxed text-ink-dim">花 2 分钟给今天收个尾：今天怎么样、明天最重要的一件事。写完会生成一段「日精进」存下来。</p>
-            <button
-              data-review-start
-              class="mt-3 w-full rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
-              @click="openReview('ask')"
-            >开始复盘</button>
-          </template>
-          <p v-if="reviewMsg" data-review-card-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ reviewMsg }}</p>
+        <p data-today-review-summary class="mt-1 line-clamp-2 whitespace-pre-line text-[11.5px] leading-relaxed text-ink-dim">{{ todayReview.summary }}</p>
+        <div class="mt-2.5 flex items-center gap-2">
+          <button
+            data-review-start
+            class="rounded-full bg-ink/5 px-3.5 py-1.5 text-xs font-medium transition active:scale-95"
+            @click="openReview('ask')"
+          >改一改</button>
+          <button
+            data-review-open-result
+            class="rounded-full bg-primary-500 px-3.5 py-1.5 text-xs font-medium text-white shadow-md shadow-primary-500/25 transition active:scale-95"
+            @click="openReview('result')"
+          >转待办 / 再看一遍</button>
         </div>
+        <p v-if="reviewMsg" data-review-card-msg class="mt-2 text-[11px]" :class="reviewMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ reviewMsg }}</p>
       </section>
     </main>
 

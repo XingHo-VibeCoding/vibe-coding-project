@@ -60,16 +60,17 @@ const WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'
 const hasToday = (await p.locator('[data-today-item]').count()) > 0
 const NO_TODAY = `今天（${WD}）示例数据里没有课，无「下一节」可断言`
 
-t('A4. 顶部状态条收成一行（header 里没有计数/进度条了）',
+const headerText = (await p.locator('header').innerText()).replace(/\s+/g, ' ')
+t('A4. 顶卡主体是状态行（header 里恰好一个 data-header-status，且是既有三种口径之一）',
   (await p.locator('header [data-header-status]').count()) === 1
-  && (!hasToday || (await p.locator('header').innerText()).replace(/\s+/g, ' ').includes('下一节 · ')),
-  (await p.locator('header').innerText()).replace(/\s+/g, ' '))
+  && /进行中 · |下一节 · |今日安排已结束|今天没有课|今天收个尾|今天没有安排/.test(headerText),
+  headerText)
 t('A5. 「今天 N 节课」全页只出现一次（没在 header 里重复一遍）',
   (await p.locator('text=/今天 \\d+ 节课/').count()) === 1)
 
 const order = await p.evaluate(SECTION_ORDER)
-t('A6. 段序 = 窄条 → 接下来 → 今天要交 → 今天要坚持 → 课堂录音 → 今天收个尾（五期复盘入口）',
-  JSON.stringify(order) === JSON.stringify(['strip', '接下来', '今天要交', '今天要坚持', 'rec', '今天收个尾']),
+t('A6. 段序 = 接下来 → 今天要交 → 今天要坚持（Stage 2 后窄条/录音/复盘在顶卡内）',
+  JSON.stringify(order) === JSON.stringify(['接下来', '今天要交', '今天要坚持']),
   JSON.stringify(order))
 
 if (!hasToday) ts('A7. 原「今日课程」条目锚点仍在（data-today-item）', NO_TODAY)

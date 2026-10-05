@@ -73,7 +73,7 @@ async function open({ bridge = false } = {}) {
     localStorage.setItem('web2.data', docStr)
   }, DOC)
   if (bridge) await page.addInitScript(FAKE_BRIDGE)
-  await page.goto(BASE, { waitUntil: 'domcontentloaded' })
+  await page.goto(BASE + '?t=21:30', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(900)
   return { page, ctx, errors }
 }
@@ -96,9 +96,9 @@ const todoRows = (page) => page.evaluate(() => {
 /* ============ A. 今日页入口 → 四题 → 日精进 ============ */
 const m = await open()
 const p = m.page
-t('A1. 今日页出现「今天收个尾 · 每日复盘」卡', (await p.locator('[data-today-review]').count()) === 1)
-const card0 = await p.locator('[data-today-review]').innerText()
-t('A2. 未复盘时给「开始复盘」', card0.includes('开始复盘') && !card0.includes('改一改'), card0.replace(/\n/g, ' ').slice(0, 60))
+t('A1. 该收尾时（21:30）顶卡主体就是「今天收个尾」', (await p.locator('[data-today-now] [data-header-status]').innerText()).includes('今天收个尾'))
+const card0 = await p.locator('[data-today-now]').innerText()
+t('A2. 未复盘时给「开始复盘」且今天页没有日精进卡', card0.includes('开始复盘') && (await p.locator('[data-today-review]').count()) === 0, card0.replace(/\n/g, ' ').slice(0, 60))
 t('A3. 浮层默认不在 DOM', (await p.locator('[data-sheet-review]').count()) === 0)
 
 await p.locator('[data-review-start]').click()

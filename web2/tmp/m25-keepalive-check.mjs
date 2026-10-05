@@ -72,7 +72,8 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
 
   const ka1 = await page.evaluate(() => window.__ka)
   t('A1 起录后保活服务被拉起一次', count(ka1, 'start') === 1)
-  t('A2 保活带上了场次标题（' + (ka1[0] ? ka1[0][1] : '-') + '）', count(ka1, 'start') === 1 && String(ka1[0][1]).indexOf('课堂录音') === 0)
+  t('A2 保活带上了场次标题（' + (ka1[0] ? ka1[0][1] : '-') + '）',
+    count(ka1, 'start') === 1 && (/^课堂录音 /.test(String(ka1[0][1])) || / · \d+月\d+日$/.test(String(ka1[0][1])))) // 两种合法标题：没课时默认「课堂录音 …」，正落在某节课覆盖时间里挂课名（M5 课程关联）——与跑测时刻无关
   t('A3 此时还没撤下服务', count(ka1, 'stop') === 0)
   t('A4 提示改为「锁屏、切到后台都会继续录」', (await page.locator('text=锁屏、切到后台都会继续录').count()) > 0)
   t('A5 录音条文案改为「锁屏也会继续录」', (await page.locator('text=录音中 · 锁屏也会继续录').count()) > 0)

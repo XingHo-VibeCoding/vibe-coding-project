@@ -104,10 +104,17 @@ const h2 = (await p2.locator('body').innerText()).replace(/\s+/g, ' ')
 t('B1 循环日程时段内 → 头部显示「进行中 · 健身」', h2.includes('进行中 · 健身'), h2.match(/进行中 · [^\s]{0,10}/)?.[0] || '')
 await p2.context().close()
 
-const p3 = await openPage(browser, { t: '22:00' })
+const p3 = await openPage(browser, { t: '17:30' })
 const h3 = (await p3.locator('body').innerText()).replace(/\s+/g, ' ')
-t('B2 全部结束后 → 「今日安排已结束」', h3.includes('今日安排已结束'))
+t('B2 17:30 → 头部把晚上的循环日程算成「下一节 · 单/双周…」',
+  h3.includes('下一节 · ') && (h3.includes('双周锻炼') || h3.includes('单周自习')),
+  h3.match(/下一节 · [^\s]{0,12}/)?.[0] || '')
 await p3.context().close()
+
+const p4 = await openPage(browser, { t: '22:00' })
+const h4 = (await p4.locator('body').innerText()).replace(/\s+/g, ' ')
+t('B2b 晚上未复盘（22:00）→ 顶卡主体变「今天收个尾」', h4.includes('今天收个尾') && h4.includes('开始复盘'))
+await p4.context().close()
 
 /* ================= C/D. 周视图手势造冲突 ================= */
 const page = await openPage(browser, { t: '07:00' })

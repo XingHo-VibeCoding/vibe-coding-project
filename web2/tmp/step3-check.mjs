@@ -70,8 +70,8 @@ t('A5. 每行都有就地播放按钮（h-11 = 44px 热区）',
   && (await p.locator('[data-today-listen-play]').first().evaluate((el) => el.getBoundingClientRect().height)) >= 44)
 t('A6. 未到期的音频不出现在今天页（高数公式速记排在未来）',
   !(await p.locator('[data-today-listen]').innerText()).includes('高数公式速记'))
-t('A7. 段序 = 窄条 → 接下来 → 今天要交 → 今天要坚持 → 今天要听 → 录音 → 今天收个尾',
-  JSON.stringify(await p.evaluate(SECTION_ORDER)) === JSON.stringify(['strip', '接下来', '今天要交', '今天要坚持', '今天要听', 'rec', '今天收个尾']),
+t('A7. 段序 = 接下来 → 今天要交 → 今天要坚持 → 今天要听（Stage 2 后窄条/录音/复盘在顶卡内，不再占正文）',
+  JSON.stringify(await p.evaluate(SECTION_ORDER)) === JSON.stringify(['接下来', '今天要交', '今天要坚持', '今天要听']),
   JSON.stringify(await p.evaluate(SECTION_ORDER)))
 
 await p.locator('[data-today-listen-more]').click()
@@ -103,7 +103,7 @@ await a.ctx.close()
 const b = await open([FUTURE])
 t('B1. 没有到期音频时「今天要听」整段不出现', (await b.page.locator('[data-today-listen]').count()) === 0)
 t('B2. 段序回到 Step 2 的样子（不会留一个空壳段）',
-  JSON.stringify(await b.page.evaluate(SECTION_ORDER)) === JSON.stringify(['strip', '接下来', '今天要交', '今天要坚持', 'rec', '今天收个尾']),
+  JSON.stringify(await b.page.evaluate(SECTION_ORDER)) === JSON.stringify(['接下来', '今天要交', '今天要坚持']),
   JSON.stringify(await b.page.evaluate(SECTION_ORDER)))
 t('B3. 全程无页面报错 / 4xx', b.errors.length === 0, JSON.stringify(b.errors))
 await b.ctx.close()
