@@ -76,6 +76,11 @@ try {
   t('A7. 点外面收起面板', (await page.locator('[data-dd="model"] ul').count()) === 0)
 
   // ---- B. 长按删除 ----
+  /* Stage 6：录音场次列表搬进「我的 → 录音历史」二级页 → 先返回索引再推入 lectures */
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(300)
+  await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await page.waitForTimeout(400)
   // 短按不触发
   await row.locator('span').first().dispatchEvent('pointerdown')
   await page.waitForTimeout(120)

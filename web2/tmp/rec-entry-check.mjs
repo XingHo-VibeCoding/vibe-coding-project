@@ -56,6 +56,15 @@ async function open(t2, tab = 'today') {
   return { ctx, page, errs }
 }
 
+/* Stage 6：录音区搬进「我的」二级页。切「我的」tab（程序化 click，非当前页带 inert）
+   再推 lectures 二级页，之后录音区内容在 [data-sub-body] 里读。 */
+async function openMeLectures(page) {
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await page.waitForTimeout(400)
+}
+
 /* ================= A. 课上（10:30）：两处入口都在 ================= */
 const A = await open('10:30')
 t('A1 今天页顶卡给「录音」钮', (await A.page.locator('[data-today-rec-start]').count()) === 1)
@@ -71,7 +80,9 @@ t('A5 课表页正在上的那节课有且只有一个录音钮',
   String(await A.page.locator('[data-week-rec-now]').count()))
 const weekTxt = await A.page.locator('[data-week-rec-now]').first().innerText().catch(() => '')
 t('A6 课表页那钮文案是「录音」', weekTxt.trim() === '录音', weekTxt)
-t('A7 「我的」页独立入口仍在', (await A.page.locator('[data-page="me"] button:has-text("开始录音")').count()) === 1)
+t('A7 「我的」索引页有「录音历史」入口', (await A.page.locator('[data-page="me"] [data-me-entry="lectures"]').count()) === 1)
+await openMeLectures(A.page)
+t('A7b 推进 lectures 二级页后有「开始录音」按钮', (await A.page.locator('[data-sub-body] button:has-text("开始录音")').count()) === 1)
 t('A8 无报错', A.errs.length === 0, A.errs.join(' | '))
 await A.ctx.close()
 
@@ -95,7 +106,10 @@ await B.ctx.close()
 const C = await open('13:00', 'week')
 t('C1 空档时今天页不给录音钮', (await C.page.locator('[data-today-rec-start]').count()) === 0)
 t('C2 空档时课表页也不给录音钮', (await C.page.locator('[data-week-rec-now]').count()) === 0)
-t('C3 空档时「我的」页独立入口还在', (await C.page.locator('[data-page="me"] button:has-text("开始录音")').count()) === 1)
+await openMeLectures(C.page)
+t('C3 空档时「我的」索引有录音历史入口，推进去仍有「开始录音」',
+  (await C.page.locator('[data-page="me"] [data-me-entry="lectures"]').count()) === 1
+    && (await C.page.locator('[data-sub-body] button:has-text("开始录音")').count()) === 1)
 t('C4 无报错', C.errs.length === 0, C.errs.join(' | '))
 await C.ctx.close()
 

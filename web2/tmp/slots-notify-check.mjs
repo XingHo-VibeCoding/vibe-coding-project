@@ -64,7 +64,10 @@ function watchErrors(page) {
   t('A1. 没有 StatusFrame 插件 → 设置里不出现「常驻状态框」那一行', (await page.locator('[data-frame-row]').count()) === 0)
   t('A2. 没有 LocalNotifications 插件 → 精确提醒那一块整块不出现（#10 老壳分支）', (await page.locator('[data-exact-row]').count()) === 0)
   t('A3. 设置页仍然完整（关于/清除数据这些照常在）', (await page.locator('[data-settings-toggle]').count()) === 1)
-  /* 其余功能照常：切页签能切、今日页有内容 */
+  /* 其余功能照常：切页签能切、今日页有内容。
+     Stage 6：设置是 fixed 二级覆盖层，切页签前先返回索引，否则真实点击会被覆盖层拦下。 */
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(300)
   await page.locator('nav button', { hasText: '周课表' }).click()
   await page.waitForTimeout(400)
   t('A4. App 其余功能照常（能切到周课表）', (await page.locator('[data-page="week"]').count()) === 1)
@@ -246,6 +249,8 @@ function bridgeScript() {
   await page.evaluate(() => window.__n.cbs.localNotificationActionPerformed({ actionId: 'tap', notification: { extra: { src: 'web2-listen' } } }))
   await page.waitForTimeout(800)
   t('C12. 点练耳通知不会误开复盘浮层（负例）', (await page.locator('[data-review-q]').count()) === 0)
+  /* Stage 6：练耳提醒的落点是 listen 二级页（并展开练耳块），不是索引页 —— 负例的另一半 */
+  t('C12b. 点练耳通知落在 listen 二级页', (await page.locator('[data-sub-page][data-sub="listen"]').count()) === 1)
   t('C13. 点未知来源的通知也不炸', await page.evaluate(async () => {
     try {
       window.__n.cbs.localNotificationActionPerformed({ actionId: 'tap', notification: {} })

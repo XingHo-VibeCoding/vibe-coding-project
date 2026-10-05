@@ -43,9 +43,10 @@ try {
   await page.goto(URL, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
 
-  await page.locator('nav button', { hasText: '我的' }).first().click()
+  await page.$eval('[data-nav="me"]', (el) => el.click())
   await page.waitForTimeout(500)
-  await page.locator('[aria-label="编辑学期信息"]').click()
+  /* Stage 6：学期/节次编辑入口＝索引页那一行「学期」（data-me-term；source==='import' 时可编辑） */
+  await page.$eval('[data-me-term]', (el) => el.click())
   await page.waitForTimeout(800)
 
   const segs = page.locator('[data-seg]')
@@ -122,7 +123,7 @@ try {
   eq('A30. 学期其他字段保留', saved.semester.name + '/' + saved.semester.total_weeks, '测试学期/16')
 
   /* 重开弹层：保存的 seg 被读回（第 1 段仍是 1–10 节） */
-  await page.locator('[aria-label="编辑学期信息"]').click()
+  await page.$eval('[data-me-term]', (el) => el.click())
   await page.waitForTimeout(800)
   t('A31. 重开后并入结果仍在（第 1 段 = 第 1–10 节）', (await page.locator('[data-seg="1"]').innerText()).includes('第 1–10 节'))
   eq('A32. 重开后仍是 2 段', await page.locator('[data-seg]').count(), 2)

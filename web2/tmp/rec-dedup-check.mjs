@@ -95,7 +95,12 @@ try {
   await page.locator('[data-rec-import]').click()
   await page.waitForTimeout(1200)
 
-  /* 反馈文案挂在 [data-import-msg]（不是 data-app-toast） */
+  /* 反馈文案挂在 [data-import-msg]（不是 data-app-toast）。
+     Stage 6：该锚点随「设置」块搬进了全屏二级页 → 先切「我的」再推设置二级页才读得到。 */
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-entry="settings"]', (el) => el.click())
+  await page.waitForTimeout(400)
   const msg = (await page.locator('[data-import-msg]').textContent().catch(() => '')) || ''
   t('④ 导入反馈含「课表识别已导入 2 门课」', /已导入\s*2\s*门课/.test(msg), msg)
   t('⑤ 反馈把「节次超出」单列（不再与「课程名没填」混为一句）', /1\s*门因节次超出当前节次表被跳过/.test(msg), msg)

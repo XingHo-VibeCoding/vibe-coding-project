@@ -125,6 +125,11 @@ try {
   t('E2. 落盘时间用学期节次表（08:30 / 10:10）', added.includes('"08:30"') && added.includes('"10:10"'))
   const sem = await page.evaluate(() => localStorage.getItem('web2.data') || '')
   t('E3. 学期数据未被改动（first_monday 原样）', sem.includes('2026-09-07') && sem.includes('"08:30"'))
+  // Stage 6：导入回执渲染在「设置」二级页里（原先在「我的」索引页）→ 先推进去看
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-entry="settings"]', (el) => el.click())
+  await page.waitForTimeout(400)
   const msg = await page.locator('[data-import-msg]').innerText().catch(() => '')
   console.log('   导入反馈：', msg)
   t('E4. 反馈含冲突提示（高等数学）', msg.includes('冲突') && msg.includes('高等数学'))
@@ -132,9 +137,12 @@ try {
   t('E6. 引导层已关闭', !(await page.locator('[data-ob-summary]').isVisible().catch(() => false)))
 
   // 6. 场次列表：标题是字符串 "undefined" 的坏数据必须显示成「未命名录音」
-  await page.locator('nav button', { hasText: '我的' }).click()
-  await page.waitForTimeout(500)
-  const lecTxt = await page.locator('ul').filter({ hasText: '课堂录音 10月2日' }).first().innerText().catch(() => '')
+  // Stage 6：录音场次搬进「我的」二级页（索引页只剩入口），先推进 lectures 二级页再读列表
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  const lecTxt = await page.locator('[data-sub-body] ul').filter({ hasText: '课堂录音 10月2日' }).first().innerText().catch(() => '')
   console.log('   场次列表：', lecTxt.replace(/\s+/g, ' ').slice(0, 200))
   t('F1. 坏标题显示成「未命名录音」', lecTxt.includes('未命名录音'))
   t('F2. 界面上不再出现字面量 undefined', !lecTxt.includes('undefined'))

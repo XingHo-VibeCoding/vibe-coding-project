@@ -64,8 +64,10 @@ try {
   await page.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(600)
 
-  const navBtns = page.locator('nav button')
-  await navBtns.nth(2).click()
+  /* Stage 6：录音列表搬进「我的 → 课堂录音」全屏二级页 */
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
   await page.waitForTimeout(400)
 
   const rowA = page.locator('li', { hasText: '高数三班' })
@@ -130,9 +132,11 @@ try {
   await p3.addInitScript(seed) // 只有种子，无假插件
   await p3.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
   await p3.waitForTimeout(500)
-  await p3.locator('nav button').nth(2).click()
+  await p3.$eval('[data-nav="me"]', (el) => el.click())
   await p3.waitForTimeout(300)
-  t('12. 浏览器环境不显示「转写」按钮', (await p3.locator('li button:has-text("转写")').count()) === 0)
+  await p3.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await p3.waitForTimeout(300)
+  t('12. 浏览器环境不显示「转写」按钮', (await p3.locator('[data-sub-body] li button:has-text("转写")').count()) === 0)
   await ctx2.close()
 } catch (e) {
   t('测试执行异常：' + e.message, false)

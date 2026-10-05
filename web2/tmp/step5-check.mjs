@@ -2,7 +2,7 @@
    1) 每个底部浮层都能滚到底（小屏 390×640 下长表单不再够不着底部按钮）
    2) 浮层遮罩统一锚点 data-sheet-mask（picker 用 data-picker-mask）
    3) 背景滚动锁：浮层开着时锁住底下页面，关掉恢复；周课表子视图照旧锁
-   4) 返回键一路往回收：练耳设置面板 → 设置折叠 → 课表子视图 → 回今日页
+   4) 返回键一路往回收：练耳设置面板 → 练耳二级页 → 课表子视图 → 回今日页
    5) 改版留下的僵尸注释已清（静态断言）
    跑法：先起 dist 静态服务（4177）再 node tmp/step5-check.mjs */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
@@ -68,7 +68,8 @@ try {
   /* ---------- A. 长浮层在小屏能滚到底（编辑学期：内容比 86vh 高） ---------- */
   await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(450)
-  await page.locator('button[aria-label="编辑学期信息"]').click()
+  /* Stage 6：学期编辑入口 = 索引页那一行学期（种子是 import 态才可点，见 openSemEdit 的条件） */
+  await page.$eval('[data-me-term]', (el) => el.click())
   await page.waitForTimeout(450)
   const sem = await box('[data-sheet-sem]')
   t('A1. 编辑学期浮层已打开（data-sheet-sem）', !!sem)
@@ -113,27 +114,29 @@ try {
   await page.waitForTimeout(500)
   t('C4. 关掉打卡浮层 → 滚动恢复', (await overflow()) === '')
 
-  /* ---------- D. 返回键分级：练耳设置面板 → 设置折叠 → 课表子视图 → 回今日页 ---------- */
+  /* ---------- D. 返回键分级：练耳设置面板 → 练耳二级页 → 课表子视图 → 回今日页 ---------- */
   await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(450)
+  /* Stage 6：练耳内容在 data-sub="listen" 二级页里，先推入 */
+  await page.$eval('[data-me-entry="listen"]', (el) => el.click())
+  await page.waitForTimeout(450)
   /* 练耳卡先展开，才看得到「练耳设置」开关 */
-  await page.locator('[data-page="me"] button', { hasText: '打开' }).first().click()
+  await page.locator('[data-sub-body] button', { hasText: '打开' }).first().click()
   await page.waitForTimeout(400)
   await page.locator('[data-listen-settings-toggle]').click()
   await page.waitForTimeout(400)
   t('D1. 练耳设置面板已展开', (await page.locator('[data-listen-settings]').count()) === 1)
   await fire()
   await page.waitForTimeout(400)
-  t('D2. 返回键只收起练耳设置面板（未退出、未切页）',
-    (await page.locator('[data-listen-settings]').count()) === 0 && (await exits()) === 0 && (await activeTab()).includes('我的'))
-  /* 设置折叠 */
-  await page.locator('[data-settings-toggle]').click()
-  await page.waitForTimeout(400)
-  t('D3. 设置折叠已展开', (await page.locator('[data-settings-body]').count()) === 1)
+  t('D2. 返回键只收起练耳设置面板（未退出、二级页还在）',
+    (await page.locator('[data-listen-settings]').count()) === 0 && (await exits()) === 0 && (await activeTab()).includes('我的')
+    && (await page.locator('[data-sub-page][data-sub="listen"]').count()) === 1)
+  /* 二级页本身 */
   await fire()
   await page.waitForTimeout(400)
-  t('D4. 返回键收起设置折叠',
-    (await page.locator('[data-settings-body]').count()) === 0 && (await exits()) === 0 && (await activeTab()).includes('我的'))
+  t('D3. 返回键收回练耳二级页（回索引，未退出、未切页）',
+    (await page.locator('[data-sub-page]').count()) === 0 && (await exits()) === 0 && (await activeTab()).includes('我的'))
+  t('D4. 收回后索引页 4 个入口仍在', (await page.locator('[data-page="me"] [data-me-entry]').count()) === 4)
   /* 课表「其他日程」子视图 */
   await page.locator('nav button', { hasText: '周课表' }).click()
   await page.waitForTimeout(450)

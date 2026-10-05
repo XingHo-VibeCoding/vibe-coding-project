@@ -52,7 +52,9 @@ try {
   await page.addInitScript(fetchMock)
   await page.goto(BASE, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
-  await page.locator('nav button', { hasText: '我的' }).click() // 录音板块住「我的」页
+  await page.$eval('[data-nav="me"]', (el) => el.click()) // 录音板块住「我的」页
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-entry="lectures"]', (el) => el.click()) // Stage 6：搬进二级页
   await page.waitForTimeout(400)
 
   const lecRow = (id) => page.locator('li').filter({ has: page.locator(`[data-lec="${id}"], text=${id}`) })
@@ -115,7 +117,9 @@ localStorage.setItem('web2.onboarded', '1')`
   await p3.addInitScript(seedSaved)
   await p3.goto(BASE, { waitUntil: 'domcontentloaded' })
   await p3.waitForTimeout(700)
-  await p3.locator('nav button', { hasText: '我的' }).click()
+  await p3.$eval('[data-nav="me"]', (el) => el.click())
+  await p3.waitForTimeout(400)
+  await p3.$eval('[data-me-entry="lectures"]', (el) => el.click())
   await p3.waitForTimeout(400)
   const rowS = p3.locator('li', { hasText: '已总结的录音' })
   t('18. 存盘 summary 重新加载后可展开', (await rowS.getByRole('button', { name: '查看纪要 ▼' }).count()) === 1)
@@ -133,21 +137,21 @@ localStorage.setItem('web2.onboarded', '1')`
   await p2.addInitScript(fetchMock)
   await p2.goto(BASE, { waitUntil: 'domcontentloaded' })
   await p2.waitForTimeout(700)
-  await p2.locator('nav button', { hasText: '我的' }).click()
+  await p2.$eval('[data-nav="me"]', (el) => el.click())
+  await p2.waitForTimeout(400)
+  await p2.$eval('[data-me-entry="lectures"]', (el) => el.click())
   await p2.waitForTimeout(400)
   const rowT3 = p2.locator('li', { hasText: '高数三班 录音' })
   await rowT3.getByRole('button', { name: '生成纪要', exact: true }).click()
   await p2.waitForTimeout(300)
-  t('21. 无配置点生成：给可读提示', (await p2.getByText(/还没选择纪要服务/).count()) >= 1)
-  t('22. 设置区自动展开（标签可见）', (await p2.getByText('纪要服务').count()) >= 1)
-  // 填配置后可直接生成（同页补配置，验证「缺啥补啥」链路）。v1.11 起下拉换成自建组件
+  /* Stage 6：缺配置时 startSummary 直接把当前 lectures 二级页换成 settings 二级页，
+     所以「设置区自动展开」＝此刻就在设置页；错误提示 recMsg 留在录音页，稍后回看。 */
+  t('22. 缺配置 → 自动进入设置二级页（纪要服务标签可见）', (await p2.getByText('纪要服务').count()) >= 1)
+  // 填配置（验证「缺啥补啥」链路）。v1.11 起下拉换成自建组件
   await p2.locator('[data-dd="provider"] button').click()
   await p2.locator('[data-dd="provider"] ul button', { hasText: 'DeepSeek（自己的 API Key）' }).click()
   await p2.locator('input[placeholder="sk-…"]').fill('sk-later')
   await p2.waitForTimeout(200)
-  await rowT3.getByRole('button', { name: '生成纪要', exact: true }).click()
-  await p2.waitForTimeout(500)
-  t('23. 补配置后同页直接生成成功', (await rowT3.getByText(/定积分的应用/).count()) >= 1)
 
   /* 模型下拉 + 测试连接（mock 对 /models 无 data 字段 → 成功提示不带模型列表） */
   await p2.locator('[data-dd="model"] button').click()
@@ -158,6 +162,17 @@ localStorage.setItem('web2.onboarded', '1')`
   await p2.getByRole('button', { name: '测试连接' }).click()
   await p2.waitForTimeout(400)
   t('25. 测试连接成功提示', (await p2.getByText(/连接正常/).count()) >= 1)
+
+  /* 回录音二级页：缺配置那次点击留下的错误提示仍在（recMsg 未被覆盖），
+     此时再点「生成纪要」就能跑通——「缺啥补啥」链路完整。 */
+  await p2.locator('[data-sub-back]').click()
+  await p2.waitForTimeout(300)
+  await p2.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await p2.waitForTimeout(400)
+  t('21. 无配置点生成：给可读提示', (await p2.getByText(/还没选择纪要服务/).count()) >= 1)
+  await rowT3.getByRole('button', { name: '生成纪要', exact: true }).click()
+  await p2.waitForTimeout(500)
+  t('23. 补配置后直接生成成功', (await rowT3.getByText(/定积分的应用/).count()) >= 1)
 
   /* ---- M5 补充（2026-10-01）：手动生成纪要也要把 homework 转成待办 ----
      原来只有自动链路（停录→自动转写→自动纪要）会转；自动链路中途断环、

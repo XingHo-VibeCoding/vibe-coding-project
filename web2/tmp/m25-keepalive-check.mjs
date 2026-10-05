@@ -56,6 +56,15 @@ const FAKE_APP = `
 `
 const count = (ka, kind) => ka.filter((c) => c[0] === kind).length
 
+/* Stage 6：录音区搬进「我的」二级页（索引页只剩入口）。切「我的」tab 再推 lectures 二级页，
+   之后按钮/提示一律在 [data-sub-body] 内找。 */
+async function openMeLectures(page) {
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await page.waitForTimeout(400)
+}
+
 const browser = await chromium.launch({ executablePath: CHROME, headless: true })
 
 /* ---------- 场景 A：正常链路——起录拉起保活、停录撤下 ---------- */
@@ -65,9 +74,8 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await ctx.addInitScript(FAKE_APP)
   const page = await ctx.newPage()
   await page.goto(URL, { waitUntil: 'load' })
-  await page.locator('nav button', { hasText: '我的' }).click() // 我的
-  await page.waitForTimeout(400)
-  await page.locator('[data-page="me"]').locator('button:has-text("开始录音")').click()
+  await openMeLectures(page)
+  await page.locator('[data-sub-body]').locator('button:has-text("开始录音")').click()
   await page.waitForTimeout(600)
 
   const ka1 = await page.evaluate(() => window.__ka)
@@ -78,12 +86,12 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   t('A4 提示改为「锁屏、切到后台都会继续录」', (await page.locator('text=锁屏、切到后台都会继续录').count()) > 0)
   t('A5 录音条文案改为「锁屏也会继续录」', (await page.locator('text=录音中 · 锁屏也会继续录').count()) > 0)
 
-  await page.locator('[data-page="me"]').locator('button:has-text("停止并保存")').click()
+  await page.locator('[data-sub-body]').locator('button:has-text("停止并保存")').click()
   await page.waitForTimeout(600)
   const ka2 = await page.evaluate(() => window.__ka)
   t('A6 停录后撤下服务一次', count(ka2, 'stop') === 1)
   t('A7 撤下后没有多余的 start', count(ka2, 'start') === 1)
-  t('A8 停录仍正常落盘（提示含「已保存」）', await page.locator('[data-page="me"]').locator('text=已保存').first().isVisible())
+  t('A8 停录仍正常落盘（提示含「已保存」）', await page.locator('[data-sub-body]').locator('text=已保存').first().isVisible())
   await ctx.close()
 }
 
@@ -94,11 +102,10 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await ctx.addInitScript(FAKE_APP)
   const page = await ctx.newPage()
   await page.goto(URL + '?recStopFails=1', { waitUntil: 'load' })
-  await page.locator('nav button', { hasText: '我的' }).click()
-  await page.waitForTimeout(400)
-  await page.locator('[data-page="me"]').locator('button:has-text("开始录音")').click()
+  await openMeLectures(page)
+  await page.locator('[data-sub-body]').locator('button:has-text("开始录音")').click()
   await page.waitForTimeout(500)
-  await page.locator('[data-page="me"]').locator('button:has-text("停止并保存")').click()
+  await page.locator('[data-sub-body]').locator('button:has-text("停止并保存")').click()
   await page.waitForTimeout(600)
   const ka = await page.evaluate(() => window.__ka)
   t('B1 录音停止报错后仍撤下服务一次', count(ka, 'stop') === 1)
@@ -113,16 +120,15 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await ctx.addInitScript(FAKE_APP)
   const page = await ctx.newPage()
   await page.goto(URL + '?startFails=1', { waitUntil: 'load' })
-  await page.locator('nav button', { hasText: '我的' }).click()
-  await page.waitForTimeout(400)
-  await page.locator('[data-page="me"]').locator('button:has-text("开始录音")').click()
+  await openMeLectures(page)
+  await page.locator('[data-sub-body]').locator('button:has-text("开始录音")').click()
   await page.waitForTimeout(600)
   const ka = await page.evaluate(() => window.__ka)
   t('C1 保活启动被尝试过一次', count(ka, 'start') === 1)
-  t('C2 保活失败仍进入录音态（按钮为「停止并保存」）', await page.locator('[data-page="me"]').locator('button:has-text("停止并保存")').isVisible())
+  t('C2 保活失败仍进入录音态（按钮为「停止并保存」）', await page.locator('[data-sub-body]').locator('button:has-text("停止并保存")').isVisible())
   t('C3 保活失败仍产生「录音中」场次', (await page.locator('text=录音中').count()) > 0)
   t('C4 提示改为「后台保活没起来…先别锁屏」', (await page.locator('text=后台保活没起来').count()) > 0)
-  await page.locator('[data-page="me"]').locator('button:has-text("停止并保存")').click()
+  await page.locator('[data-sub-body]').locator('button:has-text("停止并保存")').click()
   await page.waitForTimeout(600)
   const ka2 = await page.evaluate(() => window.__ka)
   t('C5 失败启动后停录仍撤下服务', count(ka2, 'stop') === 1)
@@ -151,9 +157,8 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   const errs = []
   page.on('pageerror', (e) => errs.push(String(e)))
   await page.goto(URL, { waitUntil: 'load' })
-  await page.locator('nav button', { hasText: '我的' }).click()
-  await page.waitForTimeout(400)
-  await page.locator('[data-page="me"]').locator('button:has-text("开始录音")').click()
+  await openMeLectures(page)
+  await page.locator('[data-sub-body]').locator('button:has-text("开始录音")').click()
   await page.waitForTimeout(400)
   t('E1 浏览器点开始仍给「需在 App 内使用」提示', (await page.locator('text=需在 App 内使用').count()) > 0)
   t('E2 无桥时没有页面异常', errs.length === 0)
@@ -168,13 +173,11 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await ctx.addInitScript(FAKE_APP)
   const page = await ctx.newPage()
   await page.goto(URL, { waitUntil: 'load' })
-  await page.locator('nav button', { hasText: '我的' }).click()
+  await page.$eval('[data-nav="me"]', (el) => el.click())
   await page.waitForTimeout(400)
-  /* 2026-10-02 减法：「后台录音」说明收进了默认收起的「设置」折叠区 → 先展开 */
-  if ((await page.locator('[data-settings-body]').count()) === 0) {
-    await page.locator('[data-settings-toggle]').click()
-    await page.waitForTimeout(350)
-  }
+  /* Stage 6：「后台录音」说明在「设置」二级页里 → 点索引页的设置入口推进去 */
+  await page.$eval('[data-me-entry="settings"]', (el) => el.click())
+  await page.waitForTimeout(350)
   await page.locator('text=后台录音').first().scrollIntoViewIfNeeded()
   t('F1 App 环境显示「后台录音」说明行', (await page.locator('text=后台录音').count()) > 0)
   t('F2 说明里含通知权限提示', (await page.locator('text=打开本应用的通知权限').count()) > 0)

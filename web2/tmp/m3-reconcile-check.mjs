@@ -48,7 +48,10 @@ try {
 
   // 录音列表在「我的」页 —— 按文案选，别按序号（tab 数会变；这里曾写死 nth(2)，
   // 加第 4 个 tab「打卡」后就点到别页了）
-  await page.locator('nav button', { hasText: '我的' }).click()
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  /* Stage 6：录音列表搬进「我的 → 课堂录音」全屏二级页 */
+  await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
   await page.waitForTimeout(400)
 
   const stuckRow = page.locator('li', { hasText: '卡死场次' })

@@ -1,11 +1,12 @@
 /* 方案 C · Step 4 结构检查（我的瘦身 + 拍课表识别归位）——playwright，走 dist 静态服务。
+   2026-10-05 Stage 6：「我的」页从功能堆砌改成索引页（1 行学期 + 4 个入口），
+   设置内容搬进 data-sub="settings" 的全屏二级页。本脚本随之把「折叠」断言换成「二级页」断言。
    断言：
    ① 课表页右上「＋」= 拍课表识别入口（就是原来的 data-mine-rec，另带 data-week-add）；
       「我的」页不再有识别入口；切到「其他日程」子视图时 ＋ 不出现；点它能进出识别流程。
-   ② 「我的」页折叠状态下的常显块不再有「主题配色」；主题入口只剩设置折叠里一处，
-      展开后色点 4 个、点色点真换肤、点明暗按钮真换主题；数据类入口（导入 / 导出日历）
-      仍常显在折叠外（尊重 settings-fold-check 的既定口径）。
-   ③ 「我的」页块序 = 学期信息 → 课堂录音 → 碎片练耳 → 数据（导入导出）→ 设置。
+   ② 「我的」索引页不再常显任何设置正文；推入设置二级页后主题入口恰一处（色点 4 个、
+      点色点真换肤、点明暗按钮真换主题）；数据类入口在设置二级页里、且在设置正文之外。
+   ③ 「我的」索引页块序 = 学期行 → 4 个入口（录音 → 练耳 → 待办 → 设置），不再出现功能正文。
    跑法：先起 dist 静态服务（默认 4177，TW_URL 可覆盖）再 node tmp/step4-check.mjs */
 const { chromium } = await import('file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs')
 
@@ -29,6 +30,8 @@ await page.waitForTimeout(700)
 const ME = page.locator('[data-page="me"]')
 const goWeek = async () => { await page.locator('nav button', { hasText: '周课表' }).click(); await page.waitForTimeout(450) }
 const goMe = async () => { await page.locator('nav button', { hasText: '我的' }).click(); await page.waitForTimeout(450) }
+const openSub = async (k) => { await page.$eval(`[data-me-entry="${k}"]`, (el) => el.click()); await page.waitForTimeout(400) }
+const backSub = async () => { await page.locator('[data-sub-back]').click(); await page.waitForTimeout(400) }
 
 /* ============ ① 拍课表识别：我的 → 课表页右上「＋」 ============ */
 console.log('\n--- ① 拍课表识别归位 ---')
@@ -59,19 +62,20 @@ await page.locator('[data-mine-rec-cancel]').click()
 await page.waitForTimeout(500)
 t('A8. 取消后回到应用，课表页 ＋ 仍在', (await page.locator('[data-week-add]').isVisible()))
 
-/* ============ ② 主题入口只剩一处；数据类入口仍常显 ============ */
+/* ============ ② 主题入口只剩一处；设置内容搬进二级页 ============ */
 console.log('\n--- ② 主题 / 数据入口 ---')
 await goMe()
-t('B1. 折叠状态下「我的」页没有常显的「主题配色」', (await ME.locator('text=主题配色').count()) === 0)
-t('B2. 折叠状态下没有 settings-body（默认收起）', (await ME.locator('[data-settings-body]').count()) === 0)
-t('B3. 数据类入口仍在折叠外（导入主项目数据 / 导出日历）',
-  (await ME.locator('text=导入主项目数据').count()) === 1
-  && (await ME.locator('text=导出日历').count()) === 1)
-await ME.locator('[data-settings-toggle]').click()
-await page.waitForTimeout(350)
-const body = ME.locator('[data-settings-body]')
-t('B4. 展开后「主题外观」在折叠里恰 1 处', (await body.locator('text=主题外观').count()) === 1)
-t('B5. 折叠里「主题配色」也恰 1 处（唯一主题入口）', (await body.locator('text=主题配色').count()) === 1)
+t('B1. 索引页没有常显的「主题配色」', (await ME.locator('text=主题配色').count()) === 0)
+t('B2. 索引页没有设置正文（data-settings-body 不在 DOM）', (await page.locator('[data-settings-body]').count()) === 0)
+await openSub('settings')
+const SUB = page.locator('[data-sub-page][data-sub="settings"]')
+t('B3. 数据类入口在设置二级页里、且在设置正文之外（导入主项目数据 / 导出日历）',
+  (await SUB.locator('text=导入主项目数据').count()) === 1
+  && (await SUB.locator('text=导出日历').count()) === 1
+  && (await page.locator('[data-settings-body]').locator('text=导出日历').count()) === 0)
+const body = page.locator('[data-settings-body]')
+t('B4. 设置正文里「主题外观」恰 1 处', (await body.locator('text=主题外观').count()) === 1)
+t('B5. 设置正文里「主题配色」也恰 1 处（唯一主题入口）', (await body.locator('text=主题配色').count()) === 1)
 const dots = body.locator('button[style*="background"]')
 t('B6. 配色色点 4 个', (await dots.count()) === 4, await dots.count())
 t('B7. 明暗切换按钮在（切深色/切浅色）', (await body.locator('[data-theme-toggle]').count()) === 1)
@@ -95,31 +99,36 @@ t('B10. 按钮文案跟着变（切深色 ↔ 切浅色）', labelAfter !== labe
 await body.locator('[data-theme-toggle]').click() // 切回来，后面的断言用原主题
 await page.waitForTimeout(200)
 
-await ME.locator('[data-settings-toggle]').click() // 折回
-await page.waitForTimeout(300)
-t('B11. 折叠后数据类入口仍在', (await ME.locator('text=导出日历').count()) === 1
-  && (await ME.locator('[data-settings-body]').count()) === 0)
+await backSub() // 返回索引
+t('B11. 返回索引后二级页消失、4 个入口仍在',
+  (await page.locator('[data-sub-page]').count()) === 0
+  && (await ME.locator('[data-me-entry]').count()) === 4)
 
-/* ============ ③ 我的页块序 ============ */
-console.log('\n--- ③ 我的页块序 ---')
+/* ============ ③ 我的索引页块序 ============ */
+console.log('\n--- ③ 我的索引页块序 ---')
 const blocks = await page.evaluate(() => {
   const me = document.querySelector('[data-page="me"]')
   return [...me.children].map((el) => {
     const txt = (el.innerText || '').replace(/\s+/g, ' ').trim()
-    return { tag: el.tagName.toLowerCase(), txt: txt.slice(0, 14), settings: el.hasAttribute('data-settings-body') || !!el.querySelector('[data-settings-toggle]') }
+    return { tag: el.tagName.toLowerCase(), txt: txt.slice(0, 14) }
   })
 })
 console.log('   顶层块：', JSON.stringify(blocks, null, 0))
-const firstTexts = blocks.map((b) => b.txt)
-t('C1. 第一块是学期信息', firstTexts[0] && firstTexts[0].includes('示'))
-t('C2. 有「课堂录音」块', firstTexts.some((x) => x.includes('课堂录音')))
-t('C3. 有「碎片练耳」块', firstTexts.some((x) => x.includes('碎片练耳')))
-t('C4. 有「导入主项目数据」的数据块', firstTexts.some((x) => x.includes('导入主项目数据')))
-t('C5. 最后一块是设置折叠', blocks[blocks.length - 1].settings === true)
-t('C6. 录音块排在练耳之前、设置排最后（“我的”页块数 = ' + blocks.length + '）',
-  firstTexts.findIndex((x) => x.includes('课堂录音')) < firstTexts.findIndex((x) => x.includes('碎片练耳'))
-  && firstTexts.findIndex((x) => x.includes('碎片练耳')) < firstTexts.findIndex((x) => x.includes('导入主项目数据')))
-t('C7. 「我的」页不再出现「拍课表识别」', !(await ME.innerText()).includes('拍课表识别'))
+const entryKeys = await page.$$eval('[data-page="me"] [data-me-entry]', (els) => els.map((e) => e.getAttribute('data-me-entry')))
+t('C1. 第一块是学期索引行（含 data-me-term）',
+  (await page.evaluate(() => {
+    const me = document.querySelector('[data-page="me"]')
+    return !!me.children[0] && !!me.children[0].querySelector('[data-me-term]')
+  })))
+t('C2. 4 个入口齐全且顺序固定：录音 → 练耳 → 待办 → 设置',
+  JSON.stringify(entryKeys) === JSON.stringify(['lectures', 'listen', 'todos', 'settings']), entryKeys.join(','))
+t('C3. 设置入口排在最后', entryKeys[entryKeys.length - 1] === 'settings')
+t('C4. 索引页不再出现功能正文（课堂录音 / 导入主项目数据 / 清除数据）',
+  !(await ME.innerText()).includes('课堂录音')
+  && !(await ME.innerText()).includes('导入主项目数据')
+  && !(await ME.innerText()).includes('清除数据并重置')
+  && (await ME.locator('[data-settings-body]').count()) === 0)
+t('C5. 「我的」页不再出现「拍课表识别」', !(await ME.innerText()).includes('拍课表识别'))
 
 t('D1. 全程无页面报错', errors.length === 0, errors.slice(0, 3).join(' | '))
 

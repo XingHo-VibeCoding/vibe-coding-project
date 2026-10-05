@@ -24,7 +24,7 @@ try {
   t('0. 干净环境出现引导页', await ob.isVisible())
 
   const onboarding = page.locator('text=先用示例数据逛逛')
-  const obInput = page.locator('input[type="file"]').nth(1) // 引导层的 file input（DOM 顺序在主模板之后）
+  const obInput = page.locator('input[accept=".json,application/json"]') // 引导层的 file input（此刻设置二级页未打开，无同名输入）
 
   // 1. 上传坏文件 → 引导页不关 + 就地红字报错
   await obInput.setInputFiles('D:/Document/Project/vibe-coding-project/web2/tmp/bad-import.txt')
@@ -47,8 +47,14 @@ try {
   t('6. web2.data 已落盘且含标识课程', !!dataOk && dataOk.includes('高等数学'))
   const onboardOk = await page.evaluate(() => localStorage.getItem('web2.onboarded'))
   t('7. onboarded 标记已记', onboardOk === '1')
-  const okMsg = page.locator('text=导入成功：测试学期')
-  t('8. 「我的」页显示导入成功提示', await okMsg.isVisible().catch(() => false))
+  /* Stage 6：导入回执 [data-import-msg] 搬进「我的 → 设置」全屏二级页，
+     引导成功后不会自动打开，切过去看。 */
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(300)
+  await page.$eval('[data-me-entry="settings"]', (el) => el.click())
+  await page.waitForTimeout(300)
+  const okMsg = page.locator('[data-import-msg]')
+  t('8. 设置二级页显示导入成功提示', (await okMsg.isVisible().catch(() => false)) && (await okMsg.innerText().catch(() => '')).includes('导入成功：测试学期'))
 } finally {
   await browser.close()
 }

@@ -166,10 +166,21 @@ const importDoc = JSON.stringify({
     { id: 'h_b', name: '', records: {} }, // 坏数据应被剔除
   ],
 })
-await page.locator('input[type="file"]').first().setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(importDoc) })
-await page.waitForTimeout(600)
-/* 导入成功走 reloadDataset 统一刷新（含 habits），就地更新，无需切页/刷新 */
+/* Stage 6：导入入口搬进「我的 → 设置」全屏二级页——先收起打卡浮层，切到设置页导入 */
+await closeHabitSheet()
+await page.$eval('[data-nav="me"]', (el) => el.click())
 await page.waitForTimeout(300)
+await page.$eval('[data-me-entry="settings"]', (el) => el.click())
+await page.waitForTimeout(300)
+await page.locator('input[accept=".json,application/json"]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(importDoc) })
+await page.waitForTimeout(600)
+/* 导入成功走 reloadDataset 统一刷新（含 habits），就地更新——回今日页看浮层即最新 */
+await page.waitForTimeout(300)
+await page.locator('[data-sub-back]').click()
+await page.waitForTimeout(300)
+await page.$eval('[data-nav="today"]', (el) => el.click())
+await page.waitForTimeout(300)
+await openHabitSheet()
 const card3 = page.locator('[data-habit-sheet]')
 t('20. 导入整体接管（旧习惯不在）', (await card3.locator('[data-habit-row]').filter({ hasText: '背单词' }).count()) === 0)
 t('21. 导入的习惯出现', (await card3.locator('[data-habit-row]').filter({ hasText: '导入的习惯甲' }).count()) === 1)

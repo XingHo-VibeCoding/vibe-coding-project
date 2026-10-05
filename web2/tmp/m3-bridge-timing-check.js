@@ -68,13 +68,16 @@ await page.addInitScript(shellSrc)
 
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(800)
-await page.locator('nav button').nth(2).click()
+/* Stage 6：录音列表搬进「我的 → 课堂录音」全屏二级页，先切 tab 再推二级页 */
+await page.$eval('[data-nav="me"]', (el) => el.click())
+await page.waitForTimeout(400)
+await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
 await page.waitForTimeout(400)
 
 // 1. 桥已由 shell.js 顶层代码挂上（模拟环境里 shell.js 是真实文件）
 t('1. shell.js 顶层桥已挂 Plugins.Transcriber', await page.evaluate(() => !!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Transcriber)))
 // 2. 网页侧判定支持，转写按钮渲染（限定「我的」页：今日页也有一张课堂录音卡）
-const btn = page.locator('[data-page="me"] li button:has-text("转写")')
+const btn = page.locator('[data-sub-body] li button:has-text("转写")')
 t('2. 转写按钮渲染（trSupported=true）', await btn.count() >= 1)
 // 3. 点转写 → isModelReady=true 直接识别 → 文字稿落库
 await btn.first().click()
@@ -85,7 +88,7 @@ await page.waitForFunction(() => {
 t('3. 转写完成：状态 transcribed', true)
 t('4. 文字稿经桥正确回传', (await page.evaluate(() => JSON.parse(localStorage.getItem('web2.lectures'))[0].transcript)) === '桥时序验证文字稿。')
 // 5. 完成后文字稿自动展开
-t('5. 界面可见文字稿正文', (await page.locator('[data-page="me"]').getByText('桥时序验证文字稿。').count()) >= 1)
+t('5. 界面可见文字稿正文', (await page.locator('[data-sub-body]').getByText('桥时序验证文字稿。').count()) >= 1)
 t('6. 无页面报错', errors.length === 0)
 if (errors.length) console.log('  pageerror:', errors[0].slice(0, 200))
 

@@ -87,6 +87,17 @@ const browser = await chromium.launch({
 })
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
 
+/* Stage 6：录音区搬进「我的」二级页。先切「我的」tab 再推 lectures 二级页，
+   之后所有「我的页录音区」内容都在 [data-sub-body] 里读。 */
+async function openLectures(page) {
+  if ((await page.locator('[data-sub="lectures"]').count()) === 0) {
+    await page.$eval('[data-nav="me"]', (el) => el.click())
+    await page.waitForTimeout(400)
+    await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
+    await page.waitForTimeout(400)
+  }
+}
+
 async function probe(schedules) {
   const page = await ctx.newPage()
   const errs = []
@@ -102,17 +113,15 @@ async function probe(schedules) {
   if (await pill.count()) {
     await pill.click()
   } else {
-    await page.locator('nav button', { hasText: '我的' }).click()
-    await page.waitForTimeout(400)
-    await page.locator('[data-page="me"] button:has-text("开始录音")').click()
+    await openLectures(page)
+    await page.locator('[data-sub-body]').locator('button:has-text("开始录音")').first().click()
   }
   await page.waitForTimeout(600)
   const scheduled = await page.evaluate(() => window.__fake.scheduled)
   const card = await page.locator('[data-today-rec]').textContent()
-  await page.locator('nav button', { hasText: '我的' }).click()
-  await page.waitForTimeout(500)
+  await openLectures(page)
   const li = await page
-    .locator('[data-page="me"]')
+    .locator('[data-sub-body]')
     .locator('section', { hasText: '课堂录音' })
     .locator('ul li').first()
     .innerText()

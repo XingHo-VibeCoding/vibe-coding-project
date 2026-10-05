@@ -82,16 +82,24 @@ t('A9. 展开后按钮变「收起」',
   (await p.locator('[data-today-listen-more]').innerText()).trim())
 
 /* 浏览器模式没有真音频文件：点播放应走到 onListenPlay 的兜底提示，而不是静默无反应。
-   提示气泡挂在「我的」页那张练耳卡里（listenMsg），而那张卡默认是收起的——先用程序化
-   点击把卡展开（卡片在 inert 的「我的」页里，真实鼠标事件会被 inert 吃掉）。 */
+   提示气泡挂在「我的 → 碎片练耳」二级页那张练耳卡里（listenMsg），而那张卡默认收起。
+   Stage 6 之后分两步程序化打开：先点 [data-me-entry="listen"] 推出二级页，再点二级页里的「打开」。
+   两处都用程序化点击：二级页是 fixed 全屏层会盖住底下的今天页，真实鼠标点不到
+   [data-today-listen-play]；而「我的」索引页在非当前 tab 下带 inert，真实鼠标同样会被吃。 */
 await p.evaluate(() => {
-  const b = [...document.querySelectorAll('[data-page="me"] button')].find((x) => x.textContent.trim() === '打开')
+  const entry = document.querySelector('[data-me-entry="listen"]')
+  if (entry) entry.click()
+})
+await p.waitForTimeout(300)
+await p.evaluate(() => {
+  const sub = document.querySelector('[data-sub-body]')
+  const b = sub && [...sub.querySelectorAll('button')].find((x) => x.textContent.trim() === '打开')
   if (b) b.click()
 })
 await p.waitForTimeout(200)
-await p.locator('[data-today-listen-play]').first().click()
+await p.$eval('[data-today-listen-play]', (el) => el.click())
 await p.waitForTimeout(400)
-const msg = ((await p.locator('[data-page="me"]').innerText()) + ' ' + (await p.locator('[data-page="today"]').innerText())).replace(/\s+/g, ' ')
+const msg = ((await p.locator('[data-sub-body]').innerText()) + ' ' + (await p.locator('[data-page="today"]').innerText())).replace(/\s+/g, ' ')
 t('A10. 点播放真的接到播放逻辑（无真文件时给出「原始文件不在本机」提示）',
   msg.includes('原始文件不在本机') || msg.includes('播放失败') || msg.includes('播不了'), msg.slice(0, 160))
 t('A11. 播不起来时按钮不会假装在播（仍是「播放」）',

@@ -266,10 +266,10 @@ function closeTopmostLayer() {
   /* 日精进浮层（问答 / 今天的日精进 / 日精进·全部 三种模式同一个 reviewSheet，v1.41.9 真机反馈）：
      开着时按返回键以前什么都不做，直接落到「退到今日页」——与「不可见状态绝不能吞返回键」同一条纪律的两面。 */
   if (reviewSheet.value) { closeReview(); return true }
-  // 2026-10-03 方案 C Step 5：二级层一路往回收（练耳设置面板 → 设置折叠 → 课表子视图）
-  // 注意：练耳设置/设置折叠是「我的」页里的就地展开块，切走后看不见——不可见的状态绝不能吞掉返回键
-  if (tab.value === 'me' && listenSettingsOpen.value) { listenSettingsOpen.value = false; return true }
-  if (tab.value === 'me' && settingsOpen.value) { settingsOpen.value = false; return true }
+  // 2026-10-03 方案 C Step 5 / Stage 6：二级层一路往回收（页内展开块 → 二级页 → 课表子视图）
+  // 注意：展开块切走/关页后看不见——不可见的状态绝不能吞掉返回键
+  if (tab.value === 'me' && meSub.value === 'listen' && listenSettingsOpen.value) { listenSettingsOpen.value = false; return true }
+  if (meSub.value) { closeMeSub(); return true }
   if (tab.value === 'week' && weekSub.value === 'list') { setWeekSub('week'); return true }
   return false
 }
@@ -433,12 +433,13 @@ async function onAskExactAlarm() {
   }
 }
 
-function goMeTab() {
+function goMeTab(sub = 'settings') {
   if (tab.value !== 'me') switchTab('me')
-  /* 「我的」页的低频项（课前提醒开关、纪要配置、清除数据…）都收在「设置」折叠区里，
-     凡是从别处「跳过来让用户看某个设置」的路径，都得顺手把折叠展开，
-     否则用户跳到我的页也是一脸茫然（2026-10-02 减法后新增）。 */
-  settingsOpen.value = true
+  /* 「我的」页的低频项（录音列表、练耳设置、课前提醒开关、纪要配置、清除数据…）都收在二级页里，
+     凡是从别处「跳过来让用户看某样东西」的路径，都得顺手把那一页打开，
+     否则用户跳到我的页也是一脸茫然（2026-10-02 减法后新增，Stage 6 起改成二级页）：
+     传 null 表示只切页（比如复盘提醒，浮层会盖在上面，不需要动二级页）。 */
+  if (sub) openMeSub(sub)
 }
 
 async function applyNotifySchedule() {
@@ -488,11 +489,12 @@ async function initNotify() {
   notifyPerm.value = env.granted === undefined ? null : !!env.granted
   await refreshExactAlarm()
   onNotificationAction(({ actionId, extra }) => {
-    goMeTab()
+    /* 通知栏那颗「开始录音」按钮落在「我的」页的录音二级页上（那里才有录音钮） */
+    goMeTab(actionId === 'START_REC' ? 'lectures' : null)
     if (actionId === 'START_REC') startRec() // 幂等：已在录音则 startRec 直接 return
-    /* 练耳复习提醒：无按钮，点通知只回「我的」页并把练耳卡展开——**不自动播放**（L6） */
-    if (extra && extra.src === LISTEN_TAG) listenOpen.value = true
-    /* 每日复盘提醒（五期）：无按钮，点通知直接把复盘浮层打开 */
+    /* 练耳复习提醒：无按钮，点通知回「我的」页并把练耳二级页打开、卡片展开——**不自动播放**（L6） */
+    if (extra && extra.src === LISTEN_TAG) { openMeSub('listen'); listenOpen.value = true }
+    /* 每日复盘提醒（五期）：无按钮，点通知直接把复盘浮层打开（浮层自带一层，二级页不动） */
     if (extra && extra.src === REVIEW_TAG) openReview('ask')
   })
   await applyNotifySchedule()
@@ -1737,7 +1739,13 @@ const llmInputOpen = ref(false) // 课堂纪要的「纪要服务」子区展开
 /* 「设置」折叠区（2026-10-02 减法）：默认收起。低频设置不该和高频动作抢首屏；
    但「课堂纪要」缺配置时会自动展开它（见 startSummary 缺配置分支），
    否则用户会以为功能被删了。 */
+/* Stage 6：「我的」页从「功能堆砌」改成索引页——功能都在自己的全屏二级页里。
+   settingsOpen 是旧「设置折叠」的开关，折叠没了，这个 ref 只为旧锚点/旧脚本留着（永远 false）。 */
 const settingsOpen = ref(false)
+const meSub = ref(null) // null | 'lectures' | 'listen' | 'todos' | 'settings'
+const meSubTitle = computed(() => ({ lectures: '课堂录音', listen: '碎片练耳', todos: '待办清单', settings: '设置' }[meSub.value] || ''))
+function openMeSub(k) { meSub.value = k }
+function closeMeSub() { meSub.value = null }
 const PROVIDER_OPTIONS = [
   { id: '', label: '未选择' },
   { id: 'deepseek', label: 'DeepSeek（自己的 API Key）' },
@@ -1794,7 +1802,7 @@ async function startSummary(l, opts = {}) {
   if (miss) {
     setRecMsg(auto ? `${miss}（转写已完成，配好后手动点「生成纪要」即可）` : miss, true)
     llmInputOpen.value = true // 缺配置：顺手把纪要子区展开，少一次找路
-    settingsOpen.value = true // 外面那层「设置」折叠也要打开，否则展开了也看不见
+    openMeSub('settings') // 顺手把「设置」二级页打开，否则展开了也看不见
     return false
   }
   if (!l.transcript || String(l.transcript).trim().length < 30) {
@@ -3249,6 +3257,7 @@ const nowLineY = computed(() => {
 const undoneCount = computed(() => todos.value.filter((t) => !t.done).length)
 /* 五期·每日复盘第 3 题要把「没做完的」摆出来（继续还是放掉得有据可依） */
 const undoneTodos = computed(() => todos.value.filter((t) => !t.done))
+const doneTodos = computed(() => todos.value.filter((t) => t.done))
 
 /* 状态框（Day 19）：数据变动 → 重推快照。注册点必须在 todayCourses(2431) / listenDue(1088) /
    undoneCount(2760) 之后 —— 这三个 computed 在 setup 里是 const，提前 watch 会撞 TDZ
@@ -4391,28 +4400,87 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
 
     <!-- ===== 我的 ===== -->
     <main data-page="me" class="w-1/3 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'me'">
-      <section class="flex items-center gap-4 rounded-3xl border border-line bg-card p-5 shadow-sm">
-        <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 text-xl font-bold text-white shadow-md shadow-primary-500/25">
-          示
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-lg font-semibold">{{ semester.name }}</p>
-          <p class="mt-0.5 text-xs text-ink-dim">
-            第 {{ semester.week }} 周 / 共 {{ semester.totalWeeks }} 周 ·
-            {{ source === 'import' ? '主项目数据' : '示例数据' }}
-          </p>
-        </div>
+      <!-- Stage 6：这一屏只有「1 行学期 + 4 个入口」——功能都搬进各自的全屏二级页，
+           索引页不再随功能增加而变长（设计三原则第一条：与当前任务无关的界面元素绝不出现）。 -->
+      <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
         <button
-          v-if="source === 'import'"
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink/5 text-ink-dim transition active:scale-90"
-          aria-label="编辑学期信息"
-          @click="openSemEdit"
+          type="button"
+          data-me-term
+          class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-ink/5"
+          @click="source === 'import' && openSemEdit()"
         >
-          <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.2l2.5 2.5L5 13.5l-3 .5.5-3z" /></svg>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-medium">{{ semester.name }} · 第 {{ semester.week }} 周</span>
+            <span class="block text-[11px] text-ink-dim">{{ source === 'import' ? '主项目数据 · 共 ' + semester.totalWeeks + ' 周 · 点这里改学期与节次' : '示例数据不能编辑学期信息' }}</span>
+          </span>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
         </button>
       </section>
-      <p v-if="source !== 'import'" class="-mt-2 px-1 text-[11px] text-ink-dim">示例数据不能编辑学期信息：导入真实课表或用引导页创建学期后可改</p>
 
+      <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
+        <button type="button" data-me-entry="lectures" data-me-lectures class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-ink/5" @click="openMeSub('lectures')">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">录音历史</span>
+            <span class="block text-[11px] text-ink-dim" data-me-lectures-count>{{ lectures.length ? lectures.length + ' 场 · 转写 / 纪要' : '还没有录音' }}</span>
+          </span>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+        </button>
+
+        <button type="button" data-me-entry="listen" data-me-listen class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-ink/5" @click="openMeSub('listen')">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12.5V7a5 5 0 0110 0v5.5" /><path d="M1.5 11.5h2v3h-2zM12.5 11.5h2v3h-2z" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">碎片练耳</span>
+            <span class="block text-[11px] text-ink-dim" data-me-listen-count>{{ listenClips.length ? listenClips.length + ' 段音频 · 空档自动提醒' : '还没有导入音频' }}</span>
+          </span>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+        </button>
+
+        <button type="button" data-me-entry="todos" data-me-todos class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-ink/5" @click="openMeSub('todos')">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5l1.3 1.3L6.3 3.3M2.5 9l1.3 1.3L6.3 7.8M2.5 13.5l1.3 1.3 2.5-2.5M8.5 5h5M8.5 9.5h5M8.5 14h5" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">待办清单</span>
+            <span class="block text-[11px] text-ink-dim" data-me-todos-count>{{ todos.length ? '未完成 ' + undoneTodos.length + ' / 共 ' + todos.length + ' 件' : '还没有待办' }}</span>
+          </span>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+        </button>
+
+        <button type="button" data-me-entry="settings" data-settings-toggle class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-ink/5" @click="openMeSub('settings')">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2" /><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">设置</span>
+            <span class="block text-[11px] text-ink-dim">主题外观 · 提醒 · 课堂纪要 · 数据</span>
+          </span>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+        </button>
+      </section>
+    </main>
+
+    <!-- ===== 「我的」二级页（Stage 6）=====
+         四个功能各有一个全屏页，推入/返回沿用同一套（返回按钮 + 系统返回键都能回索引）。
+         内容全部是原来「我的」页里那几块（锚点与内部结构一字未动），只是换了个容器。 -->
+    <!-- 平移层带 transform：fixed 会相对它（300% 宽）定位 → 二级页必须 Teleport 到 body，
+         否则整页会错位（Stage 6 踩过：todos 页只剩右边的日期，标题全跑到视口外）。 -->
+    <Teleport to="body">
+    <div v-if="meSub" data-sub-page :data-sub="meSub" class="fixed inset-0 z-40 flex flex-col bg-canvas">
+      <header class="flex shrink-0 items-center gap-2 border-b border-line bg-card/90 px-3 py-2.5 backdrop-blur">
+        <button type="button" data-sub-back class="flex h-9 shrink-0 items-center gap-0.5 rounded-full pl-1 pr-2 text-sm text-ink-dim transition active:scale-95" @click="closeMeSub">
+          <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
+          返回
+        </button>
+        <h2 data-sub-title class="min-w-0 flex-1 truncate text-center text-sm font-semibold">{{ meSubTitle }}</h2>
+        <span class="w-[62px] shrink-0"></span>
+      </header>
+      <div data-sub-body class="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 pt-4 pb-28">
+        <template v-if="meSub === 'lectures'">
       <!-- 课堂录音（二期 M2）：App 平台可用；浏览器环境点按给就地提示，不做假录音 -->
       <section class="rounded-2xl border border-line bg-card p-4 shadow-sm">
         <div class="flex items-center gap-3.5">
@@ -4559,6 +4627,9 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         </ul>
       </section>
 
+        </template>
+
+        <template v-else-if="meSub === 'listen'">
       <!-- 碎片练耳（四期 Day 18）：导入 + 列表（L1）。通知/播放见后续板块 -->
       <section class="rounded-2xl border border-line bg-card p-4 shadow-sm">
         <div class="flex items-center gap-3.5">
@@ -4742,8 +4813,59 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
           <p v-if="listenMsg" class="mt-2 text-[11px]" :class="listenMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ listenMsg }}</p>
         </template>
       </section>
+        </template>
 
-      <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
+        <!-- 待办清单（Stage 6 新增）：今天页只看今天，这一页看全部——未完成在前，已完成收在后面 -->
+        <template v-else-if="meSub === 'todos'">
+          <p data-todos-count class="px-1 text-[11px] text-ink-dim">
+            未完成 {{ undoneTodos.length }} 件 · 已完成 {{ doneTodos.length }} 件
+          </p>
+
+          <section v-if="undoneTodos.length" class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
+            <div v-for="t in undoneTodos" :key="t.id" class="flex items-center gap-3 px-3.5 py-2.5">
+              <button
+                type="button"
+                class="-m-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-ink-dim/40 transition active:scale-90"
+                aria-label="标记为完成"
+                :data-todo-all-check="t.id"
+                @click="toggleTodo(t.id)"
+              />
+              <span class="min-w-0 flex-1 truncate text-sm" @click.stop="openTodoEdit(t)">{{ t.title }}</span>
+              <span class="shrink-0 text-[11px] text-primary-600">{{ t.due }}</span>
+            </div>
+          </section>
+          <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
+            没有未完成的待办，轻松自在～
+          </p>
+
+          <section v-if="doneTodos.length" class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
+            <div v-for="t in doneTodos" :key="t.id" class="flex items-center gap-3 px-3.5 py-2.5">
+              <button
+                type="button"
+                class="-m-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-primary-500 bg-primary-500 transition active:scale-90"
+                aria-label="标记为未完成"
+                :data-todo-all-check="t.id"
+                @click="toggleTodo(t.id)"
+              >
+                <svg viewBox="0 0 16 16" class="h-3 w-3 text-white" fill="none">
+                  <path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <span class="min-w-0 flex-1 truncate text-sm text-ink-dim line-through" @click.stop="openTodoEdit(t)">{{ t.title }}</span>
+              <span class="shrink-0 text-[11px] text-ink-dim">{{ t.due }}</span>
+            </div>
+          </section>
+
+          <button
+            class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-3 text-sm font-medium text-ink-dim transition active:bg-ink/5"
+            @click="openTodoAdd"
+          >
+            ＋ 添加待办
+          </button>
+        </template>
+
+        <template v-else>
+      <section class="order-2 divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
 
         <!-- 导入主项目数据 -->
         <label class="flex cursor-pointer items-center gap-3.5 p-4 active:bg-ink/5">
@@ -4807,34 +4929,10 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
            反而被埋住。设计三原则第一条写着「与当前任务无关的界面元素绝不出现」，
            折叠就是这句话的落地：平时不出现，需要时一步可达。
            默认收起（高频动作优先）；「课堂纪要」缺 API Key 时会自动展开（见 llmInputOpen）。 -->
-      <section class="rounded-2xl border border-line bg-card shadow-sm">
-        <button
-          type="button"
-          data-settings-toggle
-          class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-ink/5"
-          :aria-expanded="settingsOpen"
-          @click="settingsOpen = !settingsOpen"
-        >
-          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
-            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2" /><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" /></svg>
-          </span>
-          <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium">设置</span>
-            <span class="block text-[11px] text-ink-dim">主题外观 · 课前提醒 · 课堂纪要 · 数据重置</span>
-          </span>
-          <svg
-            viewBox="0 0 16 16"
-            class="h-3.5 w-3.5 shrink-0 text-ink-dim transition-transform"
-            :class="settingsOpen ? 'rotate-90' : ''"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          ><path d="M6 3l5 5-5 5" /></svg>
-        </button>
-
-        <div v-if="settingsOpen" data-settings-body class="divide-y divide-line border-t border-line">
+      <!-- Stage 6：设置不再需要「折叠」——它自己就是一整页（从索引页「设置」入口推入）。
+           顺序：外观/提醒在前，数据（导入导出）在后（order-1/order-2，DOM 结构不动）。 -->
+      <section class="order-1 rounded-2xl border border-line bg-card shadow-sm">
+        <div data-settings-body class="divide-y divide-line">
 
         <!-- 主题外观 + 主题配色（2026-10-03 方案 C Step 4：原「我的」页常显的「主题配色」
              并进这里 —— 此前有两个主题入口，现在一个入口管全部外观）。 -->
@@ -5161,16 +5259,19 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         </div>
       </section>
 
-      <!-- 导入结果反馈 -->
+      <!-- 导入结果反馈（导入/导出都在设置页，回执也留在这里） -->
       <p
         v-if="importMsg"
         data-import-msg
-        class="px-1 text-center text-xs"
+        class="order-3 px-1 text-center text-xs"
         :class="importMsg.startsWith('导入成功') || importMsg.startsWith('已导出') ? 'text-primary-600' : 'text-red-600 dark:text-red-400'"
       >
         {{ importMsg }}
       </p>
-    </main>
+        </template>
+      </div>
+    </div>
+    </Teleport>
     </div><!-- /内容平移层 -->
 
     <!-- 退出预备提示条（v1.17：2 秒内再按返回键才退出） -->
@@ -5197,7 +5298,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
         v-if="recActiveId"
         data-rec-banner
         class="fixed bottom-20 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-red-500/95 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg"
-        @click="switchTab('me')"
+        @click="goMeTab(recActiveId ? 'lectures' : null)"
       >
         <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-white"></span>
         录音中 {{ fmtDur(recElapsed * 1000) }}

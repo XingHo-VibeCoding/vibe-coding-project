@@ -65,11 +65,15 @@ t('B1 点击后就地出现提示（不假录音）', !!msg && msg.trim().length
 t('B2 报错后仍无停止按钮', !(await page.locator('[data-today-rec-stop]').isVisible().catch(() => false)))
 t('B3 没有跳去别的 tab', await page.locator('[data-today-rec]').isVisible())
 
-/* C. 「我的」页原录音区共存 */
-await page.locator('nav button', { hasText: '我的' }).click() // 2026-10-02 加第 4 个 tab「打卡」后序号会变，按文案选
-await page.waitForTimeout(500)
-const mineText = await page.locator('[data-page="me"]').textContent() // today/week/habit/me
-t('C1 「我的」页录音区仍在', mineText.includes('课堂录音') && mineText.includes('开始录音'))
+/* C. 「我的」页原录音区共存（Stage 6：索引页只剩入口，录音区在 lectures 二级页里） */
+await page.$eval('[data-nav="me"]', (el) => el.click())
+await page.waitForTimeout(400)
+const meIndexText = await page.locator('[data-page="me"]').textContent() // today/week/me
+t('C1 「我的」索引页有「录音历史」入口', meIndexText.includes('录音历史'))
+await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
+await page.waitForTimeout(400)
+const mineText = await page.locator('[data-sub-body]').textContent()
+t('C1b 推进 lectures 二级页后录音区仍在（课堂录音 + 开始录音）', mineText.includes('课堂录音') && mineText.includes('开始录音'))
 t('C2 「我的」页场次说明未丢', mineText.includes('长按场次可删除'))
 
 /* D. 无页面错误 */
@@ -92,7 +96,11 @@ const p3 = await ctx.newPage()
 await p3.goto(URL + '?t=12:30', { waitUntil: 'domcontentloaded' }) // 课间空档
 await p3.waitForTimeout(700)
 t('E4 课间空档（12:30）→ 不给录音钮', (await p3.locator('[data-today-rec-start]').count()) === 0)
-t('E5 不常驻也不影响「我的」页那条独立入口', (await p3.locator('[data-page="me"] button:has-text("开始录音")').count()) === 1)
+await p3.$eval('[data-nav="me"]', (el) => el.click())
+await p3.waitForTimeout(350)
+await p3.$eval('[data-me-entry="lectures"]', (el) => el.click())
+await p3.waitForTimeout(350)
+t('E5 不常驻也不影响「我的」页那条独立入口', (await p3.locator('[data-sub-body] button:has-text("开始录音")').count()) === 1)
 
 await browser.close()
 const fails = results.filter((r) => !r[1])

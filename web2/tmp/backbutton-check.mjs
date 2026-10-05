@@ -72,10 +72,10 @@ try {
   // 3. 确认层开着 → 只关确认层
   await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(400)
-  /* 2026-10-02 减法：「清除数据」收进了默认收起的「设置」折叠区 → 先展开外层 */
-  if ((await page.locator('[data-settings-body]').count()) === 0) {
-    await page.locator('[data-settings-toggle]').click()
-    await page.waitForTimeout(350)
+  /* Stage 6：「清除数据」搬进了 data-sub="settings" 二级页 → 先推入二级页 */
+  if ((await page.locator('[data-sub-page]').count()) === 0) {
+    await page.$eval('[data-settings-toggle]', (el) => el.click())
+    await page.waitForTimeout(400)
   }
   await page.locator('button', { hasText: '清除数据' }).first().click()
   await page.waitForTimeout(400)
@@ -86,7 +86,10 @@ try {
   t('3c. 没有误退出', (await exits()) === 1)
 
   // 4. 表单里开着 picker → 返回键只关 picker，再按才关表单
-  await page.locator('button[aria-label="编辑学期信息"]').click()
+  //    Stage 6：学期编辑入口在索引页，先退出设置二级页
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-term]', (el) => el.click())
   await page.waitForTimeout(400)
   const masksBefore = await masks()
   t('4a. 学期编辑弹层已打开', masksBefore >= 1)
@@ -102,16 +105,21 @@ try {
   t('4e. 再按返回键关掉编辑弹层', (await masks()) === 0)
   t('4f. 仍未退出', (await exits()) === 1)
 
-  // 4g/4h. 「我的」页里的就地展开块（设置折叠）也吃返回键；但切到别的 tab 后它看不见，不能再吞返回键
-  //        （2026-10-03 方案 C Step 5：closeTopmostLayer 的两处就地展开分支加了 tab === 'me' 守卫）
-  t('4g-pre. 设置折叠此刻还开着（第 3 步展开后没收）', (await page.locator('[data-settings-body]').count()) === 1)
+  // 4g/4h. Stage 6：「我的」的二级页（原「就地展开块」）也吃返回键；收回后回索引、不退 app
+  //        （closeTopmostLayer 从细到粗：练耳设置面板 → 二级页 → 课表子视图 → 回今日页）
+  await page.$eval('[data-settings-toggle]', (el) => el.click())
+  await page.waitForTimeout(400)
+  t('4g-pre. 设置二级页已推入', (await page.locator('[data-sub-page][data-sub="settings"]').count()) === 1)
   await fire()
   await page.waitForTimeout(400)
-  t('4g. 我的页里返回键先收起「设置」折叠（不退 app、不切页）',
-    (await page.locator('[data-settings-body]').count()) === 0 && (await exits()) === 1 && (await activeTab()).includes('我的'))
-  await page.locator('[data-settings-toggle]').click()
-  await page.waitForTimeout(350)
-  t('4h. 重新展开设置折叠（下一步检验：切走后的隐藏状态不许吞返回键）', (await page.locator('[data-settings-body]').count()) === 1)
+  t('4g. 我的页里返回键先收回「设置」二级页（不退 app、不切页）',
+    (await page.locator('[data-sub-page]').count()) === 0 && (await exits()) === 1 && (await activeTab()).includes('我的'))
+  await page.$eval('[data-settings-toggle]', (el) => el.click())
+  await page.waitForTimeout(400)
+  t('4h. 重新推入设置二级页', (await page.locator('[data-sub-page]').count()) === 1)
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(400)
+  t('4i. 返回索引（为第 5 步切回今日页让路）', (await page.locator('[data-sub-page]').count()) === 0)
 
   // 5. 今日页：退出预备窗口过期后，重新走「提示 → 再按退出」
   await page.locator('nav button', { hasText: '今日' }).click()

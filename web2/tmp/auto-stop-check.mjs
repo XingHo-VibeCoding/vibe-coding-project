@@ -76,6 +76,14 @@ await page.addInitScript(FAKE)
 await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(seedDoc)})`)
 await page.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
 
+/* Stage 6：录音区搬进「我的」二级页，读场次列表前先推 lectures 二级页（内容在 [data-sub-body]） */
+async function openMeLectures() {
+  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await page.waitForTimeout(400)
+}
+
 /* ===== A. 开录排程 ===== */
 await page.goto(URL, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(800)
@@ -97,10 +105,9 @@ t('A6 停止按钮出现', await page.locator('[data-today-rec-stop]').isVisible
 /* ===== B. 手动停正常收尾 ===== */
 await page.locator('[data-today-rec-stop]').click()
 await page.waitForTimeout(600)
-await page.locator('nav button', { hasText: '我的' }).click()
-await page.waitForTimeout(500)
-const mineText = await page.locator('[data-page="me"]').textContent()
-t('B1 场次落盘（我的页列表有这场）', mineText.includes('2:03'), '')
+await openMeLectures()
+const mineText = await page.locator('[data-sub-body]').textContent()
+t('B1 场次落盘（录音历史里有这场）', mineText.includes('2:03'), '')
 t('B2 停止按钮消失（回未录音态）', !(await page.locator('[data-today-rec-stop]').isVisible().catch(() => false)))
 
 /* ===== C. 锁屏回来捞回强停结果 ===== */
@@ -115,9 +122,8 @@ await page.evaluate(() => {
 })
 await page.waitForTimeout(700)
 const fakeC = await page.evaluate(() => window.__fake)
-await page.locator('nav button', { hasText: '我的' }).click()
-await page.waitForTimeout(500)
-const mineC = await page.locator('[data-page="me"]').textContent()
+await openMeLectures()
+const mineC = await page.locator('[data-sub-body]').textContent()
 t('C1 强停结果被消费', fakeC.consume === null)
 t('C2 没有再调手动 stopRecording（原生已停过）', fakeC.stopCount === 0)
 t('C3 场次补齐（7:36）', mineC.includes('7:36'))
@@ -136,9 +142,8 @@ await page.locator('[data-today-rec-stop]').click()
 await page.waitForTimeout(700)
 const fakeD = await page.evaluate(() => window.__fake)
 const cardD = await page.locator('[data-today-rec]').textContent()
-await page.locator('nav button', { hasText: '我的' }).click()
-await page.waitForTimeout(500)
-const mineD = await page.locator('[data-page="me"]').textContent()
+await openMeLectures()
+const mineD = await page.locator('[data-sub-body]').textContent()
 t('D1 捞回了强停结果', fakeD.consume === null)
 t('D2 提示「自动停」而不是「录音中断」', cardD.includes('自动停') && !cardD.includes('中断'))
 t('D3 场次补齐（13:09）', mineD.includes('13:09'))

@@ -9,10 +9,19 @@ const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 let pass = 0, fail = 0
 const t = (name, cond) => { if (cond) { pass++; console.log('PASS  ' + name) } else { fail++; console.log('FAIL  ' + name) } }
 
-/* 所有定位都限定在「我的」页内：今日页也有一张「课堂录音」卡（按钮文案一模一样），
-   不限定就会点到当前不可见的今日页那张 —— Playwright 会一直报
-   "element is outside of the viewport" 直到 30s 超时（2026-10-04 确诊）。 */
-const me = (pg) => pg.locator('[data-page="me"]')
+/* Stage 6：录音区搬进「我的」二级页。所有定位限定在二级页内容容器 [data-sub-body] 内，
+   避免命中今日页那张同名「课堂录音」卡（原 2026-10-04 的视口外超时问题同源）。 */
+const me = (pg) => pg.locator('[data-sub-body]')
+
+/* 切「我的」tab 并推进 lectures 二级页（已在二级页时跳过） */
+async function openMeLectures(pg) {
+  if ((await pg.locator('[data-sub="lectures"]').count()) === 0) {
+    await pg.$eval('[data-nav="me"]', (el) => el.click())
+    await pg.waitForTimeout(400)
+    await pg.$eval('[data-me-entry="lectures"]', (el) => el.click())
+    await pg.waitForTimeout(400)
+  }
+}
 
 const EXPECT_URL = 'https://localhost/_capacitor_file_/data/user/0/com.llltl6.schedule/files/lectures/rec_fake.aac'
 
@@ -70,8 +79,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await ctx.addInitScript(SEED_BASE)
   const page = await ctx.newPage()
   await page.goto(URL, { waitUntil: 'load' })
-  await page.click('nav button >> nth=2') // 我的
-  await page.waitForTimeout(400)
+  await openMeLectures(page)
   const entry = me(page).locator('section', { hasText: '课堂录音' }).first()
   t('A1 我的页出现「课堂录音」入口', await entry.isVisible())
   t('A2 浏览器环境列表为空（无场次）', (await me(page).locator('text=试听').count()) === 0)
@@ -82,8 +90,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   /* 录音中断标签：种一条未结束的场次 */
   await page.evaluate(() => localStorage.setItem('web2.lectures', JSON.stringify([{ id: 'lec_broken', status: 'recording', started_at: '2026-09-26T03:00:00.000Z', title: '中断的录音', ended_at: null, duration_ms: 0 }])))
   await page.reload({ waitUntil: 'load' })
-  await page.click('nav button >> nth=2')
-  await page.waitForTimeout(400)
+  await openMeLectures(page)
   t('A5 未正常结束的场次显示「录音中断」', await me(page).locator('text=录音中断').first().isVisible())
   await ctx.close()
 }
@@ -95,8 +102,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await ctx.addInitScript(FAKE_CAP)
   const page = await ctx.newPage()
   await page.goto(URL, { waitUntil: 'load' })
-  await page.click('nav button >> nth=2')
-  await page.waitForTimeout(400)
+  await openMeLectures(page)
 
   await me(page).locator('button:has-text("开始录音")').first().click()
   await page.waitForTimeout(500)
@@ -141,8 +147,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
 
   /* 刷新后仍在（模拟 App 重启） */
   await page.reload({ waitUntil: 'load' })
-  await page.click('nav button >> nth=2')
-  await page.waitForTimeout(500)
+  await openMeLectures(page)
   t('B19 重启后场次仍在且状态为已录完', (await me(page).locator('text=待转写').count()) > 0)
   await ctx.close()
 }

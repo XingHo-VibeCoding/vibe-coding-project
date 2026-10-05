@@ -56,7 +56,13 @@ const stateOf = async (key) => (await cellOf(key).getAttribute('data-cell-state'
 
 /* 2. 本周形态 */
 t('2. 今天那格存在', (await cellOf(TODAY).count()) === 1)
-t('3. 今天未打 → today 态（不是 locked——首跑截图抓过这个误标）', (await stateOf(TODAY)) === 'today', await stateOf(TODAY))
+/* 今天恰是周一时，种子里「本周一」＝「今天」本来就是已打，夹具无法表达
+   「今天未打 + 本周一已打」这对前提，该断言在周一不可测——如实跳过而非弱化。 */
+if (IS_MONDAY) {
+  console.log('SKIP | 3. 今天未打 → today 态（今天恰是周一：种子的「本周一」就是今天，本就已打，该前提在周一无法成立）')
+} else {
+  t('3. 今天未打 → today 态（不是 locked——首跑截图抓过这个误标）', (await stateOf(TODAY)) === 'today', await stateOf(TODAY))
+}
 t('4. 本周一打了卡且非补 → done', (await stateOf(MONDAY)) === 'done', await stateOf(MONDAY))
 
 /* 5. 宽限期内未打的历史格 = open；数量与口径一致 */

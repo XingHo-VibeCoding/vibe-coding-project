@@ -248,6 +248,11 @@ t('B17. 落地后有回执文案', (await page.locator('[data-frame-msg]').inner
    和 v1.41.3 修掉的那句话是同一个现象、不同的层）。
    顺带把清单 #5 的口径钉在单元层：起点设 00:00 必须真按 0 点算（不当成「没设」、不回落 23:00）。 */
 const pushesBeforeDnd = await page.evaluate(() => window.__frame.pushes.length)
+/* Stage 6：练耳卡片搬进「我的 → 碎片练耳」二级页 → 先返回索引再推入 listen */
+await page.locator('[data-sub-back]').click()
+await page.waitForTimeout(300)
+await page.$eval('[data-me-entry="listen"]', (el) => el.click())
+await page.waitForTimeout(400)
 await page.locator('button', { hasText: '打开' }).first().click() // 碎片练耳卡片
 await page.waitForTimeout(300)
 await page.locator('[data-listen-settings-toggle]').click()
@@ -295,7 +300,7 @@ t('C2. 真的调了原生录音（不是只跳到今日页）', (await page.eval
 t('C3. 录音中页面顶部出现常驻「录音中」小条', (await page.locator('[data-rec-banner]').count()) === 1, await page.locator('[data-rec-banner]').innerText().catch(() => '(无)'))
 await page.locator('[data-rec-banner]').click()
 await page.waitForTimeout(500)
-t('C4. 点小条跳到「我的」页（那里才有停止并保存）', (await page.evaluate(() => document.querySelectorAll('nav button')[2].textContent)).includes('我的') && (await page.locator('text=停止并保存').count()) >= 1, await page.evaluate(() => document.querySelectorAll('nav button')[2].className))
+t('C4. 点小条跳到「我的」页的录音二级页（那里才**看得见**停止并保存）', (await page.evaluate(() => document.querySelectorAll('nav button')[2].textContent)).includes('我的') && (await page.locator('[data-sub-page][data-sub="lectures"]').count()) === 1 && (await page.locator('[data-sub-page][data-sub="lectures"] button:has-text("停止并保存")').first().isVisible()), await page.evaluate(() => document.querySelectorAll('nav button')[2].className))
 
 /* C5–C6：另两枚按钮的回执 */
 await page.evaluate(() => window.__frame.fire({ type: 'classDone', id: 'c_x' }))

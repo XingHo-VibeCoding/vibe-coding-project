@@ -35,6 +35,27 @@ const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
 page.on('response', (r) => { if (r.status() >= 400 && !r.url().includes('favicon')) errors.push('HTTP ' + r.status() + ' ' + r.url()) })
 
+/* Stage 6：「我的」页改成索引页，练耳功能搬进全屏二级页 [data-sub-page][data-sub="listen"]。
+   所有以 [data-page="me"] 为域的 locator 换成二级页内容容器 [data-sub-body]；
+   进入路径固定为：切「我的」tab（程序化点击，避开非当前页 inert 吃掉真实鼠标）→ 点 [data-me-entry="listen"]，
+   卡片默认收起，再点二级页里的「打开」。 */
+function listenHelpers(pg) {
+  const body = pg.locator('[data-sub-body]')
+  const enter = async () => {
+    await pg.$eval('[data-nav="me"]', (el) => el.click())
+    await pg.waitForTimeout(250)
+    await pg.$eval('[data-me-entry="listen"]', (el) => el.click())
+    await pg.waitForTimeout(300)
+  }
+  const openCard = async () => {
+    if ((await body.locator('[data-listen-import]').count()) === 0) {
+      await body.locator('button', { hasText: '打开' }).first().click()
+      await pg.waitForTimeout(300)
+    }
+  }
+  return { body, enter, openCard, enterOpen: async () => { await enter(); await openCard() } }
+}
+
 /* 预置一条「拖期」记录：stage=1 → 下一次间隔应为 reviewIntervals[1] = 2 天。
    注意：addInitScript **每次导航都会重跑**，所以必须用哨兵把种子限制成只灌一次，
    否则 reload 会把种子重新写回 localStorage，看起来像"改了没持久化"（E2 踩过）。 */
@@ -53,15 +74,19 @@ await page.addInitScript((seed) => {
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(700)
 
-const ME = page.locator('[data-page="me"]')
-await page.locator('nav button', { hasText: '我的' }).click()
-await page.waitForTimeout(500)
+const ME_INDEX = page.locator('main[data-page="me"]')
+const H = listenHelpers(page)
+const ME = H.body
+const enterListen = H.enter
+const openListenCard = H.openCard
+await page.$eval('[data-nav="me"]', (el) => el.click())
+await page.waitForTimeout(250)
 
 /* ===== A. 入口 ===== */
-t('A1. 「我的」页有「碎片练耳」入口', (await ME.locator('section', { hasText: '碎片练耳' }).count()) >= 1)
-t('A2. 默认收起（导入控件不可见）', (await ME.locator('[data-listen-import]').count()) === 0)
-await ME.locator('button', { hasText: '打开' }).first().click()
-await page.waitForTimeout(300)
+t('A1. 「我的」索引页有「碎片练耳」入口', (await ME_INDEX.locator('section', { hasText: '碎片练耳' }).count()) >= 1)
+await enterListen()
+t('A2. 二级页默认收起（导入控件不可见）', (await ME.locator('[data-listen-import]').count()) === 0)
+await openListenCard()
 t('A3. 展开后出现导入控件', (await ME.locator('[data-listen-import]').count()) === 1)
 t('A4. 文件选择框对用户隐藏（label 触发）', await ME.locator('[data-listen-import]').isHidden())
 
@@ -158,10 +183,8 @@ t('D6. 浏览器提示「刷新后要重新导入」', (await ME.locator('p', { 
 /* ===== E. 刷新重开不丢（L1 硬要求） ===== */
 await page.reload({ waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(700)
-await page.locator('nav button', { hasText: '我的' }).click()
-await page.waitForTimeout(400)
-await ME.locator('button', { hasText: '打开' }).first().click()
-await page.waitForTimeout(300)
+await enterListen()
+await openListenCard()
 const reloadText = await ME.locator('li', { hasText: '种子音频' }).first().innerText()
 t('E1. 刷新后列表仍在', (await ME.locator('li', { hasText: '种子音频' }).count()) === 1)
 t('E2. 刷新后已听次数仍是 2（自动记账没被触发过）', reloadText.includes('已听 2 次'), reloadText)
@@ -176,10 +199,8 @@ await page.evaluate((seed) => {
 }])
 await page.reload({ waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(700)
-await page.locator('nav button', { hasText: '我的' }).click()
-await page.waitForTimeout(400)
-await ME.locator('button', { hasText: '打开' }).first().click()
-await page.waitForTimeout(300)
+await enterListen()
+await openListenCard()
 const emptySlotsText = await ME.locator('[data-listen-slots]').first().innerText()
 t('F1. 今天没有到期音频时的提示', emptySlotsText.includes('没有到期'), emptySlotsText)
 t('F2. 不显示「今天可听」', !emptySlotsText.includes('今天可听'), emptySlotsText)
@@ -252,11 +273,9 @@ await appPage.addInitScript(() => {
 })
 await appPage.goto(BASE, { waitUntil: 'domcontentloaded' })
 await appPage.waitForTimeout(700)
-const APP_ME = appPage.locator('[data-page="me"]')
-await appPage.locator('nav button', { hasText: '我的' }).click()
-await appPage.waitForTimeout(500)
-await APP_ME.locator('button', { hasText: '打开' }).first().click()
-await appPage.waitForTimeout(300)
+const APP_H = listenHelpers(appPage)
+const APP_ME = APP_H.body
+await APP_H.enterOpen()
 
 await APP_ME.locator('[data-listen-import]').setInputFiles({ name: '真机材料.wav', mimeType: 'audio/wav', buffer: wavBuffer() })
 await appPage.waitForTimeout(1000)
@@ -295,11 +314,9 @@ ppage.on('pageerror', (e) => pErrors.push(String(e)))
 await ppage.addInitScript(() => { localStorage.setItem('web2.onboarded', '1') })
 await ppage.goto(BASE, { waitUntil: 'domcontentloaded' })
 await ppage.waitForTimeout(700)
-const P_ME = ppage.locator('[data-page="me"]')
-await ppage.locator('nav button', { hasText: '我的' }).click()
-await ppage.waitForTimeout(500)
-await P_ME.locator('button', { hasText: '打开' }).first().click()
-await ppage.waitForTimeout(300)
+const P_H = listenHelpers(ppage)
+const P_ME = P_H.body
+await P_H.enterOpen()
 await P_ME.locator('[data-listen-import]').setInputFiles({ name: '试听音频.wav', mimeType: 'audio/wav', buffer: wavBuffer() })
 await ppage.waitForTimeout(900)
 const prow = P_ME.locator('li', { hasText: '试听音频' }).first()
@@ -325,11 +342,9 @@ rpage.on('pageerror', (e) => rErrors.push(String(e)))
 await rpage.addInitScript(() => { localStorage.setItem('web2.onboarded', '1') })
 await rpage.goto(BASE, { waitUntil: 'domcontentloaded' })
 await rpage.waitForTimeout(700)
-const R_ME = rpage.locator('[data-page="me"]')
-await rpage.locator('nav button', { hasText: '我的' }).click()
-await rpage.waitForTimeout(500)
-await R_ME.locator('button', { hasText: '打开' }).first().click()
-await rpage.waitForTimeout(300)
+const R_H = listenHelpers(rpage)
+const R_ME = R_H.body
+await R_H.enterOpen()
 await R_ME.locator('[data-listen-import]').setInputFiles({ name: '连放测试.wav', mimeType: 'audio/wav', buffer: wavBuffer() })
 await rpage.waitForTimeout(900)
 const rrow = R_ME.locator('li', { hasText: '连放测试' }).first()
@@ -441,8 +456,11 @@ await npage.evaluate(() => {
   if (cb) cb({ actionId: 'tap', notification: { extra: { src: 'web2-listen', key: 'l_x', count: 1 } } })
 })
 await npage.waitForTimeout(500)
-const K_ME = npage.locator('[data-page="me"]')
-t('K10. 点练耳通知后停在「我的」页', !(await K_ME.evaluate((el) => el.hasAttribute('inert'))))
+const K_MAIN = npage.locator('[data-page="me"]')
+const K_ME = npage.locator('[data-sub-body]')
+t('K10. 点练耳通知后停在「我的」页（索引页非 inert）且练耳二级页被推出',
+  !(await K_MAIN.evaluate((el) => el.hasAttribute('inert')))
+  && (await npage.locator('[data-sub-page][data-sub="listen"]').count()) === 1)
 t('K11. 练耳卡自动展开（通知即入口）', (await K_ME.locator('[data-listen-import]').count()) === 1)
 t('K12. 点通知**不出声**（没有任何一条在播）', (await K_ME.locator('button', { hasText: '停止' }).count()) === 0)
 t('K12b. 通知链路无页面报错 / 无 4xx-5xx 资源', nErrors.length === 0, nErrors.slice(0, 3).join(' | '))
