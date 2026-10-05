@@ -4283,9 +4283,26 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
               class="text-[10px] leading-tight text-ink-dim"
               :class="cardFit(it) === 'loose' ? 'line-clamp-3 break-words' : 'truncate'"
             >{{ it.c.place }}</p>
-            <!-- 只在与节次边界不齐时标真实时间（识别导入的课常见），对齐的不啰嗦 -->
+            <!-- Stage 5：录音入口就贴在这一刻正在上的那节课上（不加悬浮键）。
+                 gridStatus(it) === 'now' 已经隐含「本周 + 今天这一列」，所以别的周/别的星期不会有它；
+                 点它走的是同一个 startRec()，课名关联因此与今天页那颗钮完全一致（courseCovering）。 -->
+            <button
+              v-if="gridStatus(it) === 'now'"
+              data-week-rec-now
+              :aria-label="recActiveId ? '停止录音' : '开始录音'"
+              class="absolute right-0.5 bottom-0.5 z-10 flex h-5 items-center gap-[3px] rounded-full bg-card/95 px-1.5 text-[9px] font-semibold leading-none text-primary-600 shadow-sm ring-1 ring-line after:absolute after:-inset-[10px] after:content-[''] active:scale-95"
+              @click.stop="recActiveId ? stopRec() : startRec()"
+            >
+              <svg viewBox="0 0 16 16" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+                <rect x="5.6" y="1.8" width="4.8" height="7.6" rx="2.4" />
+                <path d="M3.6 7.8a4.4 4.4 0 008.8 0M8 12.2v1.8" />
+              </svg>
+              <span>{{ recActiveId ? '停' : '录音' }}</span>
+            </button>
+            <!-- 只在与节次边界不齐时标真实时间（识别导入的课常见），对齐的不啰嗦；
+                 这节课上有录音钮时让位，避免右下角两样东西叠一起 -->
             <span
-              v-if="!isAligned(it.c, periods)"
+              v-if="!isAligned(it.c, periods) && gridStatus(it) !== 'now'"
               class="absolute right-0.5 bottom-0 text-[9px] leading-none text-ink-dim"
             >{{ it.c.start }}</span>
           </article>
