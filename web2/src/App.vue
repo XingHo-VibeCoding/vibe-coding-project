@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, provide, reactive } from 'vue'
 import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, dayScope, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, addRoutine, updateRoutine, removeRoutine, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, isGraceKey, graceKeysOf, isBackfilled, totalDoneOf, weekMondayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
 import { normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt } from './data/periods.js'
 import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange, clampCoursesToSegments } from './data/weekGrid.js'
@@ -34,6 +34,12 @@ import DropdownSelect from './components/DropdownSelect.vue'
 import PeriodsEditor from './components/PeriodsEditor.vue'
 import BottomSheet from './components/BottomSheet.vue'
 import RowItem from './components/RowItem.vue'
+/* Stage 9 组件化：拆出去的页面/浮层用 useApp() 取这份上下文（App 仍是唯一状态持有者） */
+import { APP_CTX } from './composables/app-ctx.js'
+/* Stage 9 拆出来的浮层/页面组件（各自用 useApp() 取上下文） */
+import PickerSheet from './sheets/PickerSheet.vue'
+import ConfirmClearSheet from './sheets/ConfirmClearSheet.vue'
+import DeleteLectureSheet from './sheets/DeleteLectureSheet.vue'
 
 /* 版本串不再手写：由 vite.config.js 从 package.json 的 version 注入（单一来源）。
    改版本号只改 web2/package.json 一处，App 打包脚本读的是同一个文件。 */
@@ -340,13 +346,14 @@ function openNumberField(opt) {
     title: opt.title || '选择数值', onDone: opt.onDone,
   }
 }
-function pickerConfirm() {
+/* 滚轮当前值只有弹层自己知道，所以由它把自己的模板 ref 传进来（Stage 9 拆出 PickerSheet 后）。 */
+function pickerConfirm(wheel) {
   const p = picker.value
   if (!p) return
   let v
   if (p.type === 'date') v = p.value
-  else if (p.type === 'number') v = pickerRef.value ? Number(pickerRef.value.value) : p.value
-  else v = pickerRef.value ? pickerRef.value.display : p.value
+  else if (p.type === 'number') v = wheel ? Number(wheel.value) : p.value
+  else v = wheel ? wheel.display : p.value
   picker.value = null
   p.onDone(v)
 }
@@ -3661,6 +3668,77 @@ function syncBodyScrollLock() {
   document.body.style.overflow = lock ? 'hidden' : ''
 }
 watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
+
+/* ===== APP_CTX:begin（由 tmp/gen-app-ctx.mjs 生成，勿手改）=====
+   Stage 9：App 仍是唯一状态持有者，这里把上下文交出去；
+   拆出去的页面/浮层用 useApp() 取（reactive 会自动解包 ref，读写都不用 .value）。
+   这个块是生成的：改了状态就重跑 web2/tmp/gen-app-ctx.mjs，别手改。 */
+provide(APP_CTX, reactive({
+  APP_VERSION, tab, TAB_KEYS, tabIndex, weekSub, habitSheet, stripDelay, switchTab,
+  setWeekSub, weekMenuOpen, toggleWeekMenu, closeWeekMenu, menuAddSlot, menuAddCourse, menuAddEvent, menuScan,
+  menuOpenList, onWeekMenuAway, stripRef, stripH, measureStrip, todayH, todayRef, todayTopOffset,
+  measureTodayH, swipeDx, swiping, sw, onStripTouchStart, onStripTouchMove, onStripTouchEnd, onStripTouchCancel,
+  APP_PLUGIN, backHint, closeTopmostLayer, lastBackTs, backHintTimer, initBackButton, picker, pickerRef,
+  openDateField, openTimeField, openNumberField, pickerConfirm, initial, source, semester, weekAll,
+  events, routines, importMsg, reloadDataset, addedDupCount, dedupCourses, onImportFile, onClearImport,
+  notifySettings, notifyPerm, notifyOk, notifyTesting, notifyMsg, notifyMsgBad, exactAlarm, exactAsking,
+  exactMsg, exactMsgBad, exactHint, refreshExactAlarm, onAskExactAlarm, goMeTab, applyNotifySchedule, toggleNotify,
+  setNotifyLead, onTestNotify, initNotify, frameSettings, frameIsApp, frameMsg, frameMsgBad, setFrameMsg,
+  frameToast, frameToastTimer, showFrameToast, frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop, frameTodayItems, frameTomorrowFirst,
+  pushFrameNow, applyFrameActions, frameDrainErr, drainFrameActions, initFrame, toggleFrame, onFrameVisible, ONBOARD_KEY,
+  onboarding, onboardStep, OB_STEP_LABELS, onboardStepNo, finishOnboarding, confirmClear, doClearData, habits,
+  habitInput, habitName, habitToday, reloadHabits, addHabitConfirm, removeHabitConfirm, habitDelId, habitDelTimer,
+  onHabitDelete, toggleHabit, habitsAllDoneToday, undoAllHabitsToday, habitGrace, habitWeekBase, habitViewDays, habitWeekLabel,
+  shiftHabitWeek, habitTodayDone, onHabitCell, habitCellState, HABIT_CELL_CLS, habitTodayText, lectures, recActiveId,
+  recElapsed, recMsg, recMsgBad, playingId, recTicker, audioEl, recSupported, refreshLectures,
+  setRecMsg, fmtDur, fmtLecDate, lecStatusLabel, defaultLecTitle, entryName, tickRec, startRec,
+  AUTO_STOP_GRACE_MIN, finalizeRecording, stopRec, onVisibleCheckAutoStop, reconcileKeepAlive, playLec, onPlayFail, delLecId,
+  pressActiveId, pressTimer, pressPos, delLec, startLecPress, moveLecPress, cancelLecPress, doDeleteLecture,
+  listenClips, listenSettings, listenMsg, listenMsgBad, listenOpen, listenIsApp, setListenMsg, refreshListen,
+  initListen, listenDayKey, applyListenSchedule, reviewSheet, reviewHistory, reviewSettings, reviewMsg, reviewMsgBad,
+  REVIEW_AT_CHOICES, WD_LABELS, todayReview, reviewStepTotal, weekdayLabelOf, refreshReviews, setReviewMsg, moodLabelOf,
+  initReview, reviewStatsNow, openReview, closeReview, reviewSetAnswer, reviewNext, reviewBack, reviewFinish,
+  toggleReviewNotify, setReviewAt, applyReviewSchedule, reviewFocusText, reviewAddTodo, isSameDay, listenSuggestions, listenDue,
+  listenTodayAll, onListenPick, listenAutoMark, toggleListenNotify, listenSettingsOpen, patchListenSettings, onListenRepeat, onListenIntervals,
+  onListenDnd, onListenNum, resetListenSettings, listenBlobUrls, listenPlayId, listenPlayRound, listenPlayTotal, listenAudio,
+  listenPaused, pauseListen, clearListen, resumeListen, onListenEnded, onListenPlay, trSupported, trBusyId,
+  trPhase, trPercent, trLabel, trOpenId, fmtSize, startTr, llmCfg, llmInputOpen,
+  settingsOpen, meSub, meSubTitle, openMeSub, closeMeSub, PROVIDER_OPTIONS, llmReady, sumBusyId,
+  sumStage, sumOpenId, sumCtrl, saveLlm, onLlmProvider, onLlmKey, llmTest, llmModels,
+  testLlm, cancelSummary, startSummary, runAutoPipeline, tomorrowStr, homeworkToTodos, onboardFile, onboardImport,
+  obImportMsg, onOnboardFile, semForm, semErr, DEFAULT_PERIODS, openSemEdit, saveSemEdit, defaultTermName,
+  fmtDateYMD, obForm, obErr, goObForm, obPageDir, goObPeriods, backObForm, obStepDir,
+  obAiFrom, obAiErr, gotoAiCfg, onObAiKey, obAiTest, obAiDone, obAiBack, obPickStart,
+  obStartHint, obPickWeeks, SEG_NAMES, segName, obTimeSummary, obPickDur, obPickGap, obGlobal,
+  obReperiod, obSegGroups, obPickPeriodStart, obPickPeriodEnd, obAddPeriod, obRemovePeriod, obSubmit, obRecFile,
+  obRecBusy, obRecErr, recPreview, WEEKDAY_LABELS, WEEK_RULE_LABELS, recSelectedCount, obPeriods, obSegView,
+  recFromMine, minePeriods, recPeriods, recSegView, mineRecStart, mineRecCancel, goObRec, recBackForm,
+  obManualAdd, obRecClick, onObRecFile, recSecOptions, recTimeRange, recRemove, recGrid, recCols,
+  recRows, recRowIdx, recColsStyle, recGridStyle, recOverlapNote, palOf, recItemHot, recPressCell,
+  recCellDown, recCellUp, recCell, recCellErr, openRecAdd, openRecEdit, recCellWhere, recCellWhen,
+  submitRecCell, delRecCell, recBack, recImport, THEME_KEY, theme, isDark, applyTheme,
+  toggleTheme, ACCENTS, ACCENT_KEY, savedAccent, accent, applyAccent, setAccent, AUTO_THEME_KEY,
+  autoTheme, AUTO_SLOTS, autoSlot, autoSlotName, autoApplied, applyAutoTheme, setAutoTheme, todos,
+  doneCount, toggleTodo, TODO_FILTERS, todoFilter, shownTodos, setTodoFilter, todoForm, todoErr,
+  openTodoAdd, openTodoEdit, submitTodo, deleteTodoNow, confirmDelTodo, confirmDelTodoTimer, onDeleteTodo, evtForm,
+  evtErr, evtWarn, evtConfirmed, openEventAdd, submitEvent, onExportBack, onExportIcs, today,
+  todayIdx, todayStr, todayCourses, todayRoutineCount, termInfo, conflictPool, tParam, nowTime,
+  GREET_CUTE, greetingText, state, currentCourse, headerCourseText, nextTodayId, minUntil, rowMeta,
+  LIVE_PREVIEW, todayPast, todayLive, todayExpanded, pastOpen, pastSpan, livePreview, hiddenCount,
+  rowsShown, REVIEW_FROM, heroCourse, allTodayCoursesDone, heroMode, heroSubline, heroTitle, recEntryOn,
+  heroSub, dateText, weekDay, DAY_START, DAY_END, weekOffset, weekNo, monday,
+  weekDays, weekVisible, weekCols, gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME, winH,
+  navH, satPx, gridTop, gridH, measureNavH, measureSat, measureGridTop, onWinResize,
+  gridColsStyle, gridBodyStyle, cardFit, PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine,
+  pal, periods, periodSpan, courseStatus, gridStatus, nowPct, nowClock, nowLineY,
+  undoneCount, undoneTodos, doneTodos, detail, openDetail, WDN, listTotalCount, listFixedCount,
+  listDateLabel, listGroups, listBarColor, listMeta, onListItem, addForm, addErr, addWarn,
+  addConfirmed, DURATIONS, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind,
+  editCourseFromDetail, editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse,
+  removeRoutineFromDetail, onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove,
+  gridUp, gridDbl, anySheetOpen, syncBodyScrollLock,
+}))
+/* ===== APP_CTX:end ===== */
 </script>
 
 <template>
@@ -6251,89 +6329,11 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
       </div>
     </BottomSheet>
 
-    <!-- 共享 picker 弹层：日期月历 / 时间滚轮（叠在表单 sheet 之上） -->
-    <Transition name="fade">
-      <div v-if="picker" data-picker-mask class="fixed inset-0 z-40 bg-black/40" @click="picker = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="picker"
-        class="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
-        <div class="mb-3 flex items-center justify-between">
-          <button class="rounded-lg px-2 py-1 text-sm text-ink-dim transition active:bg-ink/10" @click="picker = null">取消</button>
-          <p class="text-sm font-bold text-ink">{{ picker.title || (picker.type === 'date' ? '选择日期' : picker.type === 'number' ? '选择数值' : '选择时间') }}</p>
-          <button class="rounded-lg px-2 py-1 text-sm font-semibold text-primary-600 transition active:bg-primary-50" @click="pickerConfirm">确定</button>
-        </div>
-        <MonthCalendar
-          v-if="picker.type === 'date'"
-          v-model="picker.value"
-          :restrict-monday="picker.restrictMonday"
-        />
-        <NumberWheel v-else-if="picker.type === 'number'" ref="pickerRef" :model-value="picker.value" :min="picker.min" :max="picker.max" :step="picker.step" :unit="picker.unit" />
-        <TimeWheel v-else ref="pickerRef" :model-value="picker.value" />
-      </div>
-    </Transition>
+<PickerSheet />
 
-    <!-- 清除数据二次确认（对齐主项目 confirmResetModal：自建弹窗，不用原生 confirm） -->
-    <Transition name="fade">
-      <div v-if="confirmClear" class="fixed inset-0 z-40 bg-black/40" @click="confirmClear = false"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="confirmClear"
-        class="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"></div>
-        <h2 class="text-lg font-bold">确认清除全部数据</h2>
-        <p class="mt-2 text-xs text-ink-dim">将清空学期、课程、日程与待办并回到初始设定，无法恢复。API Key、主题与通知设置会保留。</p>
-        <div class="mt-5 grid grid-cols-2 gap-2.5">
-          <button
-            class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="confirmClear = false"
-          >
-            取消
-          </button>
-          <button
-            data-clear-confirm
-            class="rounded-xl border border-red-400 bg-red-400/10 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 transition active:scale-[0.98]"
-            @click="doClearData"
-          >
-            确认清除
-          </button>
-        </div>
-      </div>
-    </Transition>
+<ConfirmClearSheet />
 
-    <!-- 删除录音场次二次确认（长按触发；不用原生 confirm，样式对齐清除数据弹层） -->
-    <Transition name="fade">
-      <div v-if="delLec" class="fixed inset-0 z-40 bg-black/40" @click="delLecId = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="delLec"
-        class="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"></div>
-        <h2 class="text-lg font-bold">删除这场录音？</h2>
-        <p class="mt-2 text-xs text-ink-dim">「{{ delLec.title }}」及其录音文件、文字稿和纪要将一并删除，无法恢复。</p>
-        <div class="mt-5 grid grid-cols-2 gap-2.5">
-          <button
-            class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="delLecId = null"
-          >
-            取消
-          </button>
-          <button
-            class="rounded-xl border border-red-400 bg-red-400/10 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 transition active:scale-[0.98]"
-            @click="doDeleteLecture"
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </Transition>
+<DeleteLectureSheet />
 
     <!-- 初始设定引导页：首次打开出现，选一次就记住 -->
     <Transition name="fade">
