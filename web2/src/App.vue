@@ -40,6 +40,11 @@ import { APP_CTX } from './composables/app-ctx.js'
 import PickerSheet from './sheets/PickerSheet.vue'
 import ConfirmClearSheet from './sheets/ConfirmClearSheet.vue'
 import DeleteLectureSheet from './sheets/DeleteLectureSheet.vue'
+import AddSheet from './sheets/AddSheet.vue'
+import PressTypeSheet from './sheets/PressTypeSheet.vue'
+import ReviewGridSheet from './sheets/ReviewGridSheet.vue'
+import DetailSheet from './sheets/DetailSheet.vue'
+import HabitSheet from './sheets/HabitSheet.vue'
 
 /* 版本串不再手写：由 vite.config.js 从 package.json 的 version 注入（单一来源）。
    改版本号只改 web2/package.json 一处，App 打包脚本读的是同一个文件。 */
@@ -3674,69 +3679,90 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
    拆出去的页面/浮层用 useApp() 取（reactive 会自动解包 ref，读写都不用 .value）。
    这个块是生成的：改了状态就重跑 web2/tmp/gen-app-ctx.mjs，别手改。 */
 provide(APP_CTX, reactive({
-  APP_VERSION, tab, TAB_KEYS, tabIndex, weekSub, habitSheet, stripDelay, switchTab,
-  setWeekSub, weekMenuOpen, toggleWeekMenu, closeWeekMenu, menuAddSlot, menuAddCourse, menuAddEvent, menuScan,
-  menuOpenList, onWeekMenuAway, stripRef, stripH, measureStrip, todayH, todayRef, todayTopOffset,
-  measureTodayH, swipeDx, swiping, sw, onStripTouchStart, onStripTouchMove, onStripTouchEnd, onStripTouchCancel,
-  APP_PLUGIN, backHint, closeTopmostLayer, lastBackTs, backHintTimer, initBackButton, picker, pickerRef,
-  openDateField, openTimeField, openNumberField, pickerConfirm, initial, source, semester, weekAll,
-  events, routines, importMsg, reloadDataset, addedDupCount, dedupCourses, onImportFile, onClearImport,
-  notifySettings, notifyPerm, notifyOk, notifyTesting, notifyMsg, notifyMsgBad, exactAlarm, exactAsking,
-  exactMsg, exactMsgBad, exactHint, refreshExactAlarm, onAskExactAlarm, goMeTab, applyNotifySchedule, toggleNotify,
-  setNotifyLead, onTestNotify, initNotify, frameSettings, frameIsApp, frameMsg, frameMsgBad, setFrameMsg,
-  frameToast, frameToastTimer, showFrameToast, frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop, frameTodayItems, frameTomorrowFirst,
-  pushFrameNow, applyFrameActions, frameDrainErr, drainFrameActions, initFrame, toggleFrame, onFrameVisible, ONBOARD_KEY,
-  onboarding, onboardStep, OB_STEP_LABELS, onboardStepNo, finishOnboarding, confirmClear, doClearData, habits,
-  habitInput, habitName, habitToday, reloadHabits, addHabitConfirm, removeHabitConfirm, habitDelId, habitDelTimer,
-  onHabitDelete, toggleHabit, habitsAllDoneToday, undoAllHabitsToday, habitGrace, habitWeekBase, habitViewDays, habitWeekLabel,
-  shiftHabitWeek, habitTodayDone, onHabitCell, habitCellState, HABIT_CELL_CLS, habitTodayText, lectures, recActiveId,
-  recElapsed, recMsg, recMsgBad, playingId, recTicker, audioEl, recSupported, refreshLectures,
-  setRecMsg, fmtDur, fmtLecDate, lecStatusLabel, defaultLecTitle, entryName, tickRec, startRec,
-  AUTO_STOP_GRACE_MIN, finalizeRecording, stopRec, onVisibleCheckAutoStop, reconcileKeepAlive, playLec, onPlayFail, delLecId,
-  pressActiveId, pressTimer, pressPos, delLec, startLecPress, moveLecPress, cancelLecPress, doDeleteLecture,
-  listenClips, listenSettings, listenMsg, listenMsgBad, listenOpen, listenIsApp, setListenMsg, refreshListen,
-  initListen, listenDayKey, applyListenSchedule, reviewSheet, reviewHistory, reviewSettings, reviewMsg, reviewMsgBad,
-  REVIEW_AT_CHOICES, WD_LABELS, todayReview, reviewStepTotal, weekdayLabelOf, refreshReviews, setReviewMsg, moodLabelOf,
-  initReview, reviewStatsNow, openReview, closeReview, reviewSetAnswer, reviewNext, reviewBack, reviewFinish,
-  toggleReviewNotify, setReviewAt, applyReviewSchedule, reviewFocusText, reviewAddTodo, isSameDay, listenSuggestions, listenDue,
-  listenTodayAll, onListenPick, listenAutoMark, toggleListenNotify, listenSettingsOpen, patchListenSettings, onListenRepeat, onListenIntervals,
-  onListenDnd, onListenNum, resetListenSettings, listenBlobUrls, listenPlayId, listenPlayRound, listenPlayTotal, listenAudio,
-  listenPaused, pauseListen, clearListen, resumeListen, onListenEnded, onListenPlay, trSupported, trBusyId,
-  trPhase, trPercent, trLabel, trOpenId, fmtSize, startTr, llmCfg, llmInputOpen,
-  settingsOpen, meSub, meSubTitle, openMeSub, closeMeSub, PROVIDER_OPTIONS, llmReady, sumBusyId,
-  sumStage, sumOpenId, sumCtrl, saveLlm, onLlmProvider, onLlmKey, llmTest, llmModels,
-  testLlm, cancelSummary, startSummary, runAutoPipeline, tomorrowStr, homeworkToTodos, onboardFile, onboardImport,
-  obImportMsg, onOnboardFile, semForm, semErr, DEFAULT_PERIODS, openSemEdit, saveSemEdit, defaultTermName,
-  fmtDateYMD, obForm, obErr, goObForm, obPageDir, goObPeriods, backObForm, obStepDir,
-  obAiFrom, obAiErr, gotoAiCfg, onObAiKey, obAiTest, obAiDone, obAiBack, obPickStart,
-  obStartHint, obPickWeeks, SEG_NAMES, segName, obTimeSummary, obPickDur, obPickGap, obGlobal,
-  obReperiod, obSegGroups, obPickPeriodStart, obPickPeriodEnd, obAddPeriod, obRemovePeriod, obSubmit, obRecFile,
-  obRecBusy, obRecErr, recPreview, WEEKDAY_LABELS, WEEK_RULE_LABELS, recSelectedCount, obPeriods, obSegView,
-  recFromMine, minePeriods, recPeriods, recSegView, mineRecStart, mineRecCancel, goObRec, recBackForm,
-  obManualAdd, obRecClick, onObRecFile, recSecOptions, recTimeRange, recRemove, recGrid, recCols,
-  recRows, recRowIdx, recColsStyle, recGridStyle, recOverlapNote, palOf, recItemHot, recPressCell,
-  recCellDown, recCellUp, recCell, recCellErr, openRecAdd, openRecEdit, recCellWhere, recCellWhen,
-  submitRecCell, delRecCell, recBack, recImport, THEME_KEY, theme, isDark, applyTheme,
-  toggleTheme, ACCENTS, ACCENT_KEY, savedAccent, accent, applyAccent, setAccent, AUTO_THEME_KEY,
-  autoTheme, AUTO_SLOTS, autoSlot, autoSlotName, autoApplied, applyAutoTheme, setAutoTheme, todos,
-  doneCount, toggleTodo, TODO_FILTERS, todoFilter, shownTodos, setTodoFilter, todoForm, todoErr,
-  openTodoAdd, openTodoEdit, submitTodo, deleteTodoNow, confirmDelTodo, confirmDelTodoTimer, onDeleteTodo, evtForm,
-  evtErr, evtWarn, evtConfirmed, openEventAdd, submitEvent, onExportBack, onExportIcs, today,
-  todayIdx, todayStr, todayCourses, todayRoutineCount, termInfo, conflictPool, tParam, nowTime,
-  GREET_CUTE, greetingText, state, currentCourse, headerCourseText, nextTodayId, minUntil, rowMeta,
-  LIVE_PREVIEW, todayPast, todayLive, todayExpanded, pastOpen, pastSpan, livePreview, hiddenCount,
-  rowsShown, REVIEW_FROM, heroCourse, allTodayCoursesDone, heroMode, heroSubline, heroTitle, recEntryOn,
-  heroSub, dateText, weekDay, DAY_START, DAY_END, weekOffset, weekNo, monday,
-  weekDays, weekVisible, weekCols, gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME, winH,
-  navH, satPx, gridTop, gridH, measureNavH, measureSat, measureGridTop, onWinResize,
-  gridColsStyle, gridBodyStyle, cardFit, PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine,
-  pal, periods, periodSpan, courseStatus, gridStatus, nowPct, nowClock, nowLineY,
-  undoneCount, undoneTodos, doneTodos, detail, openDetail, WDN, listTotalCount, listFixedCount,
-  listDateLabel, listGroups, listBarColor, listMeta, onListItem, addForm, addErr, addWarn,
-  addConfirmed, DURATIONS, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind,
-  editCourseFromDetail, editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse,
-  removeRoutineFromDetail, onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove,
-  gridUp, gridDbl, anySheetOpen, syncBodyScrollLock,
+  loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups,
+  removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, dayScope,
+  exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, addRoutine, updateRoutine, removeRoutine,
+  periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture,
+  setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord,
+  streakOf, todayKeyOf, isGraceKey, graceKeysOf, isBackfilled, totalDoneOf, weekMondayKeyOf, ADDED_KEY,
+  TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY, normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment,
+  removePeriodAt, GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned,
+  findCellOverlaps, secRowRange, clampCoursesToSegments, recorderAvailable, ensureMicPermission, recStart, recStop, resolvePlayableUri,
+  statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning, scheduleAutoStop, consumeAutoStop, transcriberAvailable,
+  modelState, ensureModel, transcribeLecture, startLiveTranscribe, stopLiveTranscribe, loadLlmConfig, saveLlmConfig, summarizeTranscript,
+  summarizerAvailable, testConnection, DEEPSEEK_MODELS, compressImageForRecognize, recognizeScheduleImage, recognizerAvailable, buildIcs, downloadText,
+  notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify,
+  onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL, exactAlarmState, askExactAlarm, loadClips, saveClips, loadListenSettings,
+  saveListenSettings, reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds, todayKey,
+  addDaysKey, minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices, parseIntervals,
+  formatIntervals, intInRange, isTimeStr, LISTEN_DEFAULTS, fileToBase64, writeClipBytes, resolveListenUri, makeClipBlobUrl,
+  statClipFile, loadReviews, saveReviews, upsertReview, findReview, loadReviewSettings, saveReviewSettings, newRecord,
+  summarizeReview, MOODS, QUESTIONS, noticeItem, noticeDate, REVIEW_TAG, REVIEW_CHANNEL, MonthCalendar,
+  NumberWheel, TimeWheel, DropdownSelect, PeriodsEditor, BottomSheet, RowItem, APP_CTX, PickerSheet,
+  ConfirmClearSheet, DeleteLectureSheet, AddSheet, PressTypeSheet, ReviewGridSheet, DetailSheet, HabitSheet, APP_VERSION,
+  tab, TAB_KEYS, tabIndex, weekSub, habitSheet, stripDelay, switchTab, setWeekSub,
+  weekMenuOpen, toggleWeekMenu, closeWeekMenu, menuAddSlot, menuAddCourse, menuAddEvent, menuScan, menuOpenList,
+  onWeekMenuAway, stripRef, stripH, measureStrip, todayH, todayRef, todayTopOffset, measureTodayH,
+  swipeDx, swiping, sw, onStripTouchStart, onStripTouchMove, onStripTouchEnd, onStripTouchCancel, APP_PLUGIN,
+  backHint, closeTopmostLayer, lastBackTs, backHintTimer, initBackButton, picker, pickerRef, openDateField,
+  openTimeField, openNumberField, pickerConfirm, initial, source, semester, weekAll, events,
+  routines, importMsg, reloadDataset, addedDupCount, dedupCourses, onImportFile, onClearImport, notifySettings,
+  notifyPerm, notifyOk, notifyTesting, notifyMsg, notifyMsgBad, exactAlarm, exactAsking, exactMsg,
+  exactMsgBad, exactHint, refreshExactAlarm, onAskExactAlarm, goMeTab, applyNotifySchedule, toggleNotify, setNotifyLead,
+  onTestNotify, initNotify, frameSettings, frameIsApp, frameMsg, frameMsgBad, setFrameMsg, frameToast,
+  frameToastTimer, showFrameToast, frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop, frameTodayItems, frameTomorrowFirst, pushFrameNow,
+  applyFrameActions, frameDrainErr, drainFrameActions, initFrame, toggleFrame, onFrameVisible, ONBOARD_KEY, onboarding,
+  onboardStep, OB_STEP_LABELS, onboardStepNo, finishOnboarding, confirmClear, doClearData, habits, habitInput,
+  habitName, habitToday, reloadHabits, addHabitConfirm, removeHabitConfirm, habitDelId, habitDelTimer, onHabitDelete,
+  toggleHabit, habitsAllDoneToday, undoAllHabitsToday, habitGrace, habitWeekBase, habitViewDays, habitWeekLabel, shiftHabitWeek,
+  habitTodayDone, onHabitCell, habitCellState, HABIT_CELL_CLS, habitTodayText, lectures, recActiveId, recElapsed,
+  recMsg, recMsgBad, playingId, recTicker, audioEl, recSupported, refreshLectures, setRecMsg,
+  fmtDur, fmtLecDate, lecStatusLabel, defaultLecTitle, entryName, tickRec, startRec, AUTO_STOP_GRACE_MIN,
+  finalizeRecording, stopRec, onVisibleCheckAutoStop, reconcileKeepAlive, playLec, onPlayFail, delLecId, pressActiveId,
+  pressTimer, pressPos, delLec, startLecPress, moveLecPress, cancelLecPress, doDeleteLecture, listenClips,
+  listenSettings, listenMsg, listenMsgBad, listenOpen, listenIsApp, setListenMsg, refreshListen, initListen,
+  listenDayKey, applyListenSchedule, reviewSheet, reviewHistory, reviewSettings, reviewMsg, reviewMsgBad, REVIEW_AT_CHOICES,
+  WD_LABELS, todayReview, reviewStepTotal, weekdayLabelOf, refreshReviews, setReviewMsg, moodLabelOf, initReview,
+  reviewStatsNow, openReview, closeReview, reviewSetAnswer, reviewNext, reviewBack, reviewFinish, toggleReviewNotify,
+  setReviewAt, applyReviewSchedule, reviewFocusText, reviewAddTodo, isSameDay, listenSuggestions, listenDue, listenTodayAll,
+  onListenPick, listenAutoMark, toggleListenNotify, listenSettingsOpen, patchListenSettings, onListenRepeat, onListenIntervals, onListenDnd,
+  onListenNum, resetListenSettings, listenBlobUrls, listenPlayId, listenPlayRound, listenPlayTotal, listenAudio, listenPaused,
+  pauseListen, clearListen, resumeListen, onListenEnded, onListenPlay, trSupported, trBusyId, trPhase,
+  trPercent, trLabel, trOpenId, fmtSize, startTr, llmCfg, llmInputOpen, settingsOpen,
+  meSub, meSubTitle, openMeSub, closeMeSub, PROVIDER_OPTIONS, llmReady, sumBusyId, sumStage,
+  sumOpenId, sumCtrl, saveLlm, onLlmProvider, onLlmKey, llmTest, llmModels, testLlm,
+  cancelSummary, startSummary, runAutoPipeline, tomorrowStr, homeworkToTodos, onboardFile, onboardImport, obImportMsg,
+  onOnboardFile, semForm, semErr, DEFAULT_PERIODS, openSemEdit, saveSemEdit, defaultTermName, fmtDateYMD,
+  obForm, obErr, goObForm, obPageDir, goObPeriods, backObForm, obStepDir, obAiFrom,
+  obAiErr, gotoAiCfg, onObAiKey, obAiTest, obAiDone, obAiBack, obPickStart, obStartHint,
+  obPickWeeks, SEG_NAMES, segName, obTimeSummary, obPickDur, obPickGap, obGlobal, obReperiod,
+  obSegGroups, obPickPeriodStart, obPickPeriodEnd, obAddPeriod, obRemovePeriod, obSubmit, obRecFile, obRecBusy,
+  obRecErr, recPreview, WEEKDAY_LABELS, WEEK_RULE_LABELS, recSelectedCount, obPeriods, obSegView, recFromMine,
+  minePeriods, recPeriods, recSegView, mineRecStart, mineRecCancel, goObRec, recBackForm, obManualAdd,
+  obRecClick, onObRecFile, recSecOptions, recTimeRange, recRemove, recGrid, recCols, recRows,
+  recRowIdx, recColsStyle, recGridStyle, recOverlapNote, palOf, recItemHot, recPressCell, recCellDown,
+  recCellUp, recCell, recCellErr, openRecAdd, openRecEdit, recCellWhere, recCellWhen, submitRecCell,
+  delRecCell, recBack, recImport, THEME_KEY, theme, isDark, applyTheme, toggleTheme,
+  ACCENTS, ACCENT_KEY, savedAccent, accent, applyAccent, setAccent, AUTO_THEME_KEY, autoTheme,
+  AUTO_SLOTS, autoSlot, autoSlotName, autoApplied, applyAutoTheme, setAutoTheme, todos, doneCount,
+  toggleTodo, TODO_FILTERS, todoFilter, shownTodos, setTodoFilter, todoForm, todoErr, openTodoAdd,
+  openTodoEdit, submitTodo, deleteTodoNow, confirmDelTodo, confirmDelTodoTimer, onDeleteTodo, evtForm, evtErr,
+  evtWarn, evtConfirmed, openEventAdd, submitEvent, onExportBack, onExportIcs, today, todayIdx,
+  todayStr, todayCourses, todayRoutineCount, termInfo, conflictPool, tParam, nowTime, GREET_CUTE,
+  greetingText, state, currentCourse, headerCourseText, nextTodayId, minUntil, rowMeta, LIVE_PREVIEW,
+  todayPast, todayLive, todayExpanded, pastOpen, pastSpan, livePreview, hiddenCount, rowsShown,
+  REVIEW_FROM, heroCourse, allTodayCoursesDone, heroMode, heroSubline, heroTitle, recEntryOn, heroSub,
+  dateText, weekDay, DAY_START, DAY_END, weekOffset, weekNo, monday, weekDays,
+  weekVisible, weekCols, gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME, winH, navH,
+  satPx, gridTop, gridH, measureNavH, measureSat, measureGridTop, onWinResize, gridColsStyle,
+  gridBodyStyle, cardFit, PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine, pal,
+  periods, periodSpan, courseStatus, gridStatus, nowPct, nowClock, nowLineY, undoneCount,
+  undoneTodos, doneTodos, detail, openDetail, WDN, listTotalCount, listFixedCount, listDateLabel,
+  listGroups, listBarColor, listMeta, onListItem, addForm, addErr, addWarn, addConfirmed,
+  DURATIONS, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail,
+  editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail,
+  onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove, gridUp,
+  gridDbl, anySheetOpen, syncBodyScrollLock,
 }))
 /* ===== APP_CTX:end ===== */
 </script>
@@ -5526,496 +5552,15 @@ provide(APP_CTX, reactive({
       </div>
     </nav>
 
-    <!-- 打卡浮层（2026-10-03 方案 C Step 1：原「打卡」tab 改为底部浮层）
-         宽限期 = 本周内且今天之前（口径见 data/store.js）；过期/未来格子画成锁定态，
-         但**不用 disabled**（那样点下去毫无反馈还挡测试），改由 onHabitCell 静默忽略。 -->
-    <BottomSheet
-      :open="!!habitSheet"
-      sheet-attr="data-habit-sheet"
-      mask-attr="data-habit-sheet-mask"
-      panel-class="px-4 pt-3 pb-10"
-      @close="habitSheet = false"
-    >
-      <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-lg font-bold text-ink">打卡</h2>
-        <button
-          type="button"
-          data-habit-sheet-close
-          class="rounded-full bg-ink/5 px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
-          @click="habitSheet = false"
-        >关闭</button>
-      </div>
-      <div class="space-y-4">
-    <!-- 今日完成度 -->
-    <section class="rounded-3xl border border-line bg-card p-5 shadow-sm">
-      <div class="flex items-end justify-between">
-        <div>
-          <p class="text-xs text-ink-dim">{{ habitTodayText }}</p>
-          <p class="mt-1 text-2xl font-bold tabular-nums text-ink">
-            {{ habitTodayDone }}<span class="text-base font-semibold text-ink-dim"> / {{ habits.length }}</span>
-          </p>
-        </div>
-        <p class="pb-1 text-xs text-ink-dim">今日已打卡</p>
-      </div>
-      <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.08]">
-        <div
-          class="h-full rounded-full bg-primary-500 transition-all duration-300"
-          :style="{ width: habits.length ? (habitTodayDone / habits.length) * 100 + '%' : '0%' }"
-        />
-      </div>
-    </section>
+<HabitSheet />
 
-    <!-- 打卡记录：周切换 + 习惯卡片 -->
-    <section>
-      <div class="mb-2 flex items-center justify-between px-1">
-        <h2 class="text-sm font-semibold text-ink">打卡记录</h2>
-        <button
-          class="rounded-full border border-line bg-card px-3 py-1 text-xs font-medium text-ink-dim transition active:scale-95"
-          @click="habitInput = !habitInput; habitName = ''"
-        >
-          {{ habitInput ? '收起' : '＋ 添加' }}
-        </button>
-      </div>
+<DetailSheet />
 
-      <!-- 周切换：只能往回看（未来没有记录），最多 52 周 -->
-      <div class="mb-2 flex items-center justify-between rounded-2xl border border-line bg-card px-1.5 py-1.5 shadow-sm">
-        <button
-          type="button"
-          data-habit-prev
-          class="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-ink-dim transition active:scale-90 disabled:opacity-25"
-          :disabled="habitWeekBase <= -52"
-          aria-label="看上一周"
-          @click="shiftHabitWeek(-1)"
-        >‹</button>
-        <div class="text-center">
-          <p class="text-xs font-medium text-ink tabular-nums">{{ habitWeekLabel }}</p>
-          <p class="text-[10px]" :class="habitWeekBase === 0 ? 'text-primary-600' : 'text-ink-dim'">
-            {{ habitWeekBase === 0 ? '本周 · 漏卡可补' : (habitWeekBase === -1 ? '上周' : -habitWeekBase + ' 周前') + ' · 已锁定' }}
-          </p>
-        </div>
-        <button
-          type="button"
-          data-habit-next
-          class="flex h-8 w-8 items-center justify-center rounded-full text-lg leading-none text-ink-dim transition active:scale-90 disabled:opacity-25"
-          :disabled="habitWeekBase >= 0"
-          aria-label="看下一周"
-          @click="shiftHabitWeek(1)"
-        >›</button>
-      </div>
+<ReviewGridSheet />
 
-      <!-- 添加行：行内输入，回车即提交 -->
-      <div v-if="habitInput" class="mb-2 flex gap-2 rounded-2xl border border-line bg-card p-3 shadow-sm">
-        <input
-          v-model="habitName"
-          type="text"
-          maxlength="20"
-          placeholder="习惯名，如：背单词"
-          enterkeyhint="done"
-          class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-dim focus:border-primary-400"
-          @keyup.enter="addHabitConfirm"
-        />
-        <button
-          class="shrink-0 rounded-xl bg-primary-500 px-4 text-sm font-medium text-white transition active:scale-95 disabled:opacity-40"
-          :disabled="!habitName.trim()"
-          @click="addHabitConfirm"
-        >
-          确定
-        </button>
-      </div>
+<PressTypeSheet />
 
-      <!-- 习惯卡片：名称 + 连续/累计 + 本周格（可补）+ 今日圆圈 + 删除 -->
-      <div v-if="habits.length" class="space-y-2">
-        <div
-          v-for="h in habits"
-          :key="h.id"
-          :data-habit-row="h.id"
-          class="rounded-2xl border border-line bg-card p-3.5 shadow-sm"
-        >
-          <div class="flex items-center gap-3">
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm" :class="h.records[habitToday] ? 'text-ink-dim' : 'text-ink'">{{ h.name }}</p>
-              <p class="mt-0.5 text-[11px] text-ink-dim">
-                <span :data-habit-streak="h.id">{{ streakOf(h, habitToday) > 0 ? '连续 ' + streakOf(h, habitToday) + ' 天' : '未开始' }}</span>
-                <span class="mx-1 text-ink-dim/40">·</span>
-                <span :data-habit-total="h.id">共 {{ totalDoneOf(h) }} 天</span>
-              </p>
-            </div>
-            <!-- 今日打卡主操作：h-11 = 44px 热区；已打卡实心勾（可点取消） -->
-            <button
-              type="button"
-              :data-habit-today="h.id"
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-90"
-              :class="h.records[habitToday] ? 'bg-primary-500 text-white' : 'border-2 border-ink-dim/30 text-ink-dim/40'"
-              :aria-label="h.records[habitToday] ? '取消今日打卡' : '今日打卡'"
-              @click="toggleHabit(h.id)"
-            >
-              <svg viewBox="0 0 16 16" class="h-4.5 w-4.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-            </button>
-            <!-- 删除：两段式确认 -->
-            <button
-              type="button"
-              class="h-8 w-8 shrink-0 text-xs transition active:scale-90"
-              :class="habitDelId === h.id ? 'font-bold text-red-600 dark:text-red-400' : 'text-ink-dim/40'"
-              :aria-label="habitDelId === h.id ? '确认删除该习惯' : '删除习惯'"
-              @click="onHabitDelete(h.id)"
-            >
-              {{ habitDelId === h.id ? '确认' : '✕' }}
-            </button>
-          </div>
-
-          <!-- 本周 7 格：实心=当天打的 · 空心勾=事后补的 · 虚线圈=宽限期内可补 · 淡=锁定/未来 -->
-          <div class="mt-3 grid grid-cols-7 gap-1">
-            <button
-              v-for="d in habitViewDays"
-              :key="d.key"
-              type="button"
-              :data-habit-cell="h.id + '@' + d.key"
-              :data-cell-state="habitCellState(h, d)"
-              class="flex flex-col items-center gap-1 rounded-xl py-1.5 transition active:scale-95"
-              @click="onHabitCell(h.id, d.key)"
-            >
-              <span class="text-[10px] leading-none" :class="d.isToday ? 'font-semibold text-primary-600' : 'text-ink-dim'">{{ d.name }}</span>
-              <span
-                class="flex h-6 w-6 items-center justify-center rounded-full text-[10px] tabular-nums"
-                :class="HABIT_CELL_CLS[habitCellState(h, d)]"
-              >
-                <svg v-if="h.records[d.key]" viewBox="0 0 10 10" class="h-2.5 w-2.5" fill="none"><path d="M2 5.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                <template v-else>{{ d.day }}</template>
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 图例：补卡是这一轮新增的视觉态，不解释一下没人看得懂 -->
-        <p class="px-1 pt-1 text-[11px] leading-relaxed text-ink-dim">
-          <span class="mr-1 inline-block h-2.5 w-2.5 rounded-full bg-primary-500 align-[-1px]" />当天打卡
-          <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-primary-400 bg-primary-50 align-[-1px]" />事后补卡
-          <span class="mx-1 inline-block h-2.5 w-2.5 rounded-full border border-dashed border-primary-300 align-[-1px]" />可补
-          <span class="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-ink/[0.06] align-[-1px]" />已锁定
-        </p>
-      </div>
-      <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim">
-        还没有打卡习惯，点「＋ 添加」建一个
-      </p>
-    </section>
-  
-      </div>
-    </BottomSheet>
-
-    <!-- 课程详情弹层：点课卡弹出 -->
-    <BottomSheet
-      :open="!!detail"
-      sheet-attr="data-sheet-detail"
-      handle-class="mx-auto mb-4 h-1 w-9 rounded-full bg-ink/15"
-      @close="detail = null"
-    >
-      <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <!-- 循环日程在详情里也挂同一枚小循环标记 + 一行类型说明（点开也能确认这不是课） -->
-          <p class="flex items-center gap-1.5 text-lg font-bold">
-            <svg
-              v-if="isRoutine(detail)"
-              data-routine-mark
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-              class="h-4 w-4 shrink-0 text-ink-dim"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.9"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M13 8a5 5 0 11-1.9-3.9" />
-              <path d="M13 2.2V5h-2.8" />
-            </svg>
-            <span class="truncate">{{ detail.name }}</span>
-          </p>
-          <p class="mt-1 text-xs text-ink-dim">
-            <span v-if="isRoutine(detail)" class="mr-1">循环日程 ·</span>
-            {{ detail.type === 'event' ? detail.date : WDN[(detail.weekday || 1) - 1] }}
-            <span v-if="detail.tag" class="ml-1.5 rounded-full bg-primary-50 px-2 py-0.5 text-primary-600">{{ detail.tag }}</span>
-          </p>
-        </div>
-        <button
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink/5 text-ink-dim transition active:scale-90"
-          @click="detail = null"
-        >
-          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
-        </button>
-      </div>
-      <div class="mt-4 space-y-2.5">
-        <div class="flex items-center gap-3 rounded-xl bg-primary-50/60 px-3.5 py-3">
-          <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 shrink-0 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.5 1.5" /></svg>
-          <div class="min-w-0">
-            <p class="text-sm font-medium">{{ detail.start }} – {{ detail.end }}</p>
-            <p class="text-[11px] text-ink-dim">
-              共 {{ minOf(detail.end) - minOf(detail.start) }} 分钟
-              <span v-if="periodSpan(detail)" class="ml-1 rounded-full bg-primary-500/10 px-1.5 py-0.5 text-primary-600">{{ periodSpan(detail) }}</span>
-            </p>
-          </div>
-        </div>
-        <div class="flex items-center gap-3 rounded-xl bg-ink/[0.04] px-3.5 py-3">
-          <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 shrink-0 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-11A.5.5 0 012 14z" /><path d="M6 14.5V9h4v5.5" /></svg>
-          <div class="min-w-0">
-            <p class="text-sm font-medium">{{ detail.place || '未填写地点' }}</p>
-            <p class="text-[11px] text-ink-dim">地点</p>
-          </div>
-        </div>
-      </div>
-      <!-- 所有课程都可编辑/删除：自加课改覆盖层，导入课改原始导出文本（随回写带回主项目），mock 课改示例覆盖层 -->
-      <div v-if="detail.type === 'course'" class="mt-4 grid grid-cols-2 gap-2.5">
-        <button
-          class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-          @click="editCourseFromDetail"
-        >
-          编辑
-        </button>
-        <button
-          class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
-          :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-600 dark:text-red-400' : 'border-red-200 text-red-600 dark:text-red-400'"
-          @click="onDelCourse"
-        >
-          {{ confirmDel ? '再点一次确认' : '删除' }}
-        </button>
-      </div>
-      <!-- 循环日程：编辑与删除，版式与课程一致；二次确认共用同一个 confirmDel -->
-      <div v-else-if="detail.type === 'routine'" class="mt-4 grid grid-cols-2 gap-2.5">
-        <button
-          data-routine-edit
-          class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-          @click="editRoutineFromDetail"
-        >
-          编辑
-        </button>
-        <button
-          data-routine-del
-          class="rounded-xl border py-2.5 text-sm font-medium transition active:scale-[0.98]"
-          :class="confirmDel ? 'border-red-400 bg-red-400/10 text-red-600 dark:text-red-400' : 'border-red-200 text-red-600 dark:text-red-400'"
-          @click="onDelRoutine"
-        >
-          {{ confirmDel ? '再点一次确认' : '删除' }}
-        </button>
-      </div>
-    </BottomSheet>
-
-    <!-- 核对页预览的格子弹层：点空格=加课、点课块=改课（同一个面板两态）。
-         位置由点中的格子定好，默认只问课名与地点；「位置与节次」要用时才展开 -->
-    <Transition name="fade">
-      <div v-if="recCell" class="fixed inset-0 z-50 bg-black/40" @click="recCell = null"></div>
-    </Transition>
-    <Transition name="slide">
-      <div
-        v-if="recCell"
-        data-sheet-cell
-        class="fixed inset-x-0 bottom-0 z-[60] mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
-      >
-        <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-ink/15"></div>
-        <p class="text-base font-bold" data-cell-where>{{ recCellWhere }}</p>
-        <p class="mt-0.5 text-xs text-ink-dim">{{ recCell.index === null ? '这一格还没有课，填个课名就加上' : '改完记得保存' }}</p>
-        <div class="mt-4 space-y-2.5">
-          <input
-            v-model="recCell.title"
-            data-cell-title
-            maxlength="30"
-            placeholder="课程名称（必填）"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-          />
-          <input
-            v-model="recCell.location"
-            data-cell-place
-            maxlength="30"
-            placeholder="地点（选填）"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-          />
-          <button
-            type="button"
-            data-cell-more
-            class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-left transition active:scale-[0.99]"
-            @click="recCell.more = !recCell.more"
-          >
-            <span class="text-xs text-ink-dim">位置与节次</span>
-            <span class="flex items-center gap-1.5 text-xs font-medium text-ink">
-              {{ recCellWhen }}
-              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-ink-dim transition-transform" :class="recCell.more ? 'rotate-90' : ''" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
-            </span>
-          </button>
-          <div v-if="recCell.more" data-cell-more-body class="space-y-2.5 rounded-xl border border-line bg-canvas p-3">
-            <div class="flex gap-1.5">
-              <button
-                v-for="(w, wi) in WDN"
-                :key="wi"
-                class="flex-1 rounded-lg py-1.5 text-[11px] font-medium transition active:scale-95"
-                :class="recCell.weekday === wi + 1 ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
-                @click="recCell.weekday = wi + 1"
-              >
-                {{ w }}
-              </button>
-            </div>
-            <div class="flex gap-2">
-              <label class="flex flex-1 items-center gap-1.5 text-[11px] text-ink-dim">
-                从第
-                <select v-model.number="recCell.startIdx" data-cell-from class="min-w-[3rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
-                  <option v-for="(p, i) in recPeriods" :key="i" :value="i">{{ p.no }} 节</option>
-                </select>
-              </label>
-              <label class="flex flex-1 items-center gap-1.5 text-[11px] text-ink-dim">
-                到第
-                <select v-model.number="recCell.endIdx" data-cell-to class="min-w-[3rem] flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-xs outline-none focus:border-primary-400">
-                  <option v-for="(p, i) in recPeriods" :key="i" :value="i">{{ p.no }} 节</option>
-                </select>
-              </label>
-            </div>
-            <p class="text-[11px]" :class="recCellWhen ? 'text-ink-dim' : 'text-red-600 dark:text-red-400'">
-              {{ recCellWhen ? '上课时间 ' + recCellWhen : '节次超出当前节次表' }}
-            </p>
-          </div>
-        </div>
-        <p v-if="recCellErr" data-cell-err class="mt-2.5 text-xs text-red-600 dark:text-red-400">{{ recCellErr }}</p>
-        <div class="mt-4 flex gap-2.5">
-          <button
-            v-if="recCell.index !== null"
-            data-cell-del
-            class="rounded-xl border border-line px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 transition active:scale-[0.98]"
-            @click="delRecCell"
-          >
-            删除
-          </button>
-          <button
-            class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-            @click="recCell = null"
-          >
-            取消
-          </button>
-          <button
-            data-cell-save
-            class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
-            @click="submitRecCell"
-          >
-            {{ recCell.index === null ? '添加' : '保存' }}
-          </button>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 长按空白处弹出的类型菜单：加课程 / 加循环日程（用户拍板：长按弹菜单、双击直接加课）。
-         与下面的表单面板同为 z-20/z-30 层，二者互斥（选完立刻关菜单再开表单）。 -->
-    <BottomSheet
-      :open="!!addPick"
-      sheet-attr="data-add-pick"
-      mask-attr="data-add-pick-mask"
-      @close="addPick = null"
-    >
-      <p class="text-base font-bold">在 {{ WDN[addPick.wd - 1] }} {{ addPick.start }} 添加</p>
-      <p class="mt-1 text-xs text-ink-dim">选一个类型</p>
-      <div class="mt-4 space-y-2.5">
-        <button
-          data-pick-course
-          class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.98]"
-          @click="pickKind('course')"
-        >
-          <span class="text-sm font-semibold">课程</span>
-          <span class="text-xs text-ink-dim">按周重复 · 计入学期课表</span>
-        </button>
-        <button
-          data-pick-routine
-          class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.98]"
-          @click="pickKind('routine')"
-        >
-          <span class="flex items-center gap-1.5 text-sm font-semibold">
-            <!-- 小循环箭头，与周视图卡片上的标记同款，选的时候就认得出 -->
-            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0" fill="none" stroke="#5b6b8c" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M2.5 8a5.5 5.5 0 0 1 9.3-4M13.5 8a5.5 5.5 0 0 1-9.3 4" />
-              <path d="M11.5 1.6v2.6h-2.6M4.5 14.4v-2.6h2.6" />
-            </svg>
-            循环日程
-          </span>
-          <span class="text-xs text-ink-dim">每周固定 · 不占课表</span>
-        </button>
-      </div>
-      <button
-        data-pick-cancel
-        class="mt-3 w-full rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-        @click="addPick = null"
-      >
-        取消
-      </button>
-    </BottomSheet>
-
-    <!-- 添加/编辑面板：长按菜单或双击周网格空白处唤起；同一个面板两态，靠 addForm.kind 分流 -->
-    <BottomSheet
-      :open="!!addForm"
-      sheet-attr="data-sheet-add"
-      @close="addForm = null"
-    >
-      <p class="text-base font-bold" data-add-title>{{ addForm.editingId ? (addForm.kind === 'routine' ? '编辑循环日程' : '编辑课程') : (addForm.kind === 'routine' ? '添加循环日程' : '添加课程') }} · {{ WDN[addForm.weekday - 1] }}</p>
-      <div class="mt-4 space-y-3">
-        <input
-          v-model="addForm.name"
-          :placeholder="addForm.kind === 'routine' ? '日程名称（必填）' : '课程名称（必填）'"
-          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-        />
-        <!-- 时间：点哪填哪，左右微调 -->
-        <div class="flex items-center gap-2.5">
-          <div class="flex flex-1 items-center justify-between rounded-xl border border-line bg-canvas px-2 py-1.5">
-            <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="stepStart(-5)">
-              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
-            </button>
-            <span class="text-sm font-semibold tabular-nums" data-add-start>{{ addForm.start }}</span>
-            <button class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-dim active:bg-ink/10" @click="stepStart(5)">
-              <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
-            </button>
-          </div>
-          <button
-            v-for="d in DURATIONS"
-            :key="d"
-            class="rounded-full px-2.5 py-1.5 text-xs font-medium transition active:scale-95"
-            :class="addForm.duration === d ? 'bg-primary-500 text-white' : 'bg-ink/5 text-ink-dim'"
-            @click="addForm.duration = d"
-          >
-            {{ d }}分
-          </button>
-        </div>
-        <input
-          v-model="addForm.place"
-          placeholder="地点（选填）"
-          class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
-        />
-        <!-- 周次规则：循环日程固定每周，不显示单双周（2026-10-01 用户拍板口径） -->
-        <div v-if="addForm.kind !== 'routine'" class="flex gap-2">
-          <button
-            v-for="r in [{ k: 'every', n: '每周' }, { k: 'odd', n: '单周' }, { k: 'even', n: '双周' }]"
-            :key="r.k"
-            class="flex-1 rounded-xl border py-2 text-xs font-medium transition active:scale-[0.97]"
-            :class="addForm.week_rule === r.k ? 'border-primary-400 bg-primary-50 text-primary-600' : 'border-line text-ink-dim'"
-            @click="addForm.week_rule = r.k"
-          >
-            {{ r.n }}
-          </button>
-        </div>
-        <!-- 编辑导入进来的单/双周循环日程时如实说明：表单不给这个选项，但也不会把它改掉 -->
-        <p v-else class="rounded-xl border border-line bg-canvas px-3 py-2 text-xs leading-relaxed text-ink-dim">
-          {{ addForm.week_rule === 'every'
-            ? '循环日程每周重复，不占学期课表。'
-            : '这条原本是' + ({ odd: '单周', even: '双周' }[addForm.week_rule] || '每周') + '，保存后保持原样（循环日程表单不提供单双周选项）。' }}
-        </p>
-      </div>
-      <p v-if="addWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-500">{{ addWarn }}</p>
-      <p v-if="addErr" class="mt-2.5 text-xs text-red-600 dark:text-red-400">{{ addErr }}</p>
-      <div class="mt-4 flex gap-2.5">
-        <button
-          class="flex-1 rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
-          @click="addForm = null"
-        >
-          取消
-        </button>
-        <button
-          class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
-          @click="submitAdd"
-        >
-          {{ addForm.editingId ? '保存修改' : (addForm.kind === 'routine' ? '添加日程' : '添加') }}
-        </button>
-      </div>
-    </BottomSheet>
+<AddSheet />
 
     <!-- 待办增删改面板：点待办文字编辑，＋添加待办新增 -->
     <BottomSheet

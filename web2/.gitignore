@@ -4,3 +4,6 @@ dist/
 tmp/online-check.*
 # 截图是过程产物，不进仓库（Day 15 起生效，历史截图不追溯）
 tmp/*.png
+# 整目录的比对图（重构前后各拍一套）同理：本地物证，不进仓库
+tmp/pre-stage9/
+tmp/ui-*/
