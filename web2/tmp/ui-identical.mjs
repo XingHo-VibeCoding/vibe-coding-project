@@ -93,6 +93,11 @@ const shot = async (name, note) => {
     return {
       sheetDetail: document.querySelectorAll('[data-sheet-detail]').length,
       sheetAdd: document.querySelectorAll('[data-sheet-add]').length,
+      sheetTodo: document.querySelectorAll('[data-sheet-todo]').length,
+      sheetEvt: document.querySelectorAll('[data-sheet-evt]').length,
+      sheetReview: document.querySelectorAll('[data-sheet-review]').length,
+      sheetSem: document.querySelectorAll('[data-sheet-sem]').length,
+      onbStep: document.querySelector('[data-ob-step]')?.getAttribute('data-ob-step') || '-',
       addPick: document.querySelectorAll('[data-add-pick]').length,
       subPage: document.querySelectorAll('[data-sub-page]').length,
       weekMenu: document.querySelectorAll('[data-week-menu]').length,
@@ -143,6 +148,14 @@ await click('[data-me-entry="settings"]'); await page.waitForTimeout(550)
 await shot('10-me-settings.png', '设置二级页')
 await click('[data-sub-back]'); await page.waitForTimeout(400)
 
+/* 10b 练耳二级页「展开」态：A2 收口时踩到「注释与声明挤同一行 → 生成器漏收 listenStageLabel →
+   展开后整块空白」，而当时 16 张里恰好没有这个状态，像素证明没抓到。补上它。 */
+await click('[data-me-entry="listen"]'); await page.waitForTimeout(600)
+const listenBtn = page.locator('[data-sub-body] button', { hasText: '打开' }).first()
+if (await listenBtn.count()) { await listenBtn.click().catch(() => {}); await page.waitForTimeout(700) }
+await shot('10b-me-listen.png', '练耳二级页（展开）')
+await click('[data-sub-back]'); await page.waitForTimeout(400)
+
 /* 11 长按网格：类型菜单浮层（PressTypeSheet） */
 await at('15:00')
 await click('[data-nav="week"]'); await page.waitForTimeout(700)
@@ -159,5 +172,41 @@ if (box) {
 }
 await shot('11-press-type.png', '长按网格')
 
+/* 12−16 其余浮层（A2 尾批要搬的那几个，必须也有像素覆盖） */
+await at('15:00')
+await page.locator('button', { hasText: '添加待办' }).first().click().catch(() => {})
+await page.waitForTimeout(500)
+await shot('12-todo-sheet.png', '待办面板')
+await at('15:00')
+await page.locator('button', { hasText: '添加日程' }).first().click().catch(() => {})
+await page.waitForTimeout(500)
+await shot('13-event-sheet.png', '独立日程面板')
+await at('21:30')
+await click('[data-review-start]'); await page.waitForTimeout(600)
+await shot('14-review-sheet.png', '每日复盘浮层')
+await at('15:00')
+await click('[data-nav="me"]'); await page.waitForTimeout(600)
+await click('[data-me-term]'); await page.waitForTimeout(600)
+await shot('15-sem-sheet.png', '学期信息编辑弹层')
+await ctx.close()
+
+/* 16 引导页：必须在一个**没有 onboarded 标记**的上下文里才会出现 */
+{
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 900 }, deviceScaleFactor: 2 })
+  const p2 = await ctx2.newPage()
+  /* 引导页判据是 `!web2.onboarded && !web2.data`（App.vue:747）——
+     所以这个上下文必须**什么都不种**（连示例数据都不能有），否则页面直接进今日页。 */
+  await p2.addInitScript(() => {
+    localStorage.clear()
+    localStorage.setItem('web2.theme', '"light"')
+  })
+  await p2.goto(`${BASE}/?t=15:00`, { waitUntil: 'networkidle' })
+  await p2.waitForTimeout(900)
+  await p2.screenshot({ path: path.join(OUT, '16-onboarding.png') })
+  const step = await p2.$eval('[data-ob-step]', (el) => el.getAttribute('data-ob-step')).catch(() => '(没出现)')
+  console.log(`16-onboarding.png  引导页  ${JSON.stringify({ obStep: step })}`)
+  await ctx2.close()
+}
+
 await browser.close()
-console.log(`已写出 ${OUT}/ 共 11 张；pageerror=${errs.length}${errs.length ? ' ' + errs.join(' | ') : ''}`)
+console.log(`已写出 ${OUT}/ 共 16 张；pageerror=${errs.length}${errs.length ? ' ' + errs.join(' | ') : ''}`)

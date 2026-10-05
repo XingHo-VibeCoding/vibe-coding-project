@@ -46,6 +46,16 @@ export function collectNames(script) {
   }
 
   for (const raw of script.split(/\r?\n/)) {
+    /* 先把行首的注释剥掉再认声明：App.vue 里有「/* 说明 *\/function listenStageLabel(c) {」这种
+       注释和声明挤在同一行的写法，行首锚定的正则会把整个声明漏掉 —— 漏掉的后果是那个名字不进
+       APP_CTX，拆出去的组件里既没解构也没 app. 前缀，模板里成了 undefined，
+       渲染期抛错又被 Vue 吞掉（真实踩过：练耳二级页整页空白，只见 console.error）。 */
+    let line = raw
+    for (;;) {
+      const next = line.replace(/^\s*(?:\/\*[\s\S]*?\*\/|\/\/[^\n]*|\*\/)\s*/, '')
+      if (next === line) break
+      line = next
+    }
     // ── import（跳过 vue 自家；类型导入与纯副作用导入也跳过）
     if (/^import\s/.test(raw)) {
       if (/^import\s+type\s/.test(raw)) continue
@@ -63,9 +73,9 @@ export function collectNames(script) {
     }
 
     // ── 顶格声明（函数体内的都缩进了，所以只认顶格）
-    let m = raw.match(/^(?:export\s+)?(?:async\s+)?(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/)
+    let m = line.match(/^(?:export\s+)?(?:async\s+)?(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/)
     if (m) { push(m[1]); continue }
-    m = raw.match(/^(?:const|let|var)\s*\{([^}]*)\}\s*=/)
+    m = line.match(/^(?:const|let|var)\s*\{([^}]*)\}\s*=/)
     if (m) {
       for (const part of m[1].split(',')) {
         const seg = part.trim()
@@ -75,7 +85,7 @@ export function collectNames(script) {
       }
       continue
     }
-    m = raw.match(/^(?:const|let|var)\s*\[([^\]]*)\]\s*=/)
+    m = line.match(/^(?:const|let|var)\s*\[([^\]]*)\]\s*=/)
     if (m) for (const part of m[1].split(',')) push(part.replace(/=.*$/, ''))
   }
   return names
@@ -124,6 +134,13 @@ export function plan(text) {
   return { names, next, changed: norm(next) !== norm(text) }
 }
 
+/** 去掉 /* *\/ 与 <!-- --> 与 // 注释（两个守卫都用它；TimeWheel.vue 里注释中的「app.js」骗过一版扫描器）。 */
+const stripComments = (s) =>
+  s
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+
 /** 扫 src 下所有 .vue（App.vue 自己除外）里用到的 app.X，返回 ctx 里没有的那些。
     只扫「真的用了 useApp() 的组件」——没接上下文的组件里出现的 app. 是别的东西（例如注释里的 app.js）。
     注释也要先去掉：TimeWheel.vue 里那句「主项目 app.js 同款口径」就骗过一版扫描器。
@@ -131,20 +148,67 @@ export function plan(text) {
 export function missingKeys(names, files = listVueFiles(SRC)) {
   const known = new Set(names)
   const missing = new Map()
-  const stripComments = (s) =>
-    s
-      .replace(/\/\*[\s\S]*?\*\//g, ' ')
-      .replace(/<!--[\s\S]*?-->/g, ' ')
-      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
   for (const file of files) {
     if (path.resolve(file) === APP) continue
     const text = fs.readFileSync(file, 'utf8')
     if (!text.includes('useApp(')) continue
-    for (const m of stripComments(text).matchAll(/\bapp\.([A-Za-z_$][\w$]*)/g)) {
+    const clean = stripComments(text)
+    for (const m of clean.matchAll(/\bapp\.([A-Za-z_$][\w$]*)/g)) {
       const key = m[1]
       if (known.has(key)) continue
       if (!missing.has(key)) missing.set(key, [])
       missing.get(key).push(path.relative(SRC, file))
+    }
+    /* mk-component 生成的组件走的是 `const { a, b } = toRefs(app)`，模板里不带 `app.` 前缀，
+       所以只扫 app. 会漏掉「解构了一个 APP_CTX 里没有的名字」——那玩意在模板里是 undefined，
+       一旦被当函数调或读属性（如 `x.length`）就会在渲染期抛错，而 Vue 把渲染错误吞掉，
+       表现为「整块组件不渲染、pageerror 还空着」。真实踩过：ListenPanel 整页空白。 */
+    for (const m of clean.matchAll(/const\s*\{([^}]*)\}\s*=\s*toRefs\(app\)/g)) {
+      for (const raw of m[1].split(',')) {
+        const id = raw.trim().split(':').pop().trim()
+        if (!/^[A-Za-z_$][\w$]*$/.test(id)) continue
+        if (known.has(id)) continue
+        if (!missing.has(id)) missing.set(id, [])
+        const tag = path.relative(SRC, file) + '（解构）'
+        if (!missing.get(id).includes(tag)) missing.get(id).push(tag)
+      }
+    }
+  }
+  return missing
+}
+
+/** 反向守卫：`toRefs(app)` 组件里「模板用到了、却没解构」的 APP_CTX 名字。
+    这类名字在模板里是 undefined：读它当函数（`x(...)`）或读属性（`x.length`）都会在**渲染期**抛错，
+    而 Vue 把组件渲染期的错误吞掉（不进 pageerror），症状只是「这块整片空白」。
+    mk-component 是靠同一套「用到才解构」逻辑生成的，生成时若名字还没进 APP_CTX（例如声明行被注释挤掉），
+    就会两头都漏 —— 所以这里拿最新名单再核一遍。 */
+export function missingDestructures(names, files = listVueFiles(SRC)) {
+  const missing = new Map()
+  for (const file of files) {
+    if (path.resolve(file) === APP) continue
+    const text = fs.readFileSync(file, 'utf8')
+    if (!text.includes('toRefs(app)')) continue
+    const clean = stripComments(text)
+    const block = clean.match(/const\s*\{([^}]*)\}\s*=\s*toRefs\(app\)/)
+    const have = new Set(block ? block[1].split(',').map((s) => s.trim().split(':').pop().trim()) : [])
+    /* 组件自己 import 进来的东西（子组件标签、store 里的工具函数）也在 APP_CTX 名单里——
+       App.vue 的 import 会被生成器一并收集。它们不需要「解构」，跳过。 */
+    const imported = new Set()
+    for (const line of clean.split(/\r?\n/)) {
+      if (!/^import\s/.test(line)) continue
+      const head = line.slice(0, line.indexOf('from') === -1 ? line.length : line.indexOf('from'))
+      const mDefault = head.match(/^import\s+([A-Za-z_$][\w$]*)/)
+      if (mDefault) imported.add(mDefault[1])
+      const mNamed = head.match(/\{([^}]*)\}/)
+      if (mNamed) for (const part of mNamed[1].split(',')) imported.add(part.trim().split(/\s+as\s+/).pop().trim())
+    }
+    const body = clean.slice(clean.indexOf('<template>'))
+    for (const name of names) {
+      if (have.has(name) || imported.has(name)) continue
+      const re = new RegExp('(^|[^\\w$.])' + name.replace(/\$/g, '\\$') + '($|[^\\w$])')
+      if (!re.test(body)) continue
+      if (!missing.has(name)) missing.set(name, [])
+      missing.get(name).push(path.relative(SRC, file))
     }
   }
   return missing
@@ -165,19 +229,31 @@ if (isMain) {
   const { names, next, changed } = plan(text)
   const check = process.argv.includes('--check')
   const missing = missingKeys(names)
+  const undestructured = missingDestructures(names)
+  const reportGap = () => {
+    if (missing.size) {
+      console.log(`⚠️ 有 ${missing.size} 个键被 .vue 用到但不在 APP_CTX 里（子组件里会是 undefined！）：`)
+      for (const [key, files] of missing) console.log(`   ${key} ← ${[...new Set(files)].join(', ')}`)
+    }
+    if (undestructured.size) {
+      console.log(`⚠️ 有 ${undestructured.size} 个键在 APP_CTX 里、模板也用了，但组件忘了解构（渲染期会整片空白）：`)
+      for (const [key, files] of undestructured) console.log(`   ${key} ← ${[...new Set(files)].join(', ')}`)
+    }
+  }
   if (check) {
     const lines = [`APP_CTX 覆盖 ${names.length} 个绑定；${changed ? '❗已过期（重跑 gen-app-ctx.mjs）' : '✓ 最新'}`]
     if (missing.size) {
       lines.push(`❗有 ${missing.size} 个键被 .vue 用到但不在 APP_CTX 里：`)
       for (const [key, files] of missing) lines.push(`   ${key} ← ${[...new Set(files)].join(', ')}`)
     }
+    if (undestructured.size) {
+      lines.push(`❗有 ${undestructured.size} 个键没被组件解构（模板里会是 undefined，渲染期整片空白）：`)
+      for (const [key, files] of undestructured) lines.push(`   ${key} ← ${[...new Set(files)].join(', ')}`)
+    }
     console.log(lines.join('\n'))
-    process.exit(changed || missing.size ? 1 : 0)
+    process.exit(changed || missing.size || undestructured.size ? 1 : 0)
   }
   if (changed) fs.writeFileSync(APP, next)
   console.log(`APP_CTX 覆盖 ${names.length} 个绑定；${changed ? '已更新 App.vue' : '无需改动'}`)
-  if (missing.size) {
-    console.log(`⚠️ 有 ${missing.size} 个键被 .vue 用到但不在 APP_CTX 里（子组件里会是 undefined！）：`)
-    for (const [key, files] of missing) console.log(`   ${key} ← ${[...new Set(files)].join(', ')}`)
-  }
+  reportGap()
 }

@@ -6,7 +6,7 @@
    5) 改版留下的僵尸注释已清（静态断言）
    跑法：先起 dist 静态服务（4177）再 node tmp/step5-check.mjs */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 const BASE = process.env.TW_URL || 'http://127.0.0.1:4177/'
 const APP = 'D:/Document/Project/vibe-coding-project/web2/src/App.vue'
@@ -98,9 +98,14 @@ try {
   /* ---------- C. 遮罩锚点统一：底部浮层各 1 个 data-sheet-mask ---------- */
   /* 2026-10-03 Step 6：外壳收进 components/BottomSheet.vue，App.vue 里不再有字面量，
      改为「N 处都走 <BottomSheet>」+「锚点写在组件里」两条静态断言。
-     2026-10-04 五期复盘加了第 8 个（data-sheet-review），计数由 7 改 8。 */
+     2026-10-04 五期复盘加了第 8 个（data-sheet-review），计数由 7 改 8。
+  Stage 9 起浮层拆成独立组件（src/sheets/*.vue），字面量不再全在 App.vue 里 →
+  计数改成「App.vue + src/sheets/*.vue 合起来 8 处」（守的仍是同一件事：8 个浮层都走同一个外壳）。 */
+  const sheetsDir = 'D:/Document/Project/vibe-coding-project/web2/src/sheets'
+  const bottomSheetHits = [APP, ...readdirSync(sheetsDir).map((f) => `${sheetsDir}/${f}`)]
+    .reduce((n, f) => n + ((readFileSync(f, 'utf8').match(/<BottomSheet/g) || []).length), 0)
   t('C1. 静态：8 个浮层都走 BottomSheet，data-sheet-mask 在组件里',
-    (readFileSync(APP, 'utf8').match(/<BottomSheet/g) || []).length === 8 &&
+    bottomSheetHits === 8 &&
       readFileSync(SHEET, 'utf8').includes('data-sheet-mask'))
   /* 打卡浮层（今日页「管理 ›」）—— 种子数据带 1 个习惯 */
   await page.locator('nav button', { hasText: '今日' }).click()
@@ -198,7 +203,9 @@ try {
   t('E1. 没有「日程清单页」僵尸注释', !src.includes('日程清单页'))
   t('E2. 没有「打卡页（三期「每日打卡」）」僵尸注释', !src.includes('打卡页（三期「每日打卡」'))
   t('E3. 平移层注释已改「三页并排各占 1/3」', src.includes('三页并排各占 1/3') && !src.includes('四页并排各占 1/4'))
-  t('E4. 「不用 disabled」的设计理由被保留（搬到打卡浮层注释）', src.includes('改由 onHabitCell 静默忽略'))
+  /* E4 说的「搬到打卡浮层注释」现在真的是打卡浮层那个文件（Stage 9 拆出 HabitSheet.vue） */
+  const habitSrc = readFileSync('D:/Document/Project/vibe-coding-project/web2/src/sheets/HabitSheet.vue', 'utf8')
+  t('E4. 「不用 disabled」的设计理由被保留（搬到打卡浮层注释）', habitSrc.includes('改由 onHabitCell 静默忽略'))
   t('E5. 打卡宽限期补卡的逻辑注释仍在（那是活功能，不是僵尸）', src.includes('打卡页（三期：宽限期补卡）'))
 } catch (e) {
   console.log('ERROR:', e.message)
