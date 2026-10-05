@@ -33,6 +33,7 @@ import TimeWheel from './components/TimeWheel.vue'
 import DropdownSelect from './components/DropdownSelect.vue'
 import PeriodsEditor from './components/PeriodsEditor.vue'
 import BottomSheet from './components/BottomSheet.vue'
+import RowItem from './components/RowItem.vue'
 
 /* 版本串不再手写：由 vite.config.js 从 package.json 的 version 注入（单一来源）。
    改版本号只改 web2/package.json 一处，App 打包脚本读的是同一个文件。 */
@@ -2911,6 +2912,17 @@ function minUntil(c) {
   return minOf(c.start) - nowTime.value
 }
 
+/* Stage 3：26px 时间行右侧的状态字。
+   已过 = 「已上完」（整行灰字，见 components/RowItem.vue），
+   进行中 = 「还剩 N 分」，下一节 = 「N 分钟后」，其余未来条目留空（时刻列已经给了开始时间）。 */
+function rowMeta(c) {
+  const st = courseStatus(c)
+  if (st === 'past') return '已上完'
+  if (st === 'now') return `还剩 ${Math.max(0, minOf(c.end) - nowTime.value)} 分`
+  if (c.id === nextTodayId.value) return `${minUntil(c)} 分钟后`
+  return ''
+}
+
 /* ---------------- Stage 2：顶卡主体（现在做什么） ----------------
    顶卡从此一张卡三行：情绪行（greetingText，特色文案不动）→ 主体 → 页脚计数。
    主体吃掉原来分散在四处的信息（状态气泡 / 今日状态行 / 录音卡 / 复盘卡），三种形态：
@@ -3673,6 +3685,18 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                 </button>
               </div>
             </div>
+            <!-- 进行中的实时进度条（v1.41.6）：原在「接下来」那条行里，Stage 3 把行高收到 26px 后
+                 挪到「现在」卡上——lively-check 读的仍是同一个 data-now-bar，且此刻全页仍恰好一条 -->
+            <div
+              v-if="currentCourse"
+              data-now-bar
+              class="mt-2 h-1 w-full overflow-hidden rounded-full bg-primary-100"
+            >
+              <div
+                class="h-full rounded-full bg-primary-500 transition-all duration-700"
+                :style="{ width: nowPct(currentCourse) + '%' }"
+              ></div>
+            </div>
             <p v-if="recActiveId" class="mt-1.5 flex items-center gap-1.5 text-[11px] text-red-600 dark:text-red-400">
               <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400"></span>
               录音中 {{ fmtDur(recElapsed * 1000) }} · 下课 2 分钟自动停 · 锁屏也会继续录
@@ -3755,90 +3779,23 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
            课堂录音卡下沉到页面末尾（它的使用时机是"课已开始"，不该占第一屏）。 -->
       <section>
         <h2 class="mb-2 px-1 text-sm font-semibold text-ink">接下来</h2>
-        <div v-if="todayCourses.length" class="space-y-2.5">
-          <article
+        <div v-if="todayCourses.length" class="space-y-0.5">
+          <RowItem
             v-for="c in todayCourses"
             :key="c.id"
             data-today-item
             :data-today-next="c.id === nextTodayId || undefined"
             :data-item-type="c.type || 'course'"
-            class="flex cursor-pointer items-center gap-3.5 rounded-2xl border bg-card p-3.5 shadow-sm transition active:scale-[0.98]"
-            :class="
-              courseStatus(c) === 'now'
-                ? 'border-primary-300 ring-1 ring-primary-200'
-                : courseStatus(c) === 'past'
-                  ? 'border-line opacity-55'
-                  : 'border-line'
-            "
+            :time="c.start"
+            :title="c.name"
+            :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
+            :meta="rowMeta(c)"
+            :state="courseStatus(c) === 'past' ? 'done' : courseStatus(c) === 'now' ? 'now' : 'plain'"
+            :tone="isRoutine(c) ? pal(c).text : ''"
+            :routine="isRoutine(c)"
+            clickable
             @click="openDetail(c)"
-          >
-            <div class="w-11 text-center">
-              <p
-                class="text-sm font-bold"
-                :class="courseStatus(c) === 'now' ? 'text-primary-600' : 'text-primary-600'"
-                :style="isRoutine(c) ? { color: pal(c).text } : {}"
-              >{{ c.start }}</p>
-              <p class="text-[11px] text-ink-dim">{{ c.end }}</p>
-            </div>
-            <div
-              class="h-9 w-1 rounded-full"
-              :class="courseStatus(c) === 'now' ? 'bg-primary-500' : 'bg-primary-200'"
-              :style="isRoutine(c) ? { background: pal(c).bar } : {}"
-            ></div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1">
-                <svg
-                  v-if="isRoutine(c)"
-                  data-routine-mark
-                  viewBox="0 0 16 16"
-                  aria-label="循环日程"
-                  class="h-3.5 w-3.5 shrink-0"
-                  :style="{ color: pal(c).text }"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.9"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M13 8a5 5 0 11-1.9-3.9" />
-                  <path d="M13 2.2V5h-2.8" />
-                </svg>
-                <p class="truncate text-[15px] font-medium">{{ c.name }}</p>
-              </div>
-              <p class="mt-0.5 text-xs text-ink-dim">{{ c.place || '—' }}</p>
-              <!-- 进行中：呼吸圆点 + 实时进度 -->
-              <p v-if="courseStatus(c) === 'now'" class="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-primary-600">
-                <span class="relative flex h-1.5 w-1.5">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary-400 opacity-75"></span>
-                  <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary-500"></span>
-                </span>
-                进行中 · 已过 {{ nowPct(c) }}%
-                <span class="font-normal text-ink-dim">· 还剩 {{ Math.max(0, minOf(c.end) - nowTime) }} 分钟</span>
-              </p>
-              <!-- 进行中的进度条（v1.41.6）：每 30 秒自己往前走一格，页面不再是静态表格 -->
-              <div
-                v-if="courseStatus(c) === 'now'"
-                data-now-bar
-                class="mt-2 h-1 w-full overflow-hidden rounded-full bg-primary-100"
-              >
-                <div
-                  class="h-full rounded-full bg-primary-500 transition-all duration-700"
-                  :style="{ width: nowPct(c) + '%' }"
-                ></div>
-              </div>
-              <!-- 下一节（不是进行中的那节）才报倒计时：课前 5 分钟恰好也是「该动身了」的信号 -->
-              <p v-else-if="c.id === nextTodayId" class="mt-1 text-[11px] font-medium text-primary-600">
-                还有 {{ minUntil(c) }} 分钟开始
-              </p>
-            </div>
-            <span
-              v-if="c.tag"
-              class="shrink-0 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] text-primary-600"
-              :style="isRoutine(c) ? { background: hexA(pal(c).bar, 0.14), color: pal(c).text } : {}"
-            >
-              {{ c.tag }}
-            </span>
-          </article>
+          />
         </div>
         <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
           今天没有课程安排～

@@ -66,13 +66,16 @@ async function openPage(browser, { t: time, seed = SEED } = {}) {
 
 /* 只读今日页的卡片容器：tab 切走后周视图可能仍在 DOM 里（文本出现不代表进了今日页） */
 const TODAY_ITEMS = () =>
-  [...document.querySelectorAll('[data-today-item]')].map((el) => ({
-    type: el.dataset.itemType,
-    start: el.querySelector('p')?.textContent?.trim() || '',
-    text: el.innerText.replace(/\s+/g, ' ').trim(),
-    mark: !!el.querySelector('[data-routine-mark]'),
-    tag: el.querySelector('span.rounded-full')?.textContent?.trim() || '',
-  }))
+  [...document.querySelectorAll('[data-today-item]')].map((el) => {
+    const sub = el.querySelector('[data-row-sub]')?.textContent?.trim() || el.innerText.replace(/\s+/g, ' ').trim()
+    return {
+      type: el.dataset.itemType,
+      start: el.querySelector('[data-row-time]')?.textContent?.trim() || '',
+      text: el.innerText.replace(/\s+/g, ' ').trim(),
+      mark: !!el.querySelector('[data-routine-mark]'),
+      tag: (sub.match(/(每周|单周|双周)/) || [''])[0],
+    }
+  })
 
 const browser = await chromium.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
