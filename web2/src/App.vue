@@ -96,7 +96,37 @@ function measureStrip() {
   const page = el.children[tabIndex.value]
   if (page) stripH.value = page.offsetHeight
 }
-watch(tabIndex, () => nextTick(measureStrip))
+/* ---------------- 今日页三段壳（方案 C Stage 1） ----------------
+   头（问候卡）/ 尾（底部导航）固定，今日页自己就是中间那唯一的滚动窗口：
+   main 带 data-today-scroll + overflow-y-auto，高度实测反推（与 gridH 同思路，不写常数）——
+   innerHeight − 今日页顶的视口坐标 − 导航高 − 8px 间隙。文档高度正好一屏：body 不参与滚动，
+   窗口里怎么滑都不带动头尾；内容不够长时它也不出滚动条（height 就是可用高度）。 */
+const todayH = ref(0)
+const todayRef = ref(null)
+/* 今日页顶相对根容器顶的偏移（文档坐标差，含问候卡高度与它的 mt-3）：只涨不跌。
+   为什么不直接用今日页 rect.top：切 tab 时问候卡有 280ms 收缩/展开动画，动画中途量到的 top
+   偏小会把窗口写大 → 浏览器立刻把窗口里的 scrollTop 夹到新的 maxScroll，切回来就丢了原位置
+   （2026-10-05 实证：685 → 541）。缓存「展开态偏移」后，窗口高度就与动画无关了。 */
+let todayTopOffset = 0
+function measureTodayH() {
+  const el = todayRef.value
+  if (!el) return
+  // 只在今日页可见时量：切走时问候卡会收缩，那时量出来的偏移没有意义
+  if (tab.value !== 'today') return
+  const root = el.parentElement && el.parentElement.parentElement
+  if (!root) return
+  const sy = window.scrollY || 0
+  const off = Math.round(el.getBoundingClientRect().top - root.getBoundingClientRect().top)
+  if (off > todayTopOffset) todayTopOffset = off
+  const rootTop = root.getBoundingClientRect().top + sy
+  todayH.value = Math.max(320, Math.round(window.innerHeight - rootTop - todayTopOffset - navH.value - 8))
+}
+watch(tabIndex, () => nextTick(() => {
+  measureStrip()
+  measureTodayH()
+  // 今日页自己不滚 body，切回来把可能残留的文档滚动归零（「我的」页仍走 body 滚动）
+  if (tab.value === 'today' && window.scrollY) window.scrollTo(0, 0)
+}))
 
 /* ---------------- 左右滑动手势切 tab（2026-10-01 用户要求「丝滑切换」） ----------------
    手指拖着平移层实时走（swipeDx 并进 translateX，拖动期间关掉 transform 过渡），
@@ -161,8 +191,11 @@ function onStripTouchCancel() {
 }
 onMounted(() => {
   measureStrip()
-  const ro = new ResizeObserver(() => measureStrip())
+  const ro = new ResizeObserver(() => { measureStrip(); measureTodayH() })
   if (stripRef.value) for (const page of stripRef.value.children) ro.observe(page)
+  // 问候卡高度会随 tab 切换与字体缩放变化 → 今日页可用高度跟着重算
+  const heroEl = document.querySelector('header')
+  if (heroEl) ro.observe(heroEl)
   refreshLectures() // 录音场次列表（二期 M2）
   initListen() // 碎片练耳：列表 + 设置（四期）
   initReview() // 五期：每日复盘存档 + 设置（纯本机，无桥也能用）
@@ -183,6 +216,7 @@ onMounted(() => {
   initBackButton() // Android 返回键分级处理（App 内生效；浏览器无桥不注册）
   window.addEventListener('resize', onWinResize) // 周课表高度按视口重算（一屏看完的保证）
   measureNavH() // 底部导航实测高度（含系统手势条安全区），网格高度要用它
+  measureTodayH() // 今日页滚动窗口高度（三段壳 Stage 1）
   measureSat() // 外壳状态栏让位（App 内 >0，浏览器 0）
   measureGridTop() // 网格顶文档坐标实测（高度公式输入）
   window.addEventListener('wb-sat', onWinResize) // 外壳异步量到 --sat 后广播，重算周课表高度
@@ -2989,6 +3023,7 @@ function measureGridTop() {
 function onWinResize() {
   winH.value = window.innerHeight
   measureNavH()
+  measureTodayH()
   measureSat()
   measureGridTop()
 }
@@ -3622,7 +3657,14 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
       }"
     >
     <!-- ===== 今日 ===== -->
-    <main data-page="today" class="w-1/3 space-y-4 px-4 pt-4 pb-28" :inert="tab !== 'today'">
+    <main
+      ref="todayRef"
+      data-page="today"
+      data-today-scroll
+      class="w-1/3 space-y-4 overflow-y-auto overscroll-contain px-4 pt-4 pb-28"
+      :inert="tab !== 'today'"
+      :style="todayH ? { height: todayH + 'px' } : null"
+    >
       <!-- 今天进度窄条（2026-10-03 方案 C Step 2）：原来「今天 N 节课 / 待办 d/t + 进度条」
            长在顶部问候卡里，占 ~78px 且在**所有 tab 上方**常驻。这里压成一窄条搬进今天页，
            顶部卡只留一行状态文案（进行中 / 下一节 / 今天没有课）。 -->
