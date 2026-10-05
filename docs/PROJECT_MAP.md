@@ -5,7 +5,7 @@
 
 *最后更新：2026-10-05（Day 21 收尾 —— **全应用简化十段计划 Stage 0–10 全部完成**，版本出到 **v1.42.0** 并已在真机复验 S1–S8 全过。要点：今日页三段壳（头/中滚动/尾固定）→ 26px 行组件 `components/RowItem.vue` → 「只向前看」D↔F 两种密度 → 录音入口归位三处（顶卡 / 课表页正在上的那节课 / 通知栏状态框）→ 「我的」页变索引 + 四个全屏二级页（`pages/sub/*.vue`）→ 课表页去掉重复问候卡、「其他日程」收进右上 ＋ 选单 → **Stage 9 组件化**：`App.vue` 从 6902 行降到 4127 行，拆出 `pages/{TodayPage,WeekPage,MePage,OnboardingPage}.vue` 与 12 个 `sheets/*.vue`，状态仍由 App.vue 单一持有、用文件末尾生成的 `APP_CTX`（680 个绑定，`web2/tmp/gen-app-ctx.mjs` 生成/校验）注入，子组件 `useApp()` 取用。测试基线 **79 个脚本 / 非 0 退出 1 个**（只剩 `step2-check` 这个既有日期敏感脚本）。**真机复验结果与两条真机坑（底部系统手势区吞 tap、录音中常驻小条命中区偏移）见 `docs/真机复验清单.md` 第八节**；设计正本与逐段进度见 `docs/结构动效前置约定.md`。*
 
-*同日**美术收口**（十段计划后补的一轮，已完成）：① 84 处 `bg-ink/<alpha>` 次要底色换成逐主题不透明 token `bg-soft` / `bg-soft-2`（`web2/src/style.css`，四套皮肤各给值；工具 `web2/tmp/alpha-to-soft.mjs`）；② 二级页加 `.push` 推入动效（0.28s `translateX(100%)`，与 `.slide` 同曲线）。自检 `web2/tmp/motion-check.mjs`（9/0）。*
+*同日**美术收口**（十段计划后补的一轮，已完成，并出了 **v1.42.1** 装机包 `dist-apk/schedule-v1.42.1-20261005.apk` / `versionCode 14201`，真机抽查已过）：① 84 处 `bg-ink/<alpha>` 次要底色换成逐主题不透明 token `bg-soft` / `bg-soft-2`（`web2/src/style.css`，四套皮肤各给值；工具 `web2/tmp/alpha-to-soft.mjs`）；② 二级页加 `.push` 推入动效（0.28s `translateX(100%)`，与 `.slide` 同曲线）。自检 `web2/tmp/motion-check.mjs`（9/0），真机抽查记录见 `docs/真机复验清单.md` 第八节末。*
 
 ---
 
