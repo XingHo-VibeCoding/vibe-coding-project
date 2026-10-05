@@ -3,7 +3,7 @@
 > 本文件是 AI 助手（DSH / Claude Code / 其他 Agent）的导读。
 > 分工：`AGENTS.md` 管「**怎么和用户配合干活**」（规矩，必须先读），本文件管「**项目是什么、东西在哪、做到哪、有哪些坑**」。两份都读完再动手。
 
-*最后更新：2026-10-04（Day 20，五期 v1.41.7 最小闭环收尾 → **v1.41.8 小屏与暗色可读性修复（A4 全页扫描 278 处 → 0 处）**；同日**测试基线归零**：72 个脚本、非 0 退出 0 个；同日**v1.41.9 真机复验第一轮三处修正**：复盘浮层吞返回键 / 改勿扰不重推状态框快照 / 场次列表 `undefined` 标题兜底；同日**v1.41.10 坏标题兜底收紧**：真机复验第二轮发现落盘的是复合串 `undefined · 10月1日`，改前缀正则，第二轮 #15/#17–#21/#23–#25 全过；同日**清单剩下的电脑侧也补齐**：新脚本 `web2/tmp/slots-notify-check.mjs`（27 过 / 0 挂）覆盖 #7 老壳降级 / #10 老壳无精确提醒块 / #14 跟着时间自动换跨档与跨零点 / #16 复盘提醒点击直达浮层，基线变 **73 脚本 0 红**，#9 的入口与自检过、**Day 21 起：全应用简化（方案 C「三页收敛」十段计划）**——Stage 0–8 已完成并推送（今日页三段壳 → 26px 行组件 → 「只向前看」D↔F 两种密度 → 录音入口归位三处 → **我的页变索引 + 四个全屏二级页** → **课表页去掉重复问候卡、「其他日程」收进 ＋ 选单**），Stage 9（把 6900 行的 App.vue 拆成组件/页面）进行中；测试基线 **79 个脚本 / 非 0 退出 1 个**（只剩 `step2-check` 这个既有日期敏感脚本）。设计正本见 `docs/结构动效前置约定.md`，逐段进度也记在那份文件的「实施进度」小节。*
+*最后更新：2026-10-05（Day 21 收尾 —— **全应用简化十段计划 Stage 0–10 全部完成**，版本出到 **v1.42.0** 并已在真机复验 S1–S8 全过。要点：今日页三段壳（头/中滚动/尾固定）→ 26px 行组件 `components/RowItem.vue` → 「只向前看」D↔F 两种密度 → 录音入口归位三处（顶卡 / 课表页正在上的那节课 / 通知栏状态框）→ 「我的」页变索引 + 四个全屏二级页（`pages/sub/*.vue`）→ 课表页去掉重复问候卡、「其他日程」收进右上 ＋ 选单 → **Stage 9 组件化**：`App.vue` 从 6902 行降到 4127 行，拆出 `pages/{TodayPage,WeekPage,MePage,OnboardingPage}.vue` 与 12 个 `sheets/*.vue`，状态仍由 App.vue 单一持有、用文件末尾生成的 `APP_CTX`（680 个绑定，`web2/tmp/gen-app-ctx.mjs` 生成/校验）注入，子组件 `useApp()` 取用。测试基线 **79 个脚本 / 非 0 退出 1 个**（只剩 `step2-check` 这个既有日期敏感脚本）。**真机复验结果与两条真机坑（底部系统手势区吞 tap、录音中常驻小条命中区偏移）见 `docs/真机复验清单.md` 第八节**；设计正本与逐段进度见 `docs/结构动效前置约定.md`。*
 
 ---
 
@@ -51,11 +51,11 @@ vibe-coding-project/
 
 | 路径 | 是什么 |
 |---|---|
-| `App.vue` | 单一状态持有者 + 三个页面 + 全部浮层的原始出处（**Stage 9 正在往外拆**）；顶层绑定约 500 个，靠文件末尾生成的 `APP_CTX` 区块 provide 给子组件 |
+| `App.vue` | 单一状态持有者 + 外壳（顶卡 / 内容平移层 / 底部 nav / 二级页 Teleport 容器）；Day 21 起 **6902 → 4127 行**，页面与浮层全部拆到下面几处，靠文件末尾生成的 `APP_CTX` 区块（**680 个绑定**）provide 给子组件 |
 | `components/` | 通用件：`RowItem.vue`（**26px 时间行的唯一实现处**）、`BottomSheet.vue`、`MonthCalendar.vue`、`TimeWheel.vue` / `NumberWheel.vue` 等 |
-| `sheets/` | Stage 9 拆出来的浮层（`PickerSheet` / `ConfirmClearSheet` / `DeleteLectureSheet` …） |
-| `pages/` | Stage 9 计划中：三个页面主体（今日 / 周课表 / 我的） |
-| `composables/app-ctx.js` | Stage 9 的上下文：`APP_CTX` + `useApp()`，子组件 `const app = useApp()` 后直接 `app.x` 读写 |
+| `pages/` | 页面主体：`TodayPage.vue` / `WeekPage.vue` / `MePage.vue` / `OnboardingPage.vue`；二级页四块在 `pages/sub/`（`LecturesPanel` / `ListenPanel` / `TodosPanel` / `SettingsPanel`） |
+| `sheets/` | 十二个浮层：`PickerSheet` / `ConfirmClearSheet` / `DeleteLectureSheet` / `HabitSheet` / `DetailSheet` / `ReviewGridSheet` / `PressTypeSheet` / `AddSheet` / `TodoSheet` / `ReviewSheet` / `EventSheet` / `SemesterSheet` |
+| `composables/app-ctx.js` | 上下文：`APP_CTX` + `useApp()`；子组件用 `toRefs(app)` **按原名**接绑定，所以搬走的 markup 一个字都不用改。生成器 `web2/tmp/gen-app-ctx.mjs` 产出并校验那个区块（`--check` 同时查「块是否最新」与「有没有漏解构」） |
 | `data/store.js` | 存档读写、`sanitize*` 兜底、导入导出 |
 
 ## 三、五期路线与当前进度

@@ -83,7 +83,7 @@ const {
 </script>
 
 <template>
-      <div v-if="onboarding" class="fixed inset-0 z-40 overflow-y-auto bg-canvas" :data-ob-step="onboardStepNo">
+      <div v-if="onboarding" class="fixed inset-0 z-40 overflow-y-auto bg-canvas" :data-ob-step="onboardStepNo" :style="{ paddingTop: 'var(--sat, 0px)' }">
         <div class="mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-10">
           <div v-if="!recFromMine" class="mb-7 text-center">
             <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-primary-400 to-primary-600 text-2xl font-bold text-white shadow-lg shadow-primary-500/25">

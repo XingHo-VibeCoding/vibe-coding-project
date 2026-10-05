@@ -3985,8 +3985,11 @@ provide(APP_CTX, reactive({
          内容全部是原来「我的」页里那几块（锚点与内部结构一字未动），只是换了个容器。 -->
     <!-- 平移层带 transform：fixed 会相对它（300% 宽）定位 → 二级页必须 Teleport 到 body，
          否则整页会错位（Stage 6 踩过：todos 页只剩右边的日期，标题全跑到视口外）。 -->
+    <!-- 真机状态栏让位：外壳给 #app 加了 padding-top: var(--sat)，但 Teleport 到 body 之后
+         就不在 #app 里了 —— 不加这行，真机上页头「‹ 返回」会压在系统时间上（v1.42 真机复验 S6 抓到，
+         浏览器里 --sat=0 所以看不出）。 -->
     <Teleport to="body">
-    <div v-if="meSub" data-sub-page :data-sub="meSub" class="fixed inset-0 z-40 flex flex-col bg-canvas">
+    <div v-if="meSub" data-sub-page :data-sub="meSub" class="fixed inset-0 z-40 flex flex-col bg-canvas" :style="{ paddingTop: 'var(--sat, 0px)' }">
       <header class="flex shrink-0 items-center gap-2 border-b border-line bg-card/90 px-3 py-2.5 backdrop-blur">
         <button type="button" data-sub-back class="flex h-9 shrink-0 items-center gap-0.5 rounded-full pl-1 pr-2 text-sm text-ink-dim transition active:scale-95" @click="closeMeSub">
           <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
@@ -4027,19 +4030,20 @@ provide(APP_CTX, reactive({
     </Transition>
 
     <!-- 录音中常驻小条（v1.41.1）：录音卡在今日页最底部，开了录却看不到状态等于没反馈。
-         放在底部导航正上方（像迷你播放条），不要压顶部——今日页顶部第一行就是日期与问候。 -->
-    <Transition name="fade">
-      <button
-        v-if="recActiveId"
-        data-rec-banner
-        class="fixed bottom-20 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-red-500/95 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg"
-        @click="goMeTab(recActiveId ? 'lectures' : null)"
-      >
-        <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-white"></span>
-        录音中 {{ fmtDur(recElapsed * 1000) }}
-        <span class="font-normal opacity-80">· 去停</span>
-      </button>
-    </Transition>
+         放在底部导航正上方（像迷你播放条），不要压顶部——今日页顶部第一行就是日期与问候。
+         v1.42 真机修复：**不要再套 `<Transition>`** —— 真机 WebView 上被 Transition 包住的
+         fixed 元素，合成层画面会比布局盒低 ~80px，结果是「看得见、点不到」（点它会穿透到
+         下面那条待办筛选 chips 上；Playwright 的 locator.click() 走布局盒，所以电脑侧测不出来）。 -->
+    <button
+      v-if="recActiveId"
+      data-rec-banner
+      class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit items-center gap-2 whitespace-nowrap rounded-full bg-red-500/95 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg"
+      @click="goMeTab(recActiveId ? 'lectures' : null)"
+    >
+      <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-white"></span>
+      录音中 {{ fmtDur(recElapsed * 1000) }}
+      <span class="font-normal opacity-80">· 去停</span>
+    </button>
 
     <!-- 底部导航：app 感的核心 -->
     <nav
