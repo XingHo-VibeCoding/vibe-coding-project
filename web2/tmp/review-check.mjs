@@ -158,7 +158,7 @@ await p.waitForTimeout(240)
 t('C1. 改一改带出上次的答案', (await p.locator('[data-review-input]').inputValue()) === '把复盘做出来了')
 
 /* ============ D. 日精进历史 ============ */
-await p.locator('[data-sheet-mask]').click()
+await p.locator('[data-sheet-mask]').click({ position: { x: 20, y: 20 } })
 await p.waitForTimeout(240)
 await p.locator('[data-review-open-history]').click()
 await p.waitForTimeout(280)
@@ -168,7 +168,7 @@ t('D2. 历史条目带日期与日精进正文', hist.includes(T) && hist.includ
 t('D3. 历史页写明「只在本机」', (await p.locator('[data-sheet-review]').innerText()).includes('只在本机'))
 
 /* ============ E. 我的页设置行（无桥 = 无开关，但时间 chip 可用） ============ */
-await p.locator('[data-sheet-mask]').click()
+await p.locator('[data-sheet-mask]').click({ position: { x: 20, y: 20 } })
 await p.waitForTimeout(200)
 await goMe(p)
 t('E1. 我的页设置折叠里有「每日复盘」行', (await p.locator('[data-review-row]').count()) === 1)

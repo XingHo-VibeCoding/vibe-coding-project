@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="lavender">
+<head>
+<meta charset="utf-8">
+<title>今天的账 × 日精进 · 合并示意</title>
+<link rel="stylesheet" href="../dist/assets/index-DriB0btT.css">
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; background: #eef0f4; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         display: flex; gap: 26px; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .cap { width: 384px; font-size: 13px; line-height: 1.6; color: #4b5563; }
+  .cap b { color: #111827; }
+  .phone { width: 384px; height: 780px; border-radius: 30px; padding: 12px; background: #fff;
+           box-shadow: 0 10px 28px rgba(15,23,42,.16); position: relative; overflow: hidden;
+           background: var(--color-canvas); color: var(--color-ink); }
+  .statusbar { height: 22px; display: flex; align-items: center; justify-content: space-between;
+               font-size: 11px; color: var(--color-ink); opacity: .75; padding: 0 6px; }
+  .pagehead { display: flex; align-items: center; justify-content: space-between; padding: 10px 6px 6px; }
+  .pagehead .t { font-size: 15px; font-weight: 600; }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--color-card);
+           border-radius: 22px 22px 0 0; padding: 10px 14px 16px; box-shadow: 0 -8px 24px rgba(15,23,42,.10); }
+  .grab { width: 40px; height: 4px; border-radius: 999px; background: var(--color-soft-2); margin: 0 auto 10px; }
+  .row { display: flex; align-items: center; justify-content: space-between; }
+  .h1 { font-size: 15px; font-weight: 700; }
+  .muted { color: var(--color-ink-dim); }
+  .xs { font-size: 11px; }
+  .sm { font-size: 12px; }
+  .softcard { background: var(--color-soft); border-radius: 14px; padding: 12px; }
+  .bar { height: 6px; border-radius: 999px; background: var(--color-soft-2); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--color-primary-500); }
+  .split { display: flex; height: 6px; border-radius: 999px; overflow: hidden; }
+  .split > i { display: block; height: 100%; }
+  .btn { display: block; width: 100%; text-align: center; border-radius: 12px; padding: 11px 0; font-size: 13px; font-weight: 600; }
+  .btn.p { background: var(--color-primary-500); color: #fff; box-shadow: 0 6px 14px rgba(124,92,224,.28); }
+  .btn.g { background: var(--color-soft); color: var(--color-ink); }
+  .pill { font-size: 12px; padding: 6px 11px; border-radius: 999px; background: var(--color-soft); color: var(--color-ink); }
+  .mood { width: 40px; height: 40px; border-radius: 999px; background: var(--color-soft-2); display: flex;
+          align-items: center; justify-content: center; font-size: 19px; }
+  .mood.on { background: var(--color-primary-50); box-shadow: inset 0 0 0 2px var(--color-primary-500); }
+  .tag { font-size: 10px; padding: 1px 5px; border-radius: 6px; background: var(--color-primary-50); color: var(--color-primary-600); font-weight: 600; }
+  .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--color-danger-500); display: inline-block; }
+</style>
+</head>
+<body>
+
+<!-- ① 日精进浮层：账在上面，四题直接接在下面 -->
+<div class="col">
+  <div class="phone">
+    <div class="statusbar"><span>20:15</span><span>▮▮▮</span></div>
+    <div class="pagehead"><div class="t">今天的日精进</div><div class="xs muted">10 月 5 日 周一 · 第 5 周</div></div>
+
+    <div class="softcard" style="margin:6px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="h1">今天也结账啦～</span>
+      </div>
+      <div class="sm" style="margin-top:6px">你排了 <b>6</b> 件事，做完了 <b>3</b> 件。</div>
+      <div class="bar" style="margin:8px 0 5px"><i style="width:50%"></i></div>
+      <div class="xs muted">3 / 6 · 还有 3 件今天没动</div>
+
+      <div style="height:1px;background:var(--color-line);margin:11px 0"></div>
+      <div class="row">
+        <div class="sm">手机今天陪了你 <b>6 小时 32 分</b></div>
+        <div class="xs" style="color:var(--color-primary-600)">手机分布 ▸</div>
+      </div>
+      <div class="split" style="margin:8px 0 5px">
+        <i style="width:52%;background:#7c5ce0"></i><i style="width:23%;background:#3b82f6"></i>
+        <i style="width:15%;background:#22c55e"></i><i style="width:10%;background:#cbd5e1"></i>
+      </div>
+      <div class="xs muted">社交 3h24m · 学习 1h30m · 沟通 1h · 其它 0h38m（只算分类，不列 App 名）</div>
+
+      <div style="height:1px;background:var(--color-line);margin:11px 0"></div>
+      <div class="xs muted">今天主笔</div>
+      <div class="sm" style="margin-top:3px">待办连续 3 天停在三成。</div>
+    </div>
+
+    <div style="margin:14px 6px 0">
+      <div class="row"><div class="xs muted">账说完了，换你说 · 1 / 4</div><div class="xs muted">可跳过</div></div>
+      <div class="h1" style="margin-top:8px">今天感觉怎么样？</div>
+      <div class="xs muted" style="margin-top:4px">选一个，或者跳过这题</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <div class="mood on">😄</div><div class="mood">🙂</div><div class="mood">😐</div><div class="mood">😕</div><div class="mood">😣</div>
+      </div>
+      <div class="btn p" style="margin-top:16px">下一题</div>
+      <div class="xs muted" style="text-align:center;margin-top:8px">跳过这题</div>
+    </div>
+  </div>
+  <div class="cap"><b>① 合并后：一个浮层，先说账再说你</b><br>打开还是原来的「日精进」，只是顶上多了一张账卡（排了几件/做完几件 + 手机两段），四题原样接在下面。<b>没有新页面、没有新入口</b>，四题也还是四题。</div>
+</div>
+
+<!-- ② 生成结果：账的数字 + 你答的话，合成一条 -->
+<div class="col">
+  <div class="phone">
+    <div class="statusbar"><span>20:19</span><span>▮▮▮</span></div>
+    <div class="pagehead"><div class="t">今天的日精进</div><div class="xs muted">10 月 5 日 周一</div></div>
+
+    <div style="margin:6px">
+      <div class="h1">今天也结账啦～</div>
+      <div class="sm" style="margin-top:6px">你排了 6 件事，做完了 3 件；手机 6h32m。</div>
+    </div>
+
+    <div class="softcard" style="margin:10px 6px;font-size:12.5px;line-height:1.75;white-space:pre-line">排了 6 件，做完 3 件；手机 6h32m。
+
+最满意的一件事：把结构力学的作业提前写了
+明天想保持：中午睡 20 分钟
+明天最重要的一件事：把混凝土那章过一遍</div>
+
+    <div class="softcard" style="margin:10px 6px">
+      <div class="xs muted">今天主笔</div>
+      <div class="sm" style="margin-top:3px">待办连续 3 天停在三成。</div>
+    </div>
+
+    <div style="margin:14px 6px">
+      <div class="xs muted">明天的第一件事</div>
+      <div class="sm" style="margin:6px 0 10px">把混凝土那章过一遍 · 已记进待办</div>
+      <div class="btn g">把这句转成待办</div>
+      <div class="btn p" style="margin-top:10px">完成</div>
+    </div>
+  </div>
+  <div class="cap"><b>② 生成的那一下：数字 + 你说的话 = 一条</b><br>账的数字（排 6 做完 3、手机 6h32m）自动成为日精进的第一段，四题的答案接在后面，末尾还是那句唯一的调侃。<b>存储没变</b>：仍写在本机 `web2.review`，只是记录里多存了当天那几个数字。</div>
+</div>
+
+<!-- ③ 历史：每条带当天账的小结 -->
+<div class="col">
+  <div class="phone">
+    <div class="statusbar"><span>20:21</span><span>▮▮▮</span></div>
+    <div class="pagehead"><div class="t">日精进 · 全部</div><div class="xs muted">共 12 篇 · 只在本机</div></div>
+
+    <div style="margin:0 6px">
+      <div style="padding:12px 0;border-bottom:1px solid var(--color-line)">
+        <div class="row"><div class="sm" style="font-weight:600">10 月 5 日 周一</div><div class="sm">🙂</div></div>
+        <div class="xs" style="color:var(--color-primary-600);margin-top:4px">排 6 做完 3 · 手机 6h32m</div>
+        <div class="sm muted" style="margin-top:5px">把结构力学作业提前写了，晚上早点睡。</div>
+      </div>
+      <div style="padding:12px 0;border-bottom:1px solid var(--color-line)">
+        <div class="row"><div class="sm" style="font-weight:600">10 月 4 日 周日</div><div class="sm">😄</div></div>
+        <div class="xs" style="color:var(--color-primary-600);margin-top:4px">排 4 做完 4 · 手机 4h10m</div>
+        <div class="sm muted" style="margin-top:5px">今天全清了，手机也没多看。</div>
+      </div>
+      <div style="padding:12px 0;border-bottom:1px solid var(--color-line)">
+        <div class="row"><div class="sm" style="font-weight:600">10 月 3 日 周六</div><div class="sm">😐</div></div>
+        <div class="xs" style="color:var(--color-primary-600);margin-top:4px">排 5 做完 1 · 手机 8h02m</div>
+        <div class="sm muted" style="margin-top:5px">基本没动，手机倒是一直在手边。</div>
+      </div>
+      <div style="padding:12px 0">
+        <div class="row"><div class="sm" style="font-weight:600">10 月 2 日 周五</div><div class="sm">🙂</div></div>
+        <div class="xs muted" style="margin-top:4px">这天没结账（只留了数字，没做四题）</div>
+      </div>
+    </div>
+  </div>
+  <div class="cap"><b>③ 历史里也带账</b><br>每篇多一行当天的小结（排 6 做完 3 · 手机 6h32m），能一眼看出哪几天是空的、哪几天在掉。<br>某天只攒了数字没做四题，也会留一条（浅色）——这就是「每日快照」的价值：<b>不逼你打卡，数字照样不丢</b>。</div>
+</div>
+
+</body>
+</html>

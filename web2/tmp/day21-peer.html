@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" />
+<title>同伴交叉验证 · Day 21</title>
+<style>
+  :root { --ink:#1f2530; --dim:#5b6472; --line:#e5e8ef; --soft:#f4f5f9; --soft2:#e9ecf3;
+          --pri:#6d5ae0; --pri-soft:#efeafc; --ok:#12855a; --ok-bg:#e7f6ef; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:26px 30px 32px; background:#fff; color:var(--ink);
+         font:14px/1.6 "PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:13px; margin-bottom:14px; }
+  .meta { background:var(--soft); border:1px solid var(--line); border-radius:12px; padding:11px 14px; font-size:12.5px; color:var(--dim); margin-bottom:16px; }
+  .meta b { color:var(--ink); }
+  h2 { font-size:16px; margin:20px 0 8px; padding-left:9px; border-left:4px solid var(--pri); }
+  code { background:var(--soft2); border-radius:5px; padding:1px 5px; font-size:11.5px;
+         font-family:ui-monospace,Consolas,"Cascadia Mono",monospace; color:#3b4250; }
+  pre { background:#f7f8fb; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:11.5px; overflow:visible;
+        font-family:ui-monospace,Consolas,"Cascadia Mono",monospace; color:#39414f; margin:6px 0 14px; white-space:pre; }
+  .line { border:1px solid var(--line); border-radius:12px; padding:11px 13px; margin:9px 0; background:#fff; }
+  .line h3 { margin:0 0 6px; font-size:14px; display:flex; align-items:center; gap:8px; }
+  .tag { font-size:11px; padding:2px 7px; border-radius:999px; background:var(--ok-bg); color:var(--ok); font-weight:700; }
+  .tag.warn { background:#fdf5e3; color:#8a6100; }
+  ul { margin:4px 0 0 18px; padding:0; } li { margin:3px 0; font-size:12.5px; color:#39414f; }
+  table { width:100%; border-collapse:collapse; margin:8px 0 16px; font-size:12.5px; }
+  th,td { border:1px solid var(--line); padding:7px 9px; vertical-align:top; text-align:left; }
+  th { background:var(--soft); font-weight:600; }
+  .quote { background:var(--pri-soft); border-left:3px solid var(--pri); border-radius:0 8px 8px 0; padding:9px 12px; font-size:12.5px; margin:8px 0 14px; }
+  .foot { margin-top:18px; font-size:11.5px; color:var(--dim); border-top:1px dashed var(--line); padding-top:9px; }
+</style></head>
+<body>
+  <h1>同伴交叉验证 · 三行结论（Day 21）</h1>
+  <div class="sub">让<b>不是本轮执行人</b>的一方独立复核「公网可访问 / 真实读写 / 有无报错」</div>
+  <div class="meta">
+    <b>本轮同伴</b>：独立 agent（新会话、无本轮上下文，只拿到被验证的 URL 与期望形状） ｜ <b>全程只读</b>：不改文件、不部署、不写库、不动控制台<br />
+    <b>被验证对象</b>：CloudBase 测试环境 <code>vibecoding-test-d5fqmhbb955e19dd</code> 的两个 GET 接口 + 公网检查台页
+  </div>
+
+  <h2>① 三行结论（同伴原文）</h2>
+  <div class="line">
+    <h3>【能否打开】<span class="tag">能</span></h3>
+    <ul>
+      <li>两条 GET 接口与静态托管页均 HTTP 200，页面就是「数据检查台」。</li>
+      <li><code>curl.exe -s -w "[%{http_code}]" .../api/health</code> → <code>{"ok":true} [200] application/json</code></li>
+      <li><code>curl.exe -s -w "[%{http_code}]" ".../api/list?limit=200"</code> → <code>[200] application/json; charset=utf-8</code></li>
+      <li><code>curl.exe -s ".../tcloudbaseapp.com"</code> → <code>[200] text/html</code>，含 <code>&lt;title&gt;大学生日程助手 · 数据检查台&lt;/title&gt;</code>（本次未出现「风险提醒」页，直接拿到 HTML）</li>
+    </ul>
+  </div>
+  <div class="line">
+    <h3>【能否真实读写】<span class="tag">读真库</span><span class="tag warn">写不可用</span></h3>
+    <ul>
+      <li><b>读</b>：返回真实行（<code>sch_c001</code> 高等数学 A、<code>todo_t001</code> 高数第一章习题 1-15）；字段形状完整（<code>id/semester_id/type/created_at/updated_at</code>，todos 有 <code>done/done_at/source</code>）；<code>updated_at</code> 存在且值各异（多数 <code>2026-10-02T09:23:58.940965</code>，<code>todo_t001</code> 为 <code>2026-10-02T23:09:59.164875</code>），非写死。</li>
+      <li><b>写</b>：<code>POST /api/favorite {}</code> → HTTP <b>404</b>，body <code>{"code":"INVALID_PATH","message":"Invalid path...","requestId":"cce0ff41-..."}</code>，即网关无该路由、未实现。未执行任何 PUT/DELETE，未触碰控制台。</li>
+    </ul>
+  </div>
+  <div class="line">
+    <h3>【有无报错】<span class="tag">无异常</span></h3>
+    <ul>
+      <li>无 5xx；两接口均为 JSON，静态页为 HTML。</li>
+      <li>CORS：<code>Origin: https://evil.example.com</code> → <b>无任何 <code>access-control-*</code> 头</b>；白名单 Origin → <code>access-control-allow-origin</code> 回显 + <code>access-control-allow-credentials: true</code> + <code>vary: Origin</code>；<code>OPTIONS</code> 预检 → <code>204</code> + <code>access-control-allow-methods: GET</code>。与 <code>docs/api-contract.md:154</code> 登记一致。</li>
+      <li>无超时：health 0.21s / list 0.23s / 静态页 0.28s。</li>
+    </ul>
+  </div>
+
+  <h2>② 同伴附的原始证据</h2>
+<pre>GET /api/health            -> [200] {"ok":true}
+GET /api/list?limit=200    -> [200] {"ok":true,"data":{...,"counts":{"semesters":6,"schedules":22,"todos":10}}}
+GET tcloudbaseapp.com      -> [200] &lt;title&gt;大学生日程助手 · 数据检查台&lt;/title&gt;
+POST /api/favorite {}      -> [404] {"code":"INVALID_PATH","message":"Invalid path...","requestId":"cce0ff41-5a24-47db-97cc-e67bafae0658"}
+# CORS evil
+HTTP/1.1 200 OK   (无 access-control-allow-origin)
+# CORS 白名单
+access-control-allow-origin: https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com
+access-control-allow-credentials: true
+# OPTIONS 预检
+HTTP/1.1 204 No Content
+access-control-allow-methods: GET</pre>
+
+  <h2>③ 复核一致性</h2>
+  <table>
+    <tr><th style="width:30%">项目</th><th style="width:32%">执行人自验</th><th style="width:26%">同伴复核</th><th>一致</th></tr>
+    <tr><td><code>GET /api/health</code></td><td>200 + <code>{"ok":true}</code></td><td>200 + <code>{"ok":true}</code></td><td>✅</td></tr>
+    <tr><td><code>GET /api/list?limit=200</code></td><td><code>ok:true</code>，counts 6/22/10，含真实行</td><td>同上，且核对了行数与 <code>updated_at</code> 互异</td><td>✅</td></tr>
+    <tr><td>静态托管页</td><td>200、<code>&lt;title&gt;…数据检查台&lt;/title&gt;</code>、含 <code>btn-refresh</code></td><td>200、同样的标题</td><td>✅</td></tr>
+    <tr><td>写接口</td><td><code>POST /api/favorite</code> → 404 <code>INVALID_PATH</code></td><td>同上（未做 PUT/DELETE）</td><td>✅</td></tr>
+    <tr><td>CORS</td><td>白名单回显 + <code>allow-credentials</code>；evil Origin 无 CORS 头；<code>OPTIONS</code> 204</td><td>同上，并补测了响应耗时</td><td>✅</td></tr>
+  </table>
+  <div class="quote"><b>结论</b>：公网可访问与真实读两项证据由两方独立复现、结论一致；写接口不存在也由两方各自探活确认（404）。无口径分歧，无"只有一方能复现"的现象。</div>
+
+  <div class="foot">配套：<code>docs/Day21-同伴交叉验证.md</code>（本文 + 三行结论模板） ｜ <code>docs/Day21-第3周验收表.md</code> ｜ <code>docs/Day21-演示提纲.md</code>（复现命令见其附录）</div>
+</body></html>

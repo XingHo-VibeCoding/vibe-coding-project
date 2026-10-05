@@ -81,7 +81,11 @@ await page.waitForTimeout(800)
 const ls = await page.evaluate(() => Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)])))
 for (const k of DATA_KEYS) t(`A5. 数据键已清：${k}`, !(k in ls), ls[k])
 for (const k of KEEP_KEYS) t(`A6. 设置键保留：${k}`, k in ls && ls[k], ls[k])
-t('A7. localStorage 只剩 4 个设置键', Object.keys(ls).length === 4, JSON.stringify(Object.keys(ls)))
+const DERIVED = ['web2.daily'] // 六期：每日快照是派生数据，清完开机又会给今天落一条（历史已重置，见 A7b）
+const extra = Object.keys(ls).filter((k) => !KEEP_KEYS.includes(k) && !DERIVED.includes(k))
+t('A7. 除了 4 个设置键只剩派生快照键（其余全清）', extra.length === 0, JSON.stringify(Object.keys(ls)))
+const dbook = (() => { try { return JSON.parse(ls['web2.daily'] || '{"days":{}}') } catch { return { days: {} } } })()
+t('A7b. 快照历史已重置（只剩今天一条）', Object.keys(dbook.days || {}).length <= 1, Object.keys(dbook.days || {}).join(','))
 
 /* 回到引导页（onboarded 与 web2.data 都没了 → 引导层 z-40 重新出现，data-ob-step 是引导层根锚点） */
 t('A8. 清除后回到引导页', await page.locator('[data-ob-step]').count() === 1)

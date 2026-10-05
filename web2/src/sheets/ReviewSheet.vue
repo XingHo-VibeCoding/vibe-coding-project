@@ -22,6 +22,9 @@ const {
   reviewBack,
   reviewAddTodo,
   undoneTodos,
+  accountToday,
+  accountHistory,
+  dailyLineOf,
 } = toRefs(app)
 </script>
 
@@ -46,6 +49,27 @@ const {
               :class="i <= reviewSheet.step ? 'bg-primary-500' : 'bg-soft-2'"
             ></span>
           </div>
+
+          <!-- 今天的账（六期）：先说账，再换你说；四题还是四题，只是顶上加了一张卡 -->
+          <div v-if="reviewSheet.step === 0" data-account-card class="mt-3 rounded-xl bg-soft p-3">
+            <p class="text-[13px] font-semibold">今天也结账啦～</p>
+            <p data-account-say class="mt-1 text-[12px] text-ink">{{ accountToday.line }}</p>
+            <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-soft-2">
+              <span class="block h-full rounded-full bg-primary-500" :style="{ width: accountToday.pct + '%' }"></span>
+            </div>
+            <p data-account-sub class="mt-1.5 text-[11px] text-ink-dim">{{ accountToday.sub }}</p>
+            <p v-if="accountToday.courses || accountToday.habitsTotal" class="mt-0.5 text-[11px] text-ink-dim">
+              <span v-if="accountToday.courses">今天上了 {{ accountToday.courses }} 节课</span>
+              <span v-if="accountToday.courses && accountToday.habitsTotal"> · </span>
+              <span v-if="accountToday.habitsTotal">打卡 {{ accountToday.habitsDone }}/{{ accountToday.habitsTotal }}</span>
+            </p>
+            <p class="mt-2 text-[11px] text-ink-dim">今天主笔</p>
+            <p data-account-lead class="text-[12px] text-ink">{{ accountToday.lead }}</p>
+            <p v-if="!accountToday.baseline.enough" data-account-baseline class="mt-2 text-[11px] text-ink-dim">
+              基线建立中 {{ accountToday.baseline.kept }} / {{ accountToday.baseline.need }} 天 · 攒够才说「比平时多还是少」
+            </p>
+          </div>
+
           <p data-review-q class="mt-4 text-sm font-semibold">{{ QUESTIONS[reviewSheet.step].title }}</p>
           <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">{{ QUESTIONS[reviewSheet.step].hint }}</p>
 
@@ -119,6 +143,7 @@ const {
             <p class="text-base font-bold">今天的日精进</p>
             <span class="text-[11px] text-ink-dim">{{ reviewSheet.record.date }}</span>
           </div>
+          <p v-if="dailyLineOf(reviewSheet.record.date)" data-account-line class="mt-1.5 text-[11px] text-primary-600">今天的账：{{ dailyLineOf(reviewSheet.record.date) }}</p>
           <p data-review-summary class="mt-3 whitespace-pre-line rounded-xl bg-soft p-3 text-[12.5px] leading-relaxed text-ink">{{ reviewSheet.record.summary }}</p>
           <p v-if="reviewMsg" data-review-msg class="mt-2.5 text-[11px]" :class="reviewMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ reviewMsg }}</p>
           <div class="mt-4 flex items-center gap-2">
@@ -139,16 +164,25 @@ const {
         <template v-else>
           <div class="flex items-baseline justify-between">
             <p class="text-base font-bold">日精进 · 全部</p>
-            <span class="text-[11px] text-ink-dim">共 {{ reviewHistory.length }} 篇 · 只在本机</span>
+            <span class="text-[11px] text-ink-dim">共 {{ accountHistory.length }} 天 · 只在本机</span>
           </div>
-          <p v-if="!reviewHistory.length" class="mt-3 text-[12.5px] leading-relaxed text-ink-dim">还没有复盘记录。从今天开始，每晚花 2 分钟收个尾。</p>
+          <p v-if="!accountHistory.length" class="mt-3 text-[12.5px] leading-relaxed text-ink-dim">还没有复盘记录。从今天开始，每晚花 2 分钟收个尾。</p>
           <div v-else data-review-history-list class="mt-3 max-h-[58vh] space-y-2.5 overflow-y-auto">
-            <div v-for="r in reviewHistory" :key="r.date" data-review-history-item class="rounded-xl border border-line p-3">
+            <div
+              v-for="r in accountHistory"
+              :key="r.date"
+              data-review-history-item
+              :data-account-history-item="r.record ? 'review' : 'snapshot'"
+              class="rounded-xl border border-line p-3"
+              :class="r.record ? '' : 'bg-soft'"
+            >
               <div class="flex items-baseline justify-between">
                 <span class="text-xs font-semibold">{{ r.date }}{{ weekdayLabelOf(r.date) ? ' · ' + weekdayLabelOf(r.date) : '' }}</span>
-                <span class="text-[11px] text-ink-dim">{{ moodLabelOf(r.mood) }}</span>
+                <span class="text-[11px] text-ink-dim">{{ r.record ? moodLabelOf(r.record.mood) : '没做四题' }}</span>
               </div>
-              <p class="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-ink-dim">{{ r.summary }}</p>
+              <p v-if="r.line" data-account-history-line class="mt-1 text-[11px] text-primary-600">{{ r.line }}</p>
+              <p v-if="r.record" class="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-ink-dim">{{ r.record.summary }}</p>
+              <p v-else class="mt-0.5 text-[11px] text-ink-dim">这天没结账，只留了数字。</p>
             </div>
           </div>
         </template>

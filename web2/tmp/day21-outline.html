@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" />
+<title>第 3 周演示提纲 · Day 21</title>
+<style>
+  :root { --ink:#1f2530; --dim:#5b6472; --line:#e5e8ef; --soft:#f4f5f9; --soft2:#e9ecf3;
+          --pri:#6d5ae0; --pri-soft:#efeafc; --ok:#12855a; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:26px 30px 32px; background:#fff; color:var(--ink);
+         font:14px/1.6 "PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:13px; margin-bottom:14px; }
+  .meta { background:var(--soft); border:1px solid var(--line); border-radius:12px; padding:11px 14px; font-size:12.5px; color:var(--dim); margin-bottom:16px; }
+  .meta b { color:var(--ink); }
+  h2 { font-size:16px; margin:20px 0 8px; padding-left:9px; border-left:4px solid var(--pri); }
+  .t { color:var(--pri); font-weight:700; font-size:12.5px; margin-left:6px; }
+  ul { margin:6px 0 0 18px; padding:0; } li { margin:3px 0; font-size:13px; }
+  table { width:100%; border-collapse:collapse; margin:8px 0 16px; font-size:12.5px; }
+  th,td { border:1px solid var(--line); padding:7px 9px; vertical-align:top; text-align:left; }
+  th { background:var(--soft); font-weight:600; }
+  code { background:var(--soft2); border-radius:5px; padding:1px 5px; font-size:11.5px;
+         font-family:ui-monospace,Consolas,"Cascadia Mono",monospace; color:#3b4250; }
+  .quote { background:var(--pri-soft); border-left:3px solid var(--pri); border-radius:0 8px 8px 0; padding:9px 12px; font-size:13px; margin:8px 0 12px; }
+  pre { background:#f7f8fb; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:11.5px; overflow:visible;
+        font-family:ui-monospace,Consolas,"Cascadia Mono",monospace; color:#39414f; margin:6px 0 14px; }
+  .warn { background:#fdf5e3; border:1px solid #f0e0b8; border-radius:10px; padding:9px 12px; font-size:12.5px; color:#703f00; margin:8px 0 14px; }
+  .foot { margin-top:18px; font-size:11.5px; color:var(--dim); border-top:1px dashed var(--line); padding-top:9px; }
+</style></head>
+<body>
+  <h1>第 3 周演示提纲<span class="t">3–5 分钟 · 建议 4 分 30 秒</span></h1>
+  <div class="sub">大学生日程助手 · 后端线（CloudBase + PostgreSQL + 云函数）</div>
+  <div class="meta">
+    <b>演示前置</b>：一个 PowerShell 窗口 ｜ 一个浏览器标签（公网检查台） ｜ 可选：CloudBase 控制台「数据库 → 表行数」页<br />
+    <b>演示纪律</b>：全程<b>只读</b>；写接口未实现就直说，不做假动作；要现场演示「库变页面就变」只改测试环境一条待办标题，演示完改回
+  </div>
+
+  <h2>① 用户问题 <span class="t">0:00–0:30</span></h2>
+  <div class="quote">「教务系统只能看课，手机上既没有提醒，也不方便随时翻『今天还有什么』。我想要一个自己的日程助手：课表能一次导进去、手机上随时看得到今天和这一周、快上课前能被提醒——而且数据得落在云端，换手机不用重录。」</div>
+  <ul>
+    <li>一周只为这三件事：<b>数据落云端</b>（不锁在某个浏览器里）、<b>公网可读</b>（任何设备打开就能看）、<b>可验证</b>（不是演示用假数据）。</li>
+  </ul>
+
+  <h2>② 核心流程 <span class="t">0:30–2:00</span>（含一次真实写入 + 刷新持久化）</h2>
+  <ul>
+    <li>打开静态托管页：<code>https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com</code> —— 首次访问先出云厂商对测试域名的「风险提醒」，点一次「确定访问」进页面（<b>不是我们的页面</b>）。</li>
+    <li>页面顶部状态点变绿：<code>后端连通，返回：{"ok":true}</code>。</li>
+    <li>点「<b>刷新数据</b>」→ 显示 <b>学期 6 / 日程 22 / 待办 10</b>、当前学期「2026 秋」的课程、未完成待办、「数据最后更新」取库里最大的 <code>updated_at</code>。</li>
+    <li><b>真实写入环节（如实说明）</b>：点「写入测试」会看到页面自己写的解释——<code>POST/PUT/DELETE</code> 还没实现，今天点不出真正的写入。这一步我不做假动作，直接说明本周只完成读闭环。</li>
+    <li><b>替代验证（仍证明"读的是真库"）</b>：CloudBase 控制台把某条待办标题改一个字 → 回页面点「刷新数据」→ 数字 / 列表跟着变、「数据最后更新」跳到新时间。</li>
+    <li>收口一句：「本周真正闭环是 <b>建表 → 种子 → 只读接口 → 公网页面</b>，写入是下周第一件事。」</li>
+  </ul>
+  <div class="warn">不要改生产数据：本轮验收全程只读；要演示"库变页面就变"，只动测试环境的一条待办标题，并改回。</div>
+
+  <h2>③ 提示词改写过程 <span class="t">2:00–3:00</span></h2>
+  <table>
+    <tr><th style="width:8%">轮次</th><th style="width:26%">一开始怎么说</th><th style="width:36%">改成了什么</th><th>为什么改</th></tr>
+    <tr><td>1</td><td>「帮我写一个日程助手的后端」</td><td>「用 CloudBase + <b>PostgreSQL</b>；先只做 <code>GET /api/health</code> 并保证<b>公网可访问</b>」</td><td>环境先钉死（Day 16 才发现只有 PG，MySQL 建表语法整段要改）；先证明"通路"再谈功能</td></tr>
+    <tr><td>2</td><td>「把接口都实现」</td><td>「只做<b>只读</b> <code>GET /api/list</code>；返回必须带 <code>counts</code>，作为和数据库控制台对账的凭据」</td><td>范围收窄到一个能当场验证的接口；<code>counts</code> 让"取漏了"一眼可见</td></tr>
+    <tr><td>3</td><td>「代码写得干净点」</td><td>「把<b>数据访问</b>从接口里拆出去：接口层不许出现 URL / headers / <code>process.env</code>」</td><td>"干净"无法验收，"接口层不许出现什么"可以验收（Day 19 拆出 <code>db.js</code>，接口形状不变）</td></tr>
+    <tr><td>4</td><td>「记得同步文档」</td><td>「每次改接口，同时改三处：<b>函数里的类型白名单 + <code>docs/api-contract.md</code> + <code>db/schema.sql</code> 注释</b>」</td><td>单一处改动必然漂移；把"三处同步"写成硬规则，契约才可信</td></tr>
+  </table>
+  <div class="quote">一句话总结给听众：<b>把「做得好」改写成「能当场验证的形状」</b>。</div>
+
+  <h2>④ 验证方式 <span class="t">3:00–4:00</span></h2>
+  <table>
+    <tr><th style="width:26%">验证</th><th style="width:40%">命令 / 动作</th><th>期望</th></tr>
+    <tr><td>服务活着</td><td><code>curl -i .../api/health</code></td><td><code>200</code> + <code>{"ok":true}</code></td></tr>
+    <tr><td>读到真库</td><td><code>curl -s ".../api/list?limit=200"</code></td><td><code>ok:true</code>，<code>counts 6/22/10</code>，含真实行与 <code>updated_at</code></td></tr>
+    <tr><td>写接口不存在（诚实标记）</td><td><code>curl -X POST .../api/favorite -d '{}'</code></td><td><code>404</code> + <code>{"code":"INVALID_PATH"}</code></td></tr>
+    <tr><td>跨域只放白名单</td><td>带 <code>Origin: https://evil.example.com</code> 再请求一次</td><td><code>200</code> 但<b>无任何 <code>access-control-*</code> 头</b></td></tr>
+    <tr><td>预检</td><td><code>curl -X OPTIONS .../api/list</code></td><td><code>204</code> + <code>access-control-allow-methods: GET</code></td></tr>
+    <tr><td>契约与实现一致</td><td>打开 <code>docs/api-contract.md</code> 对 5 条接口</td><td>2 ✅ / 3 ⬜，与线上行为逐条对上</td></tr>
+    <tr><td>第三方复核</td><td>同伴独立只读验证（<code>docs/Day21-同伴交叉验证.md</code>）</td><td>三行结论：能打开 / 读真库·写不可用 / 无报错</td></tr>
+  </table>
+
+  <h2>⑤ 本周未完成项 <span class="t">4:00–4:30</span></h2>
+  <ul>
+    <li><b>写闭环没开始</b>：<code>POST/PUT/DELETE</code> 三个写接口全是占位（线上 404），所以"真实写入 + 刷新持久化"只能在控制台侧演示。</li>
+    <li><b>没有鉴权</b>：读接口免登录（服务端 Key 不出云函数，只读是安全的选择）；写接口必须先定登录态，否则谁都能改库。</li>
+    <li><b>类型白名单偏窄</b>：只有 <code>course/event/routine</code>，<code>exam/lectures/reviews</code> 还没进（要改三处）。</li>
+    <li><b>不分页</b>：用 <code>limit(1–500)</code> 收口，数据量大起来要补 <code>page/pageSize</code>。</li>
+    <li><b>前端 App 还没连云</b>：手机端目前仍是本地数据，把云接口接进 App 是下一阶段。</li>
+  </ul>
+
+  <h2>附：可粘贴的命令清单</h2>
+<pre>$base='https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com'
+curl.exe -s -i "$base/api/health"
+curl.exe -s "$base/api/list?limit=200"
+curl.exe -s -D - -o NUL -H "Origin: https://evil.example.com" "$base/api/health"
+curl.exe -s -D - -o NUL -X OPTIONS -H "Access-Control-Request-Method: GET" "$base/api/list"
+curl.exe -s -i -X POST -H "Content-Type: application/json" -d '{}' "$base/api/favorite"
+
+$site='https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com'
+curl.exe -s -I $site
+curl.exe -s $site | Select-String '&lt;title&gt;'</pre>
+  <div class="foot">配套：<code>docs/Day21-演示提纲.md</code>（本文） ｜ <code>docs/Day21-第3周验收表.md</code>（逐项证据） ｜ <code>docs/Day21-同伴交叉验证.md</code>（第三方复核）</div>
+</body></html>
