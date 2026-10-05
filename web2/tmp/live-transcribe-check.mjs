@@ -20,10 +20,16 @@ const now = new Date()
 const mon = new Date(now)
 mon.setDate(now.getDate() - ((now.getDay() + 6) % 7))
 const MONDAY = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`
+const TODAY_WD = ((now.getDay() + 6) % 7) + 1
+/* 今天页的录音钮按需出现（用户 m12661）：只在正落在某节课覆盖时间里才给钮。
+   本脚本验的是转写链路，与「哪节课」无关 → 就铺一节 00:00–24:00 的课，让钮在任何跑测时刻都在。 */
 const seedDoc = JSON.stringify({
   app: 'sched', schema_version: 1, exported_at: '2026-10-01T02:00:00.000Z',
   semester: { id: 'sem1', name: '测试学期', first_monday: MONDAY, total_weeks: 16 },
-  schedules: [], todos: [],
+  schedules: [
+    { id: 'cover', type: 'course', semester_id: 'sem1', title: '高等数学', location: '教1-101', weekday: TODAY_WD, start_time: '00:00', duration: 1440, week_rule: 'every' },
+  ],
+  todos: [],
 })
 
 const FAKE = `

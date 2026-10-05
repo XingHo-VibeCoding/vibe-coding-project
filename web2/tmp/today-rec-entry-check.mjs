@@ -19,13 +19,14 @@ const now = new Date()
 const mon = new Date(now)
 mon.setDate(now.getDate() - ((now.getDay() + 6) % 7))
 const MONDAY = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`
+const TODAY_WD = ((now.getDay() + 6) % 7) + 1
 
 const seedDoc = JSON.stringify({
   app: 'sched', schema_version: 1, exported_at: '2026-10-01T02:00:00.000Z',
   semester: { id: 'sem1', name: '测试学期', first_monday: MONDAY, total_weeks: 16 },
   schedules: [
-    { id: 'c1', type: 'course', semester_id: 'sem1', title: '高等数学', location: '教1-101', weekday: 1, start_time: '08:00', duration: 90, week_rule: 'every' },
-    { id: 'c2', type: 'course', semester_id: 'sem1', title: '高等数学', location: '教1-101', weekday: 3, start_time: '08:00', duration: 90, week_rule: 'every' },
+    { id: 'c1', type: 'course', semester_id: 'sem1', title: '高等数学', location: '教1-101', weekday: TODAY_WD, start_time: '08:00', duration: 90, week_rule: 'every' },
+    { id: 'c2', type: 'course', semester_id: 'sem1', title: '高等数学', location: '教1-101', weekday: (TODAY_WD % 7) + 1, start_time: '08:00', duration: 90, week_rule: 'every' },
   ],
   todos: [],
 })
@@ -40,7 +41,7 @@ const pageErrors = []
 page.on('pageerror', (e) => pageErrors.push(e.message))
 await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(seedDoc)})`)
 await page.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
-await page.goto(URL, { waitUntil: 'domcontentloaded' })
+await page.goto(URL + '?t=08:30', { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(800)
 
 /* A. 今日页入口卡 */
@@ -73,6 +74,25 @@ t('C2 「我的」页场次说明未丢', mineText.includes('长按场次可删�
 
 /* D. 无页面错误 */
 t('D1 全程无 pageerror', pageErrors.length === 0, pageErrors.join(' | '))
+
+/* E. 录音钮按需出现（用户 m12661：不常驻，只有上课时候才出现） */
+const p2 = await ctx.newPage()
+await p2.goto(URL + '?t=06:00', { waitUntil: 'domcontentloaded' }) // 第一节 08:00 之前、且不在开课前 5 分钟内
+await p2.waitForTimeout(700)
+t('E1 没在课上（06:00）→ 今天页不给录音钮', (await p2.locator('[data-today-rec-start]').count()) === 0)
+const p4 = await ctx.newPage()
+await p4.goto(URL + '?t=07:56', { waitUntil: 'domcontentloaded' }) // 开课前 5 分钟（courseCovering 的前窗）→ 给钮
+await p4.waitForTimeout(700)
+t('E2 开课前 5 分钟内（07:56）→ 给录音钮', (await p4.locator('[data-today-rec-start]').count()) === 1)
+const p5 = await ctx.newPage()
+await p5.goto(URL + '?t=08:30', { waitUntil: 'domcontentloaded' })
+await p5.waitForTimeout(700)
+t('E3 课上（08:30）→ 给录音钮', (await p5.locator('[data-today-rec-start]').count()) === 1)
+const p3 = await ctx.newPage()
+await p3.goto(URL + '?t=12:30', { waitUntil: 'domcontentloaded' }) // 课间空档
+await p3.waitForTimeout(700)
+t('E4 课间空档（12:30）→ 不给录音钮', (await p3.locator('[data-today-rec-start]').count()) === 0)
+t('E5 不常驻也不影响「我的」页那条独立入口', (await p3.locator('[data-page="me"] button:has-text("开始录音")').count()) === 1)
 
 await browser.close()
 const fails = results.filter((r) => !r[1])

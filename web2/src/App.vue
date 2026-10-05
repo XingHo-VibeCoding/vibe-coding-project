@@ -2944,8 +2944,14 @@ const heroSubline = computed(() => {
   const until = minUntil(c)
   return until > 0 && until <= 120 ? `${head} · ${until} 分钟后开始` : head
 })
-/* 主体两行文案：review 形态换成「收个尾」，其余沿用状态行口径（headerCourseText / 状态轴可爱文案） */
+/* 主体第一行：review 形态换成「收个尾」，其余沿用状态行口径（headerCourseText） */
 const heroTitle = computed(() => (heroMode.value === 'review' ? '今天收个尾' : headerCourseText.value))
+/* 录音钮按需出现（用户 m12661：不用常驻，只有上课时候才出现）：
+   判据与开录挂课名/排自动停同一个 courseCovering（含开课前 5 分钟）——也就是说
+   「这一颗钮出现在哪儿，按下去就会挂到哪节课上」，口径天然一致；
+   录音进行中永远显示（课上到一半下课了也要能停）。 */
+const recEntryOn = computed(() => !!recActiveId.value || !!courseCovering(todayCourses.value, nowTime.value))
+
 const heroSub = computed(() => {
   if (heroMode.value === 'review') return '两分钟：今天怎么样、明天最重要的一件事，写完存成今天的日精进'
   if (heroMode.value === 'class') return heroSubline.value
@@ -3647,7 +3653,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   @click="openReview('ask')"
                 >开始复盘</button>
                 <button
-                  v-if="!recActiveId"
+                  v-if="recEntryOn && !recActiveId"
                   data-today-rec-start
                   aria-label="开始录音"
                   class="flex items-center gap-1 rounded-full bg-primary-500 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-primary-500/25 transition active:scale-95"
@@ -3658,7 +3664,7 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
                   录音
                 </button>
                 <button
-                  v-else
+                  v-if="recActiveId"
                   data-today-rec-stop
                   class="flex items-center gap-1 rounded-full bg-red-400 px-3 py-2 text-xs font-semibold text-white shadow-sm transition active:scale-95"
                   @click="stopRec"
