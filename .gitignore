@@ -33,3 +33,10 @@ desktop.ini
 # ===== 云函数代码包：上传 CloudBase 控制台用的 zip 是构建产物 =====
 # 源码在 cloudfunctions/<函数名>/index.js，zip 随时可以重新打包
 cloudfunctions/*/*.zip
+
+# ===== 部署清单：含服务端密钥（WRITE_TOKEN / CLOUDBASE_API_KEY）绝不能进仓库 =====
+# 模板见 cloudbaserc.example.json，把占位符换成自己的值再改名为 cloudbaserc.json
+cloudbaserc.json
+
+# ===== 静态托管发布前的自动备份（tcb hosting deploy --safe 生成）=====
+.cloudbase-backup/

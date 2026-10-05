@@ -51,16 +51,21 @@
       border: 1px solid #d1d5db; background: #fff; color: #374151; cursor: pointer;
     }
     button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+    button.danger { color: #b91c1c; border-color: #fecaca; }
     button:active { transform: translateY(1px); }
     .note { margin-top: 10px; font-size: 12px; line-height: 1.7; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px; }
     .note b { color: #78350f; }
+    .note.ok { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+    .note.ok b { color: #14532d; }
     .url { margin-top: 10px; font-size: 11px; color: #9ca3af; line-height: 1.7; }
+    .token { font: inherit; font-size: 12px; font-family: Consolas, monospace; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 8px; width: 190px; }
+    pre.json { margin-top: 8px; font-size: 11px; font-family: Consolas, monospace; background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>大学生日程助手 · 数据检查台</h1>
-    <p class="sub">Day 20 —— 这个页面不走任何假数据：下面的数字和内容，都是浏览器直接向公网接口要回来的数据库真实数据。</p>
+    <p class="sub">Day 22 —— 这个页面不走任何假数据：下面的数字和内容，都是浏览器直接向公网接口要回来的数据库真实数据；写接口也已上线，可以在这里真的往库里写、改、删。</p>
 
     <div class="card">
       <h2>后端服务状态</h2>
@@ -80,20 +85,29 @@
     </div>
 
     <div class="card">
+      <h2>写接口（Day 22 已上线，真的会写库）</h2>
+      <div class="meta">
+        <span class="k">写口令 X-Write-Token</span>
+        <span class="v"><input class="token" id="token" type="password" placeholder="填 WRITE_TOKEN" /></span>
+      </div>
+      <p class="url">口令不写在页面里（页面是公开静态资源，写进去等于公开）；测试环境口令见课程记录。</p>
+      <div class="btns">
+        <button class="primary" id="btn-create">新增测试待办</button>
+        <button id="btn-update">改这一条</button>
+        <button class="danger" id="btn-delete">删这一条</button>
+      </div>
+      <p class="url" id="write-target">当前测试行：<code id="last-id">（还没建）</code></p>
+      <div class="note" id="write-note" style="display:none"></div>
+      <pre class="json" id="write-json" style="display:none"></pre>
+      <p class="url" id="create-url">POST …</p>
+    </div>
+
+    <div class="card">
       <h2>检查台</h2>
       <div class="meta"><span class="k">数据最后更新</span><span class="v" id="last-updated">–</span></div>
       <div class="meta"><span class="k">本次拉取</span><span class="v" id="fetched-at">–</span></div>
       <div class="btns">
         <button class="primary" id="btn-refresh">刷新数据</button>
-        <button id="btn-write">写入测试</button>
-      </div>
-      <div class="note" id="write-note" style="display:none">
-        <b>写接口还没实现。</b><br />
-        api-contract.md 里 <code>POST /api/favorite</code>、<code>PUT /api/update</code>、<code>DELETE /api/delete</code> 仍是「未实现」，
-        今天也不改后端代码，所以这里点不出真正的写入。
-        <br /><br />
-        <b>今天的写入验证这样做：</b>去 CloudBase 控制台的数据库里改一条记录（比如把某条待办的标题改掉、或加一条）→
-        回到本页点「刷新数据」→ 上面的数字 / 列表跟着变，就说明这个页面读的是库里的真数据，不是写死的。
       </div>
     </div>
 
@@ -101,12 +115,12 @@
       <h2>接口清单（见 api-contract.md）</h2>
       <div class="api"><span><span class="m">GET</span> <code>/api/health</code></span><span class="live">已上线</span></div>
       <div class="api"><span><span class="m">GET</span> <code>/api/list</code></span><span class="live">已上线（Day 17）</span></div>
-      <div class="api"><span><span class="m">POST</span> <code>/api/favorite</code></span><span class="todo">未实现</span></div>
-      <div class="api"><span><span class="m">PUT</span> <code>/api/update</code></span><span class="todo">未实现</span></div>
-      <div class="api"><span><span class="m">DELETE</span> <code>/api/delete</code></span><span class="todo">未实现</span></div>
+      <div class="api"><span><span class="m">POST</span> <code>/api/create</code></span><span class="live">已上线（Day 22）</span></div>
+      <div class="api"><span><span class="m">PUT</span> <code>/api/update</code></span><span class="live">已上线（Day 22）</span></div>
+      <div class="api"><span><span class="m">DELETE</span> <code>/api/delete</code></span><span class="live">已上线（Day 22）</span></div>
     </div>
 
-    <p class="foot">静态托管页 · 数据来自 CloudBase 数据库<br />前端不含任何密钥（凭据只放在云函数的环境变量里）</p>
+    <p class="foot">静态托管页 · 数据来自 CloudBase 数据库<br />前端不含任何密钥（数据库凭据只放在云函数的环境变量里，写口令由使用者自己填）</p>
   </div>
 
   <script>
@@ -115,15 +129,29 @@
     var API_BASE = 'https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com'
     var HEALTH_URL = API_BASE + '/api/health'
     var LIST_URL = API_BASE + '/api/list?limit=200'
+    var CREATE_URL = API_BASE + '/api/create'
+    var UPDATE_URL = API_BASE + '/api/update'
+    var DELETE_URL = API_BASE + '/api/delete'
 
     document.getElementById('health-url').textContent = HEALTH_URL
     document.getElementById('list-url').textContent = LIST_URL
+    document.getElementById('create-url').textContent = 'POST ' + CREATE_URL + ' ／ PUT ' + UPDATE_URL + ' ／ DELETE ' + DELETE_URL + '?table=todos&id=…'
+
+    var lastId = ''
+    function refreshTarget() {
+      document.getElementById('last-id').textContent = lastId || '（还没建）'
+    }
+    refreshTarget()
 
     function pad(n) { return (n < 10 ? '0' : '') + n }
     function nowText() {
       var d = new Date()
       return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
         + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+    }
+    function todayText() {
+      var d = new Date()
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
     }
     // 库里所有行里最新的 updated_at —— 用来证明「页面看到的是当下库里的样子」
     function latestUpdated(data) {
@@ -203,11 +231,91 @@
       return Promise.all([loadHealth(), loadList()])
     }
 
-    document.getElementById('btn-refresh').addEventListener('click', loadAll)
-    document.getElementById('btn-write').addEventListener('click', function () {
+    // ---- 写接口：口令从输入框拿，绝不写死在页面里 ----
+    function token() {
+      return (document.getElementById('token').value || '').trim()
+    }
+    function showNote(ok, html) {
       var n = document.getElementById('write-note')
-      n.style.display = (n.style.display === 'none') ? 'block' : 'none'
+      n.className = ok ? 'note ok' : 'note'
+      n.innerHTML = html
+      n.style.display = 'block'
+    }
+    function showJson(obj) {
+      var el = document.getElementById('write-json')
+      el.textContent = JSON.stringify(obj, null, 2)
+      el.style.display = 'block'
+    }
+    function callApi(url, options) {
+      options = options || {}
+      options.headers = Object.assign({ 'X-Write-Token': token() }, options.headers || {})
+      return fetch(url, options).then(function (r) {
+        return r.json().then(function (d) { return { status: r.status, body: d } })
+      })
+    }
+
+    document.getElementById('btn-create').addEventListener('click', function () {
+      if (!token()) { showNote(false, '<b>先填口令。</b>写接口要带 <code>X-Write-Token</code>，页面里不预置。'); return }
+      var id = 'todo_web_' + Date.now().toString(36)
+      var body = { table: 'todos', row: { id: id, title: '检查台写入 ' + nowText(), due_date: todayText() } }
+      callApi(CREATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(function (res) {
+        showJson(res.body)
+        if (res.body && res.body.ok) {
+          lastId = id
+          refreshTarget()
+          showNote(true, '<b>新增成功（HTTP ' + res.status + '）。</b>写了 <code>' + id + '</code>：'
+            + 'created_at 由服务端给（' + (res.body.row && res.body.row.created_at) + '）。'
+            + '下面「库里的真实数据」会刷新，待办数 +1 —— 这就是「公网真实写入 + 刷新后仍在」的证据。')
+        } else {
+          showNote(false, '<b>新增失败（HTTP ' + res.status + '）。</b>' + ((res.body && res.body.message) || ''))
+        }
+        return loadList()
+      }).catch(function (e) { showNote(false, '请求出错：' + (e && e.message ? e.message : '未知错误')) })
     })
+
+    document.getElementById('btn-update').addEventListener('click', function () {
+      if (!token()) { showNote(false, '<b>先填口令。</b>'); return }
+      if (!lastId) { showNote(false, '先在这一次会话里「新增测试待办」，才有东西可改（本页不拿库里的正式数据做实验）。'); return }
+      var body = { table: 'todos', id: lastId, patch: { title: '检查台改过 ' + nowText(), done: true } }
+      callApi(UPDATE_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(function (res) {
+        showJson(res.body)
+        if (res.body && res.body.ok) {
+          var row = res.body.row || {}
+          showNote(true, '<b>修改成功（HTTP ' + res.status + '）。</b>字段级更新：title 与 done 被改，'
+            + '<code>updated_at</code> 变成 ' + row.updated_at + '，而 <code>created_at</code> 仍是 ' + row.created_at + '（服务端只刷 updated_at）。')
+        } else {
+          showNote(false, '<b>修改失败（HTTP ' + res.status + '）。</b>' + ((res.body && res.body.message) || ''))
+        }
+        return loadList()
+      }).catch(function (e) { showNote(false, '请求出错：' + (e && e.message ? e.message : '未知错误')) })
+    })
+
+    document.getElementById('btn-delete').addEventListener('click', function () {
+      if (!token()) { showNote(false, '<b>先填口令。</b>'); return }
+      if (!lastId) { showNote(false, '这一轮没有可删的测试行（删除只针对本页刚建的那条）。'); return }
+      var url = DELETE_URL + '?table=todos&id=' + encodeURIComponent(lastId)
+      callApi(url, { method: 'DELETE' }).then(function (res) {
+        showJson(res.body)
+        if (res.body && res.body.ok) {
+          showNote(true, '<b>删除成功（HTTP ' + res.status + '）。</b>被删的那一行由接口原样带回，方便核对删掉的是什么；待办数会 -1。')
+          lastId = ''
+          refreshTarget()
+        } else {
+          showNote(false, '<b>删除失败（HTTP ' + res.status + '）。</b>' + ((res.body && res.body.message) || ''))
+        }
+        return loadList()
+      }).catch(function (e) { showNote(false, '请求出错：' + (e && e.message ? e.message : '未知错误')) })
+    })
+
+    document.getElementById('btn-refresh').addEventListener('click', loadAll)
 
     loadAll()
   </script>

@@ -1,0 +1,28 @@
+{
+  "version": "2.1",
+  "envId": "<你的 CloudBase 环境 ID>",
+  "functionRoot": "./cloudfunctions",
+  "functions": [
+    {
+      "name": "write",
+      "timeout": 5,
+      "runtime": "Nodejs20.19",
+      "installDependency": false,
+      "envVariables": {
+        "WRITE_TOKEN": "<自己定一个写口令，别提交真实值>",
+        "TCB_ENV_ID": "<你的 CloudBase 环境 ID>",
+        "CLOUDBASE_API_KEY": "<CloudBase 服务端 API Key（控制台可生成）>"
+      }
+    }
+  ],
+  "gateway": {
+    "domain": "<你的 HTTP 访问服务默认域名>",
+    "routes": [
+      { "path": "/api/health", "target": "function:scf-nodejs-helloworld-d9nt" },
+      { "path": "/api/list", "target": "function:list" },
+      { "path": "/api/create", "target": "function:write" },
+      { "path": "/api/update", "target": "function:write" },
+      { "path": "/api/delete", "target": "function:write" }
+    ]
+  }
+}

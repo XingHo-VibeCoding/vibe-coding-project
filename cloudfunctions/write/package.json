@@ -1,0 +1,6 @@
+{
+  "name": "write",
+  "version": "1.0.0",
+  "description": "Day 22 写接口：POST /api/create、PUT /api/update、DELETE /api/delete —— 经官方 REST API(PostgREST) 写 semesters / schedules / todos 三张表；口令鉴权（WRITE_TOKEN）",
+  "main": "index.js"
+}

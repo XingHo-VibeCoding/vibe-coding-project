@@ -1,7 +1,7 @@
 # 接口契约（api-contract.md）
 
 > 本文件登记大学生日程助手后端接口的形状。  
-> Day 15 只实现 `/api/health` 并保证公网可访问；其余接口仅做占位，Day 16–20 逐步实现。
+> Day 15 只实现 `/api/health` 并保证公网可访问；Day 17 补 `GET /api/list`；**Day 22 补齐写闭环**：新增 `POST /api/create`、`PUT /api/update`、`DELETE /api/delete`（三条路由共用 `write` 云函数 + `X-Write-Token` 口令）。原 `POST /api/favorite`（收藏/取消收藏）在业务上并不存在，已移除。
 
 ---
 
@@ -12,8 +12,10 @@
 | CloudBase 环境 ID | `vibecoding-test-d5fqmhbb955e19dd` |
 | HTTP 网关（后端接口） | `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com` |
 | 静态托管（前端页面） | `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com` |
-| 已上线接口 | `GET /api/health`、`GET /api/list` |
-| 静态托管当前页面 | 「大学生日程助手 · 数据检查台」（Day 20 版；首次访问会先落 CloudBase 测试域名的「风险提醒」页，点一次「确定访问」才进页面） |
+| 已上线接口 | `GET /api/health`、`GET /api/list`、`POST /api/create`、`PUT /api/update`、`DELETE /api/delete` |
+| 静态托管当前页面 | 「大学生日程助手 · 数据检查台」（Day 22 版；首次访问会先落 CloudBase 测试域名的「风险提醒」页，点一次「确定访问」才进页面） |
+| 写接口实现 | 云函数 `write`（Nodejs20.19、Event 型，网关路径 `/api/create`、`/api/update`、`/api/delete`）；`WRITE_TOKEN` 与数据库凭据只在函数环境变量里 |
+| 部署清单 | 本地 `cloudbaserc.json`（含 `WRITE_TOKEN` 与服务端 API Key，已在 `.gitignore` 里**绝不提交**）；模板见仓库根 `cloudbaserc.example.json`。部署两步：`tcb fn deploy write -e <envId> --force`，再 `tcb deploy --only gateway`（按 `gateway.routes` 幂等收敛网关路由，不动的路由会 Skip） |
 
 ---
 
@@ -23,9 +25,10 @@
 |------|------|------|------|------|
 | 1 | GET | `/api/health` | 服务健康检查 | ✅ 已上线 |
 | 2 | GET | `/api/list` | 获取列表数据 | ✅ 已实现（Day 17） |
-| 3 | POST | `/api/favorite` | 收藏/取消收藏某条 | ⬜ 未实现（Day 17+） |
-| 4 | PUT | `/api/update` | 修改某条数据 | ⬜ 未实现（Day 18+） |
-| 5 | DELETE | `/api/delete` | 删除某条数据 | ⬜ 未实现（Day 19+） |
+| 3 | POST | `/api/create` | 新增一行（todos / schedules） | ✅ 已实现（Day 22） |
+| 4 | PUT | `/api/update` | 按 id 修改某行的字段 | ✅ 已实现（Day 22） |
+| 5 | DELETE | `/api/delete` | 按 id 删除某行 | ✅ 已实现（Day 22） |
+| — | POST | ~~`/api/favorite`~~ | 收藏/取消收藏（业务上不存在，已废弃） | 🚫 已移除 |
 
 ---
 
@@ -96,64 +99,109 @@
 
 ---
 
-## 3. 收藏/取消收藏（占位）
+## 3. 新增一行（已实现，Day 22）
 
 - **请求**
-  - `POST /api/favorite`
-  - Body 待定，可能包含 `{ "id": "string", "favorited": true }`
+  - `POST /api/create`
+  - 鉴权：请求头 `X-Write-Token: <口令>`（也支持 `?token=<口令>` 查询参数，方便 curl 调试）
+  - Body：
+    ```json
+    {
+      "table": "todos",
+      "row": { "id": "todo_002", "title": "高数作业 §2.1", "due_date": "2026-09-30" }
+    }
+    ```
+  - `table` 白名单：`todos` / `schedules`（`cloudfunctions/write/index.js` 的 `TABLES`）
+  - `row.id` 必填，沿用前端的字符串 id 口径（`todo_*` / `sch_*` / `evt_*` / `rout_*`）
+  - 只接受出现在该表列白名单里的字段；多传的列会被拒绝（`400`），防止写出库里不存在的列
 
-- **响应示例（占位）**
+- **响应示例（真实）**
   ```json
-  { "ok": true }
+  {
+    "ok": true, "action": "create", "table": "todos",
+    "row": { "id": "todo_002", "title": "…", "note": null, "due_date": "2026-10-07",
+             "done": false, "done_at": null, "source": "manual",
+             "created_at": "2026-10-05T13:00:52.328", "updated_at": "2026-10-05T13:00:52.328" }
+  }
   ```
-
-- **Day 17 实现时确认**
-  - 是否需要用户登录态
-  - 重复收藏是幂等返回还是报错
+  HTTP `201`。`created_at` / `updated_at` 由**服务端写**（schema 不设触发器，时间戳由应用层负责，与 `db/schema.sql` 的口径一致）。
 
 ---
 
-## 4. 修改数据（占位）
+## 4. 修改一行（已实现，Day 22）
 
 - **请求**
   - `PUT /api/update`
-  - Body 待定，可能包含 `{ "id": "string", "data": { ... } }`
+  - 鉴权：同 `/api/create`
+  - Body：
+    ```json
+    {
+      "table": "todos",
+      "id": "todo_002",
+      "patch": { "title": "改后的标题", "done": true, "done_at": "2026-10-05T21:00:00" }
+    }
+    ```
+  - `patch` 是**字段级**更新（不是整行替换），字段同样受列白名单限制；`patch` 为空报 `400`
+  - 服务端刷新 `updated_at`，`created_at` 不动
 
-- **响应示例（占位）**
+- **响应示例（真实）**
   ```json
-  { "ok": true }
+  {
+    "ok": true, "action": "update", "table": "todos", "id": "todo_002",
+    "row": { "id": "todo_002", "title": "改后的标题", "note": "…",
+             "created_at": "2026-10-05T13:00:52.328", "updated_at": "2026-10-05T21:01:05.383426" }
+  }
   ```
-
-- **Day 18 实现时确认**
-  - 是整段替换还是字段级 PATCH
-  - 修改权限校验规则
+  HTTP `200`；id 不存在 → `404`。
 
 ---
 
-## 5. 删除数据（占位）
+## 5. 删除一行（已实现，Day 22）
 
 - **请求**
   - `DELETE /api/delete`
-  - Body 或 Query 待定，可能包含 `{ "id": "string" }`
+  - 鉴权：同 `/api/create`
+  - 参数：`?table=todos&id=todo_002`（也支持同形状的 JSON body）
+  - 物理删除（不做软删除）；删除前先把整行读出来一并返回，便于调用方核对删掉的是什么
 
-- **响应示例（占位）**
+- **响应示例（真实：被删的整行原样带回）**
   ```json
-  { "ok": true }
+  {
+    "ok": true, "action": "delete", "table": "todos", "id": "todo_002",
+    "row": { "id": "todo_002", "title": "改后的标题", "…": "被删那一行的完整字段" }
+  }
   ```
+  HTTP `200`；id 不存在 → `404`。
 
-- **Day 19 实现时确认**
-  - 是物理删除还是软删除
-  - 删除权限校验规则
+---
+
+## 6. 写接口的鉴权与错误码（Day 22）
+
+- **口令**：请求头 `X-Write-Token`（或 `?token=`）与云函数环境变量 `WRITE_TOKEN` 比对。
+  ⚠️ 当前是**共享口令**，只适合测试环境：口令写在页面里就等于公开，拿到它的人可以写库。升级路径＝CloudBase 匿名登录 + 每行 `owner_uid`（本仓尚未做，列在后续计划里）。
+- **校验顺序**：先查口令 → 再查方法 → 再解析 body。所以未授权一律 `401`，不泄露「body 格式」这类探测信息。
+- **错误码表（实测）**
+
+  | 场景 | HTTP | body |
+  |------|------|------|
+  | 缺口令 | 401 | `{"ok":false,"message":"缺少口令：请带 X-Write-Token 请求头（或 ?token= 查询参数）","status":401}` |
+  | 口令错 | 401 | `{"ok":false,"message":"口令不正确","status":401}` |
+  | 方法不支持（如 GET） | 405 | `{"ok":false,"message":"不支持的方法：GET（写接口只接受 POST / PUT / DELETE）","status":405}` |
+  | 表不在白名单 / 字段超白名单 / 缺必填 / body 非 JSON 对象 | 400 | `{"ok":false,"message":"…","status":400}` |
+  | id 不存在 | 404 | `{"ok":false,"message":"…","status":404}` |
+  | 函数环境变量缺失 | 500 | `{"ok":false,"message":"环境变量未配置：TCB_ENV_ID / CLOUDBASE_API_KEY","status":500}` |
+
+- **实现位置**：`cloudfunctions/write/index.js`（接口层：口令 / 方法 / body / 列白名单 / 错误码）+ `cloudfunctions/write/db.js`（数据访问层：PostgREST 读写）。与 `list` 同规矩——接口层不出现 URL、headers、`process.env`。
 
 ---
 
 ## 通用约定
 
 1. **返回格式**：接口统一返回 JSON。成功时 `ok: true`，失败时 `ok: false` 并携带 `message`。
-2. **鉴权**：Day 15–20 先全部使用「免鉴权」验证通路与形态；登录态方案 Day 21 后再定。
-3. **跨域**：CloudBase HTTP 网关只放**白名单 Origin**——Day 20 实测只有静态托管域名 `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com` 会拿到 `access-control-allow-origin`（并带 `access-control-allow-credentials: true`），`Origin: https://evil.example.com`、web2 线上域名、以及不带 `Origin` 的请求**都没有任何 `access-control-*` 头**（不是 `*`，也不回显任意 Origin）；`OPTIONS` 预检返回 `204` + `access-control-allow-methods: GET`。Day 20 已用**真实浏览器（不关 CORS）**验证线上页面能跨域拿到 `/api/health` 与 `/api/list`。如后续换自定义域名，要把新域名加进白名单。
+2. **鉴权**：读接口（`/api/health`、`/api/list`）保持**免鉴权**——服务端 Key 只存在云函数里，公网只暴露只读路由；写接口（`/api/create`、`/api/update`、`/api/delete`）**必须带 `X-Write-Token`**（Day 22 起的共享口令方案，见第 6 节）。
+3. **跨域**：CloudBase HTTP 网关只放**白名单 Origin**——Day 20 实测只有静态托管域名 `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com` 会拿到 `access-control-allow-origin`（并带 `access-control-allow-credentials: true`），`Origin: https://evil.example.com`、web2 线上域名、以及不带 `Origin` 的请求**都没有任何 `access-control-*` 头**（不是 `*`，也不回显任意 Origin）；`OPTIONS` 预检返回 `204`。Day 20 已用**真实浏览器（不关 CORS）**验证线上页面能跨域拿到 `/api/health` 与 `/api/list`。Day 22 补测写接口的预检：`OPTIONS /api/create` 带 `Access-Control-Request-Method: POST|PUT|DELETE` 与 `Access-Control-Request-Headers: content-type,x-write-token` 时，网关回 `204` 且 `access-control-allow-methods` / `access-control-allow-headers` **回显请求的值**；只请求 `GET` 时才回 `GET`。所以白名单域名下的浏览器页面可以直接调写接口（「数据检查台」就是这么做的）。如后续换自定义域名，要把新域名加进白名单；**带自定义请求头的接口**也要确认预检回显（网关会回显，无需手工配置）。
 4. **版本管理**：接口路径暂不带版本号 `v1`，等 Day 25 之后若形态稳定再统一加 `/api/v1/` 前缀。
 
 ---
 
-*最后更新：2026-10-04（Day 20，前端改为「数据检查台」并重新部署到静态托管；接口实现进度不变，仍是 1、2 号）*
+*最后更新：2026-10-05（Day 22，写闭环上线：`write` 云函数 + `/api/create`、`/api/update`、`/api/delete` 三条网关路由已公网验收；`/api/favorite` 因业务上不存在而移除；本次不涉及类型白名单与表结构变化，函数白名单与 `db/schema.sql` 无需同步）*
