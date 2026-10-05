@@ -2923,6 +2923,28 @@ function rowMeta(c) {
   return ''
 }
 
+/* ---------------- Stage 4：D↔F 两种密度 ----------------
+   D（默认）：已过压成一行「已过 N 件 · 首–末」+ 接下来最多 3 行，其余进「展开全部」；
+   点「展开全部」就地换 F：26px 全天表，一行一条，已过就是整行灰字（信息一条不丢，只换密度）。
+   · 行高两种密度完全一样（都是 RowItem 的 26px），切换时列表不跳高度；
+   · 「已过 N 件」点开是就地展开（不换页、不动别处），再点收起；
+   · 顶上「现在」卡与页脚计数不参与折叠——首屏第一眼永远是「现在做什么」。 */
+const LIVE_PREVIEW = 3
+const todayPast = computed(() => todayCourses.value.filter((c) => courseStatus(c) === 'past'))
+const todayLive = computed(() => todayCourses.value.filter((c) => courseStatus(c) !== 'past'))
+const todayExpanded = ref(false) // false = D 形态；true = F 全天表
+const pastOpen = ref(false) // 「已过 N 件」就地展开
+const pastSpan = computed(() => {
+  const list = todayPast.value
+  if (!list.length) return ''
+  return `${list[0].start}–${fmtTime(minOf(list[list.length - 1].end))}`
+})
+const livePreview = computed(() => (todayExpanded.value ? todayLive.value : todayLive.value.slice(0, LIVE_PREVIEW)))
+const hiddenCount = computed(
+  () => (todayExpanded.value ? 0 : todayPast.value.length + Math.max(0, todayLive.value.length - LIVE_PREVIEW)),
+)
+const rowsShown = computed(() => (todayExpanded.value || pastOpen.value ? todayPast.value.length : 0) + livePreview.value.length)
+
 /* ---------------- Stage 2：顶卡主体（现在做什么） ----------------
    顶卡从此一张卡三行：情绪行（greetingText，特色文案不动）→ 主体 → 页脚计数。
    主体吃掉原来分散在四处的信息（状态气泡 / 今日状态行 / 录音卡 / 复盘卡），三种形态：
@@ -3780,8 +3802,38 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
       <section>
         <h2 class="mb-2 px-1 text-sm font-semibold text-ink">接下来</h2>
         <div v-if="todayCourses.length" class="space-y-0.5">
+          <!-- Stage 4：已过压成一行（点开就地展开成 26px 行，内容一条不丢） -->
+          <button
+            v-if="!todayExpanded && todayPast.length"
+            data-today-past-fold
+            class="relative flex w-full items-center gap-2 py-[3px] text-left text-[11px] leading-[20px] text-ink-dim after:absolute after:inset-x-0 after:-inset-y-[9px] after:content-[''] active:opacity-70"
+            :aria-expanded="pastOpen"
+            @click="pastOpen = !pastOpen"
+          >
+            <span class="w-10 flex-none text-right tabular-nums">已过</span>
+            <span class="min-w-0 flex-1 truncate">{{ todayPast.length }} 件 · {{ pastSpan }}</span>
+            <span class="flex-none">{{ pastOpen ? '收起 ▴' : '展开 ▾' }}</span>
+          </button>
+          <template v-if="todayExpanded || pastOpen">
+            <RowItem
+              v-for="c in todayPast"
+              :key="c.id"
+              data-today-item
+              data-today-past-row
+              :data-item-type="c.type || 'course'"
+              :time="c.start"
+              :title="c.name"
+              :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
+              :meta="rowMeta(c)"
+              state="done"
+              :tone="isRoutine(c) ? pal(c).text : ''"
+              :routine="isRoutine(c)"
+              clickable
+              @click="openDetail(c)"
+            />
+          </template>
           <RowItem
-            v-for="c in todayCourses"
+            v-for="c in livePreview"
             :key="c.id"
             data-today-item
             :data-today-next="c.id === nextTodayId || undefined"
@@ -3790,12 +3842,29 @@ watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
             :title="c.name"
             :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
             :meta="rowMeta(c)"
-            :state="courseStatus(c) === 'past' ? 'done' : courseStatus(c) === 'now' ? 'now' : 'plain'"
+            :state="courseStatus(c) === 'now' ? 'now' : 'plain'"
             :tone="isRoutine(c) ? pal(c).text : ''"
             :routine="isRoutine(c)"
             clickable
             @click="openDetail(c)"
           />
+          <!-- 展开全部 = 就地换密度（D → F），不换页、行高不变；收起后回到「已过一行 + 接下来 3 行」 -->
+          <button
+            v-if="hiddenCount > 0 || todayExpanded"
+            data-today-expand
+            class="relative flex w-full items-center gap-2 py-[3px] text-left text-[11px] leading-[20px] text-ink-dim after:absolute after:inset-x-0 after:-inset-y-[9px] after:content-[''] active:opacity-70"
+            :aria-expanded="todayExpanded"
+            @click="
+              todayExpanded = !todayExpanded;
+              if (todayExpanded) pastOpen = false
+            "
+          >
+            <span class="w-10 flex-none text-right tabular-nums">{{ todayExpanded ? '收起' : '全部' }}</span>
+            <span class="min-w-0 flex-1 truncate">
+              {{ todayExpanded ? '只看接下来' : `共 ${todayCourses.length} 件 · 展开全部` }}
+            </span>
+            <span class="flex-none text-ink-dim">{{ todayExpanded ? '▴' : '▾' }}</span>
+          </button>
         </div>
         <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
           今天没有课程安排～

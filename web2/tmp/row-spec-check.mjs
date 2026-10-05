@@ -44,6 +44,11 @@ await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(see
 await page.addInitScript(() => localStorage.setItem('web2.onboarded', '1'))
 await page.goto(URL + '?t=11:00', { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(900)
+/* Stage 4 起「接下来」默认把已过压成一行；这里要先展开全部，才量得到那条已过的行 */
+if (await page.locator('[data-today-expand]').count()) {
+  await page.click('[data-today-expand]')
+  await page.waitForTimeout(300)
+}
 
 const rows = await page.evaluate(() => {
   const box = (el) => { const b = el.getBoundingClientRect(); return { h: Math.round(b.height), w: Math.round(b.width), x: Math.round(b.x), y: Math.round(b.y) } }
