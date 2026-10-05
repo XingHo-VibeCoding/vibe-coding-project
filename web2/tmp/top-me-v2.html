@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>顶卡 A+C（保留特色文案）· 我的页 版 B</title>
+<style>
+  :root{
+    --ink:#1c2430; --dim:#6b7683; --faint:#98a2b2; --line:#e6e9ef; --bg:#f4f6fa; --card:#fff;
+    --brand:#2f6feb; --brand-soft:#eaf1ff; --red:#e0574f; --red-soft:#fdecea;
+    --amber:#e8a33d; --mint:#2fb58a; --lav:#7c5ce0; --pink:#ec6ba8;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#eef1f6; font-family:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif; color:var(--ink); padding:26px 24px 30px; width:1348px;}
+  h1{font-size:19px; font-weight:800;}
+  .sub{color:var(--dim); font-size:12.5px; margin-top:6px; line-height:1.65; max-width:1290px;}
+  .sub b{color:var(--ink);}
+  .grp{margin-top:20px;}
+  .grp > h2{font-size:14.5px; font-weight:800; padding-bottom:6px; border-bottom:2px solid var(--ink); margin-bottom:14px;}
+  .grp > h2 span{font-weight:500; color:var(--dim); font-size:11.5px;}
+  .cols{display:flex; gap:16px; align-items:flex-start;}
+  .col{flex:1; min-width:0;}
+  .col h3{font-size:13px; font-weight:800;}
+  .col h3 em{font-style:normal; font-size:9.5px; font-weight:700; background:var(--brand-soft); color:var(--brand); border-radius:99px; padding:2px 7px; margin-left:5px; vertical-align:1px;}
+  .col .note{font-size:10.5px; color:var(--dim); line-height:1.6; margin-top:4px; min-height:56px;}
+  .phone{background:var(--bg); border-radius:20px; border:1px solid #d9dee7; overflow:hidden; height:560px; position:relative; box-shadow:0 2px 10px rgba(20,30,50,.06); margin-top:6px; padding:10px;}
+  .nav{position:absolute; left:0; right:0; bottom:0; height:52px; background:rgba(255,255,255,.96); border-top:1px solid var(--line); display:flex;}
+  .nav div{flex:1; text-align:center; font-size:9.5px; color:var(--dim); padding-top:9px;}
+  .nav div.on{color:var(--brand); font-weight:700;}
+  .nav i{display:block; font-size:15px; font-style:normal; margin-bottom:2px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 11px; margin-bottom:8px;}
+  .card.now{border-color:#bcd0fb; background:linear-gradient(165deg,#f7faff,#fff);}
+  .mood{font-size:12.5px; font-weight:800; line-height:1.45;}
+  .mooddate{font-size:9.5px; color:var(--brand); font-weight:700;}
+  .cap{font-size:10.5px; font-weight:700;}
+  .row{display:flex; align-items:center; gap:8px;}
+  .grow{flex:1; min-width:0;}
+  .t{font-size:11.5px; font-weight:600;}
+  .m{font-size:9.5px; color:var(--dim); margin-top:2px; line-height:1.45;}
+  .btn{background:var(--brand); color:#fff; border-radius:999px; font-size:10px; font-weight:700; padding:6px 11px; white-space:nowrap;}
+  .btn.ghost{background:#f1f3f7; color:var(--dim);}
+  .pill{background:#f1f3f7; border-radius:999px; font-size:9.5px; color:var(--dim); padding:4px 9px; white-space:nowrap;}
+  .bar{height:5px; border-radius:9px; background:#e3e8f3; overflow:hidden; margin-top:8px;}
+  .bar i{display:block; height:100%; background:var(--brand);}
+  .foot{display:flex; align-items:center; gap:7px; margin-top:9px; padding-top:9px; border-top:1px dashed #e8ecf4; font-size:9.5px; color:var(--dim);}
+  .foot b{color:var(--ink);}
+  .foot .sep{color:#dfe3ec;}
+  .mini{display:flex; align-items:center; gap:8px; padding:7px 2px; border-bottom:1px solid #f0f2f7;}
+  .mini:last-child{border-bottom:0;}
+  .mini .ic{width:22px; height:22px; border-radius:7px; background:#eef2fa; display:grid; place-items:center; font-size:11px; flex:none;}
+  .mini .nm{flex:1; font-size:11px; font-weight:600;}
+  .mini .st{font-size:9.5px; color:var(--faint); flex:none;}
+  .mini.sub .nm{font-weight:500; color:var(--dim);}
+  .danger{background:#fffbfa; border:1px solid #f3c9c5; border-radius:11px; padding:8px 11px; font-size:10.5px; color:#b8433c; font-weight:600;}
+  .anno{background:rgba(28,36,48,.88); color:#fff; border-radius:9px; font-size:9.5px; line-height:1.55; padding:7px 9px; margin-top:8px;}
+  .ok{background:#eef7f2; border:1px dashed #a8d8c3; color:#22785a; border-radius:9px; font-size:9.5px; line-height:1.55; padding:6px 8px; margin-top:8px;}
+  table.cp{width:100%; border-collapse:collapse; font-size:10px; margin-top:4px; background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+  table.cp th{background:#f7f9fc; font-size:9.5px; color:var(--dim); text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); font-weight:700;}
+  table.cp td{padding:6px 8px; border-bottom:1px solid #f2f4f8; vertical-align:top; line-height:1.45;}
+  table.cp tr:last-child td{border-bottom:0;}
+  table.cp .k{color:var(--dim); white-space:nowrap;}
+  table.cp .q{font-weight:700;}
+  .rules{margin-top:9px; font-size:10px; color:var(--dim); line-height:1.65;}
+  .rules b{color:var(--ink);}
+  #me .phone{height:700px;}
+</style>
+</head>
+<body>
+
+<h1>顶卡 A+C（保留特色文案）· 我的页 版 B</h1>
+<div class="sub">
+  三条已定：① 顶卡走 <b>A + C</b>，但<b>特色文案要留着</b>——所以文案不再只做空态，而是顶卡的「标题位」；② 我的页走 <b>版 B（索引页 + 设置二级页）</b>；③ 录音暂不做自动开关。
+</div>
+
+<!-- ================= 顶卡 ================= -->
+<div class="grp" id="top">
+  <h2>一、顶卡：特色文案 + 现在/下一件，合成一张卡 <span>· 情绪行是标题，操作行是主体</span></h2>
+  <div class="cols">
+
+    <div class="col">
+      <h3>① 有课 <em>上课中</em></h3>
+      <div class="note">第一行还是那句人话（跟着时段和状态变），第二行才是「现在 · 课名 + 录音」，页脚一行全天状态。</div>
+      <div class="phone" style="height:430px">
+        <div class="card now">
+          <div class="row"><div class="grow"><div class="mood">上课辛苦啦，还剩 85 分钟</div></div><div class="mooddate">10/4 周日</div></div>
+          <div class="row" style="margin-top:10px">
+            <div class="grow"><div class="cap" style="color:var(--brand)">现在 · 结构力学Ⅰ</div><div class="m" style="margin-top:3px">教三 201 · 张明</div></div>
+            <span class="btn">录音</span>
+          </div>
+          <div class="bar"><i style="width:41%"></i></div>
+          <div class="foot"><b>今天 6 件</b><span class="sep">|</span>已过 3<span class="sep">|</span>待办 1/7<span class="sep">|</span>练耳 2 段</div>
+        </div>
+        <div class="card" style="padding:6px 10px">
+          <div class="cap" style="margin:3px 0 2px">接下来 <span>· 今天还有 3 件</span></div>
+          <div class="mini"><div class="nm">12:30　交《马原》课程论文</div><div class="st">今天到期</div></div>
+          <div class="mini"><div class="nm">19:30　练耳 2 段</div><div class="st">去听</div></div>
+        </div>
+        <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+      </div>
+      <div class="ok">原来「问候卡 + 现在卡」两张并成一张：文案当标题，高度反而比现状矮。</div>
+    </div>
+
+    <div class="col">
+      <h3>② 没课 <em>白天空档</em></h3>
+      <div class="note">没课时文案可以更松一点（原来那句「像小猫一样晒太阳吧」就活在这里），下面接「下一件 + 去准备」。</div>
+      <div class="phone" style="height:430px">
+        <div class="card now">
+          <div class="row"><div class="grow"><div class="mood">今天没课耶！像小猫一样晒太阳吧 ᵔᴗᵔ</div></div><div class="mooddate">10/4 周日</div></div>
+          <div class="row" style="margin-top:10px">
+            <div class="grow"><div class="cap" style="color:var(--brand)">下一件 · 还有 1 小时 20 分</div><div class="m" style="margin-top:3px">14:00 大学英语（读写）· 外语楼 203</div></div>
+            <span class="btn ghost">去准备</span>
+          </div>
+          <div class="foot"><b>今天 6 件</b><span class="sep">|</span>待办 1/7<span class="sep">|</span>练耳 2 段到点</div>
+        </div>
+        <div class="card" style="padding:6px 10px">
+          <div class="cap" style="margin:3px 0 2px">接下来 <span>· 今天还有 3 件</span></div>
+          <div class="mini"><div class="nm">12:30　交《马原》课程论文</div><div class="st">今天到期</div></div>
+          <div class="mini"><div class="nm">19:30　练耳 2 段</div><div class="st">去听</div></div>
+        </div>
+        <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+      </div>
+      <div class="ok">C 的形态：没课不空着，答的是「接下来做什么」。</div>
+    </div>
+
+    <div class="col">
+      <h3>③ 晚上 <em>该收尾了</em></h3>
+      <div class="note">晚上文案回到那句「今天辛苦啦，摸摸头」，主体直接是「收个尾 · 开始复盘」。</div>
+      <div class="phone" style="height:430px">
+        <div class="card now">
+          <div class="row"><div class="grow"><div class="mood">今天辛苦啦，摸摸头</div></div><div class="mooddate">10/4 周日</div></div>
+          <div class="row" style="margin-top:10px">
+            <div class="grow"><div class="cap" style="color:var(--brand)">23:00 · 收个尾</div><div class="m" style="margin-top:3px">两分钟生成今天的日精进</div></div>
+            <span class="btn">开始复盘</span>
+          </div>
+          <div class="foot"><b>今天 6 件</b><span class="sep">|</span>全部上完<span class="sep">|</span>待办 1/7<span class="sep">|</span>练耳 2 段</div>
+        </div>
+        <div class="card" style="padding:6px 10px">
+          <div class="cap" style="margin:3px 0 2px">今天 <span>· 6 件都过了</span></div>
+          <div class="mini"><div class="nm" style="color:#98a2b2">08:00 高等数学 A · 已上完</div><div class="st">一行</div></div>
+          <div class="mini"><div class="nm" style="color:#98a2b2">10:00 大学物理 · 已上完</div><div class="st">一行</div></div>
+        </div>
+        <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+      </div>
+      <div class="ok">同一张卡，三种时段三种文案 + 三种主体，高度一致。</div>
+    </div>
+
+    <div class="col">
+      <h3>④ 文案表 <em>什么时候说哪句</em></h3>
+      <div class="note">文案跟「时段 × 今天的状态」走，写成一张表，代码里就一个模板函数——特色在，但不会乱。</div>
+      <table class="cp">
+        <tr><th>时段 / 状态</th><th>情绪行（顶卡第一行）</th><th>主体行</th></tr>
+        <tr><td class="k">早 · 有课</td><td class="q">早呀～今天 3 节课，第一节 08:00 高数</td><td>现在 / 下一件</td></tr>
+        <tr><td class="k">早 · 没课</td><td class="q">今天没课耶！像小猫一样晒太阳吧 ᵔᴗᵔ</td><td>今天 6 件待办</td></tr>
+        <tr><td class="k">上课中</td><td class="q">上课辛苦啦，还剩 85 分钟</td><td>现在 + 录音</td></tr>
+        <tr><td class="k">空档</td><td class="q">喘口气，14:00 还有一节英语</td><td>下一件 + 去准备</td></tr>
+        <tr><td class="k">课上完</td><td class="q">今天的课都上完啦，剩下的交给晚上</td><td>待办 + 练耳</td></tr>
+        <tr><td class="k">晚上 · 未复盘</td><td class="q">今天辛苦啦，摸摸头</td><td>收个尾 · 开始复盘</td></tr>
+        <tr><td class="k">全部做完</td><td class="q">今天收摊！明天 08:00 第一节高数</td><td>明天预览</td></tr>
+      </table>
+      <div class="rules">
+        <b>四条规矩</b>：① 情绪行只占一行（≤18 字），不额外加高；② 有数据先说数据，没数据才纯情绪；③ 同一句一天只出现一次（早/晚各一句就够）；④ 全部来自一个 moodLine(时段, 状态) 模板函数，文案可改、布局不动。
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 我的页 版 B ================= -->
+<div class="grp" id="me">
+  <h2>二、我的页 版 B：索引页 + 设置二级页 <span>· 首屏永远只有 4 行</span></h2>
+  <div class="cols">
+
+    <div class="col">
+      <h3>① 我的（首屏）</h3>
+      <div class="note">一句学期 + 4 个入口 + 最近动态。功能再长，这一屏也不变。</div>
+      <div class="phone">
+        <div class="card" style="padding:11px 12px">
+          <div class="row"><div class="grow"><div class="t">2026-2027 秋冬 · 第 4 周</div><div class="m">主项目数据 · 已导入 ✓</div></div><span class="pill">›</span></div>
+        </div>
+        <div class="card" style="padding:4px 12px">
+          <div class="mini" style="padding:12px 2px"><div class="ic">🎙</div><div class="nm" style="font-size:12px">录音历史</div><div class="st">5 场 ›</div></div>
+          <div class="mini" style="padding:12px 2px"><div class="ic">🎧</div><div class="nm" style="font-size:12px">碎片练耳</div><div class="st">12 段 ›</div></div>
+          <div class="mini" style="padding:12px 2px"><div class="ic">☑</div><div class="nm" style="font-size:12px">待办清单</div><div class="st">1/7 ›</div></div>
+          <div class="mini" style="padding:12px 2px"><div class="ic">⚙</div><div class="nm" style="font-size:12px">设置</div><div class="st">外观 · 提醒 · 数据 ›</div></div>
+        </div>
+        <div class="card">
+          <div class="cap">最近</div>
+          <div class="mini sub"><div class="nm">昨天 23:09 的录音纪要</div><div class="st">›</div></div>
+          <div class="mini sub"><div class="nm">今天的日精进</div><div class="st">›</div></div>
+        </div>
+        <div class="anno">「录音历史 / 碎片练耳 / 待办清单」点进去都是各自完整的页（列表 + 设置都在里面），「我的」只做索引。</div>
+        <div class="nav"><div><i>◎</i>今日</div><div><i>▤</i>周课表</div><div class="on"><i>◔</i>我的</div></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>② 设置（二级页）</h3>
+      <div class="note">原来「我的」里那些开关全搬到这：分组 + 行内显示当前值，危险操作单独收底。</div>
+      <div class="phone">
+        <div class="row" style="margin-bottom:8px"><span class="pill">‹ 返回</span><div class="grow" style="text-align:center; font-size:12px; font-weight:700">设置</div><span class="pill" style="visibility:hidden">‹</span></div>
+        <div class="card">
+          <div class="cap">外观</div>
+          <div class="mini"><div class="nm">主题外观</div><div class="st">浅色 · 切深色</div></div>
+          <div class="mini sub"><div class="nm">主题配色</div><div class="st">蓝白</div></div>
+          <div class="mini sub"><div class="nm">跟着时间自动换</div><div class="st">关</div></div>
+        </div>
+        <div class="card">
+          <div class="cap">提醒</div>
+          <div class="mini"><div class="nm">课前提提醒</div><div class="st">提前 10 分钟</div></div>
+          <div class="mini sub"><div class="nm">每日复盘</div><div class="st">23:00 · 开</div></div>
+          <div class="mini"><div class="nm">常驻状态框</div><div class="st">开</div></div>
+        </div>
+        <div class="card">
+          <div class="cap">录音与练耳</div>
+          <div class="mini"><div class="nm">课堂纪要 AI 服务</div><div class="st">已配置</div></div>
+          <div class="mini sub"><div class="nm">后台录音</div><div class="st">开</div></div>
+          <div class="mini sub"><div class="nm">录音保留策略</div><div class="st">不自动删</div></div>
+        </div>
+        <div class="card">
+          <div class="cap">数据</div>
+          <div class="mini"><div class="nm">导入主项目数据</div><div class="st">已导入 ✓</div></div>
+          <div class="mini sub"><div class="nm">导出回写 / 备份 / 导出日历</div><div class="st">›</div></div>
+        </div>
+        <div class="danger">清除数据并重置（无法恢复）</div>
+        <div class="nav"><div><i>◎</i>今日</div><div><i>▤</i>周课表</div><div class="on"><i>◔</i>我的</div></div>
+      </div>
+      <div class="ok">规则：<b>常用在外（4 个入口），开关在中（设置），危险在最底</b>。以后新功能只往设置里加，首屏不动。</div>
+    </div>
+
+    <div class="col">
+      <h3>③ 入口点进去是什么</h3>
+      <div class="note">4 个入口各自是完整的一页，不再把「列表」和「设置」塞在「我的」卡片里。</div>
+      <div class="phone" style="height:700px">
+        <div class="row" style="margin-bottom:8px"><span class="pill">‹ 返回</span><div class="grow" style="text-align:center; font-size:12px; font-weight:700">录音历史</div><span class="pill" style="visibility:hidden">‹</span></div>
+        <div class="card" style="padding:6px 10px">
+          <div class="mini"><div class="nm">10月3日 23:09 · 已转写待总结</div><div class="st">试听</div></div>
+          <div class="mini"><div class="nm">10月3日 22:57 · 已转写待总结</div><div class="st">试听</div></div>
+          <div class="mini"><div class="nm">10月1日 19:12 · 已总结</div><div class="st">纪要 ›</div></div>
+          <div class="mini sub"><div class="nm">10月1日 18:14 · 未命名录音</div><div class="st">纪要 ›</div></div>
+        </div>
+        <div class="cap" style="margin:10px 0 4px">碎片练耳（同一个模板的另一页）</div>
+        <div class="card" style="padding:6px 10px">
+          <div class="mini"><div class="nm">1 Do you have a date… · 今天该听</div><div class="st">播放</div></div>
+          <div class="mini"><div class="nm">10 Bill Gates · 已听 0 次</div><div class="st">播放</div></div>
+          <div class="mini sub"><div class="nm">连放遍数 3 · 复习间隔 1,2,4,7,15,30</div><div class="st">设置 ›</div></div>
+        </div>
+        <div class="anno">把「列表 + 自己的设置」放进各自的页，是这次拆的重点：<b>谁的设置归谁</b>，不要再堆在「我的」。</div>
+        <div class="nav"><div><i>◎</i>今日</div><div><i>▤</i>周课表</div><div class="on"><i>◔</i>我的</div></div>
+      </div>
+      <div class="ok">这两个页现在已经在「我的」里以卡片形态存在（录音卡 / 练耳卡），搬出去只是换个容器，逻辑不用重写。</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

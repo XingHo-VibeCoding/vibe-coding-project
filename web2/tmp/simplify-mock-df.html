@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>D + F 组合 · 一套数据两种密度</title>
+<style>
+  :root{
+    --ink:#1c2430; --dim:#6b7683; --faint:#98a2b2; --line:#e6e9ef; --bg:#f4f6fa; --card:#fff;
+    --brand:#2f6feb; --brand-soft:#eaf1ff;
+    --amber:#e8a33d; --amber-soft:#fdf3e3;
+    --mint:#2fb58a; --mint-soft:#e6f7f1;
+    --lav:#7c5ce0; --lav-soft:#f0ecfd;
+    --pink:#ec6ba8; --pink-soft:#fdecf4;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#eef1f6; font-family:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif; color:var(--ink); padding:26px 24px 30px;}
+  h1{font-size:19px; font-weight:800;}
+  .sub{color:var(--dim); font-size:12.5px; margin-top:6px; line-height:1.6;}
+  .grid{display:flex; gap:18px; margin-top:18px; align-items:flex-start;}
+  .col{width:300px;}
+  .col h3{font-size:13.5px; font-weight:700;}
+  .col .note{font-size:11px; color:var(--dim); line-height:1.5; min-height:44px; margin-top:3px;}
+  .phone{background:var(--bg); border-radius:20px; border:1px solid #d9dee7; overflow:hidden; height:604px; position:relative; margin-top:6px; box-shadow:0 2px 10px rgba(20,30,50,.06);}
+  .scroll{position:absolute; inset:0 0 52px 0; padding:10px 10px 0;}
+  .nav{position:absolute; left:0; right:0; bottom:0; height:52px; background:rgba(255,255,255,.96); border-top:1px solid var(--line); display:flex;}
+  .nav div{flex:1; text-align:center; font-size:9.5px; color:var(--dim); padding-top:9px;}
+  .nav div.on{color:var(--brand); font-weight:700;}
+  .nav i{display:block; font-size:15px; font-style:normal; margin-bottom:2px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 11px; margin-bottom:8px;}
+  .cap{font-size:10.5px; font-weight:700;}
+  .cap span{font-weight:400; color:var(--dim); font-size:9.5px;}
+  .row{display:flex; align-items:center; gap:8px;}
+  .grow{flex:1; min-width:0;}
+  .t{font-size:11.5px; font-weight:600;}
+  .m{font-size:9.5px; color:var(--dim); margin-top:2px; line-height:1.45;}
+  .btn{background:var(--brand); color:#fff; border-radius:999px; font-size:10px; font-weight:700; padding:6px 11px; white-space:nowrap;}
+  .btn.ghost{background:#f1f3f7; color:var(--ink);}
+  .pill{background:#f1f3f7; border-radius:999px; font-size:9.5px; color:var(--dim); padding:4px 9px; white-space:nowrap;}
+  .fold{display:flex; align-items:center; gap:8px; background:#eef1f6; border:1px solid #e2e7f0; border-radius:11px; padding:6px 10px; margin-bottom:8px; overflow:hidden;}
+  .fold .grow{min-width:0;}
+  .fold .pill{flex:0 0 auto;}
+  .fold .t{font-size:10.5px; color:var(--dim); font-weight:600;}
+  .fab{position:absolute; right:12px; bottom:62px; width:44px; height:44px; border-radius:999px; background:var(--brand); color:#fff; display:grid; place-items:center; font-size:17px; box-shadow:0 4px 12px rgba(47,111,235,.35); z-index:3;}
+  .anno{position:absolute; left:0; right:0; bottom:56px; background:rgba(28,36,48,.86); color:#fff; font-size:9.5px; line-height:1.5; padding:6px 9px; z-index:4;}
+  .mini{display:flex; align-items:center; gap:8px; padding:5px 2px; border-bottom:1px solid #f0f2f7;}
+  .mini:last-child{border-bottom:0;}
+  .mini .hm{width:38px; font-size:10px; font-weight:700; color:var(--dim); flex:none; font-variant-numeric:tabular-nums;}
+  .mini .nm{flex:1; font-size:11px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .mini .st{font-size:9px; color:var(--faint); flex:none;}
+  .mini.past .nm{color:var(--faint); font-weight:500;}
+  .mini.past .hm{color:var(--faint);}
+  .mini.now{background:var(--brand-soft); border-radius:9px; border-bottom:0; padding:6px 8px; margin:2px 0;}
+  .mini.now .hm{color:var(--brand);}
+  .mini.now .st{color:var(--brand); font-weight:700;}
+  .dot4{width:6px; height:6px; border-radius:99px; background:#d6dbe6; flex:none;}
+  .dot4.a{background:var(--amber);} .dot4.m{background:var(--mint);} .dot4.l{background:var(--lav);} .dot4.p{background:var(--pink);}
+  .kv{display:flex; justify-content:space-between; font-size:10px; color:var(--dim); margin-top:3px;}
+  .bar{height:5px; border-radius:9px; background:#e3e8f3; overflow:hidden;}
+  .bar i{display:block; height:100%; background:var(--brand);}
+  .taglbl{font-size:8.5px; font-weight:800; color:var(--brand); letter-spacing:.4px;}
+  .taglbl.gray{color:var(--faint);}
+</style>
+</head>
+<body>
+<h1>D + F 组合：一套数据、两种密度</h1>
+<div class="sub">
+  首屏固定高度（只渲染「现在 + 接下来 N」，已完成折成一行）；点「展开全部」就地换成 26px 全天表——同一份数据、同一个位置，密度切换。
+  这一天的例子：6 件（3 件已完成）、现在正在上结构力学Ⅰ。
+</div>
+
+<div class="grid">
+
+  <!-- 1 · 默认首屏 -->
+  <div class="col">
+    <h3>① 默认首屏（D 形态）</h3>
+    <div class="note">高度只跟「接下来取几条」有关，跟今天排了 6 件还是 20 件无关。</div>
+    <div class="phone">
+      <div class="scroll">
+        <div class="card" style="border-color:#bcd0fb; padding:9px 11px; box-shadow:0 2px 10px rgba(47,111,235,.10)">
+          <div class="row"><div class="grow"><div class="t">现在 · 结构力学Ⅰ</div><div class="m">教三 201 · 还剩 85 分钟</div></div><span class="btn">录音</span></div>
+          <div class="bar" style="margin-top:9px"><i style="width:41%"></i></div>
+        </div>
+        <div class="fold"><div class="grow"><span class="t">已过 3 件 · 08:00–12:25</span></div><span class="pill">▸</span></div>
+        <div class="card" style="padding:6px 10px">
+          <div class="cap" style="margin:2px 0 4px">接下来 <span>· 今天还有 4 件</span></div>
+          <div class="mini"><div class="hm">12:30</div><div class="dot4 a"></div><div class="nm">交《马原》课程论文</div><div class="st">今天到期</div></div>
+          <div class="mini"><div class="hm">14:00</div><div class="dot4 m"></div><div class="nm">大学英语（读写）</div><div class="st">外语楼 203</div></div>
+          <div class="mini"><div class="hm">19:30</div><div class="dot4 l"></div><div class="nm">练耳 2 段</div><div class="st">3 遍</div></div>
+          <div class="mini"><div class="hm">23:00</div><div class="dot4 p"></div><div class="nm">收个尾 · 复盘</div><div class="st">2 分钟</div></div>
+        </div>
+        <div class="fold" style="border-style:dashed"><div class="grow"><span class="t">今天一共 6 件 · 展开全部</span></div><span class="pill">▾</span></div>
+        <div class="card" style="padding:8px 11px">
+          <div class="kv" style="margin:0"><span>学期进度</span><span>第 4 / 16 周 · 距期末 85 天</span></div>
+        </div>
+      </div>
+      <div class="fab">◉</div>
+      <div class="anno">已过的压成一行 · 接下来固定 3–4 行 · 录音是唯一的彩色大按钮</div>
+      <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+    </div>
+  </div>
+
+  <!-- 2 · 展开全部 = F -->
+  <div class="col">
+    <h3>② 点「展开全部」（F 形态）</h3>
+    <div class="note">就地换成全天表：26px 一行，已完成只占一行灰字（划掉但不隐藏）。20 件 ≈ 520px，仍是一屏。</div>
+    <div class="phone">
+      <div class="scroll">
+        <div class="card" style="border-color:#bcd0fb; padding:9px 11px">
+          <div class="row"><div class="grow"><div class="t">现在 · 结构力学Ⅰ</div><div class="m">还剩 85 分钟</div></div><span class="btn">录音</span></div>
+        </div>
+        <div class="card" style="padding:6px 10px">
+          <div class="row" style="margin:2px 0 4px"><div class="grow"><div class="cap">今天 · 6 件 <span>· 已完成 3</span></div></div><span class="pill">收起 ▴</span></div>
+          <div class="mini past"><div class="hm">08:00</div><div class="dot4 m" style="opacity:.4"></div><div class="nm">高等数学 A</div><div class="st">已上完</div></div>
+          <div class="mini past"><div class="hm">10:00</div><div class="dot4 m" style="opacity:.4"></div><div class="nm">大学物理</div><div class="st">已上完</div></div>
+          <div class="mini past"><div class="hm">12:00</div><div class="dot4 a" style="opacity:.4"></div><div class="nm">背单词 20 个</div><div class="st">已打卡</div></div>
+          <div class="mini now"><div class="hm">14:00</div><div class="dot4 m"></div><div class="nm">结构力学Ⅰ · 教三 201</div><div class="st">还剩 85 分</div></div>
+          <div class="mini"><div class="hm">16:00</div><div class="dot4 a"></div><div class="nm">交《马原》课程论文</div><div class="st">今天到期</div></div>
+          <div class="mini"><div class="hm">19:30</div><div class="dot4 l"></div><div class="nm">练耳 2 段</div><div class="st">3 遍</div></div>
+          <div class="mini"><div class="hm">23:00</div><div class="dot4 p"></div><div class="nm">收个尾 · 复盘</div><div class="st">2 分钟</div></div>
+        </div>
+        <div class="card" style="padding:8px 11px">
+          <div class="kv" style="margin:0"><span>学期进度</span><span>第 4 / 16 周 · 距期末 85 天</span></div>
+        </div>
+      </div>
+      <div class="fab">◉</div>
+      <div class="anno">同一位置换密度 · 已完成 = 一行灰字 · 展开后还能再点「收起」回到首屏</div>
+      <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+    </div>
+  </div>
+
+  <!-- 3 · 点开已过 -->
+  <div class="col">
+    <h3>③ 想回顾：点开「已过 3 件」</h3>
+    <div class="note">不想看就一行，想看就展开；已完成的信息一条都不丢（含「已打卡」这类非日程项）。</div>
+    <div class="phone">
+      <div class="scroll">
+        <div class="card" style="border-color:#bcd0fb; padding:9px 11px">
+          <div class="row"><div class="grow"><div class="t">现在 · 结构力学Ⅰ</div><div class="m">还剩 85 分钟 · 教三 201</div></div><span class="btn">录音</span></div>
+        </div>
+        <div class="fold" style="background:#f7f8fb"><div class="grow"><span class="t">已过 3 件 · 08:00–12:25</span></div><span class="pill">▾</span></div>
+        <div class="card" style="padding:4px 10px; margin-top:-4px">
+          <div class="mini past"><div class="hm">08:00</div><div class="dot4 m" style="opacity:.4"></div><div class="nm">高等数学 A</div><div class="st">已上完</div></div>
+          <div class="mini past"><div class="hm">10:00</div><div class="dot4 m" style="opacity:.4"></div><div class="nm">大学物理</div><div class="st">已上完</div></div>
+          <div class="mini past"><div class="hm">12:00</div><div class="dot4 a" style="opacity:.4"></div><div class="nm">背单词 20 个</div><div class="st">已打卡</div></div>
+        </div>
+        <div class="card" style="padding:6px 10px">
+          <div class="cap" style="margin:2px 0 4px">接下来 <span>· 今天还有 4 件</span></div>
+          <div class="mini"><div class="hm">12:30</div><div class="dot4 a"></div><div class="nm">交《马原》课程论文</div><div class="st">今天到期</div></div>
+          <div class="mini"><div class="hm">14:00</div><div class="dot4 m"></div><div class="nm">大学英语（读写）</div><div class="st">外语楼 203</div></div>
+        </div>
+        <div class="fold" style="border-style:dashed"><div class="grow"><span class="t">今天一共 6 件 · 展开全部</span></div><span class="pill">▾</span></div>
+      </div>
+      <div class="fab">◉</div>
+      <div class="anno">已完成默认收起、按需展开 · 一样是 26px 行高，展不展开都不破坏首屏节奏</div>
+      <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+    </div>
+  </div>
+
+  <!-- 4 · 晚上 -->
+  <div class="col">
+    <h3>④ 晚上 21:00：时间自己收窄</h3>
+    <div class="note">白天过完，「现在」自动变成晚上要做的事；首屏反而更短——不用为晚上单独做一个页面。</div>
+    <div class="phone">
+      <div class="scroll">
+        <div class="card" style="border-color:#cddbfa; padding:9px 11px">
+          <div class="row"><div class="grow"><div class="t">现在 · 练耳 2 段到点了</div><div class="m">10 Bill Gates · 11 Good news（各 3 遍）</div></div><span class="btn">去听</span></div>
+        </div>
+        <div class="fold"><div class="grow"><span class="t">已过 5 件 · 08:00–19:30</span></div><span class="pill">▸</span></div>
+        <div class="card" style="padding:6px 10px">
+          <div class="cap" style="margin:2px 0 4px">接下来 <span>· 今天还有 1 件</span></div>
+          <div class="mini"><div class="hm">23:00</div><div class="dot4 p"></div><div class="nm">收个尾 · 复盘</div><div class="st">2 分钟</div></div>
+        </div>
+        <div class="card" style="padding:8px 11px">
+          <div class="kv" style="margin:0"><span>今晚收尾</span><span>打卡 1/2 · 练耳 0/1 · 复盘 23:00</span></div>
+        </div>
+        <div class="fold" style="border-style:dashed"><div class="grow"><span class="t">今天一共 6 件 · 展开全部</span></div><span class="pill">▾</span></div>
+      </div>
+      <div class="fab">◉</div>
+      <div class="anno">「现在」跟着时间走 · 晚上自动只剩练耳 + 复盘 · 已过变 5 件仍只占一行</div>
+      <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

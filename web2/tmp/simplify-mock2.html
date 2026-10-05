@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>今日页简化 · 第二轮：让「已完成」不占地方、日程多也不变长</title>
+<style>
+  :root{
+    --ink:#1c2430; --dim:#6b7683; --faint:#98a2b2; --line:#e6e9ef; --bg:#f4f6fa; --card:#fff;
+    --brand:#2f6feb; --brand-soft:#eaf1ff;
+    --amber:#e8a33d; --amber-soft:#fdf3e3;
+    --mint:#2fb58a; --mint-soft:#e6f7f1;
+    --lav:#7c5ce0; --lav-soft:#f0ecfd;
+    --pink:#ec6ba8; --pink-soft:#fdecf4;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:#eef1f6; font-family:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif; color:var(--ink); padding:26px 24px 30px;}
+  h1{font-size:19px; font-weight:800;}
+  .sub{color:var(--dim); font-size:12.5px; margin-top:6px; line-height:1.6;}
+  .grid{display:flex; gap:18px; margin-top:18px; align-items:flex-start;}
+  .col{width:300px;}
+  .col h3{font-size:13.5px; font-weight:700;}
+  .col .note{font-size:11px; color:var(--dim); line-height:1.5; min-height:44px; margin-top:3px;}
+  .phone{background:var(--bg); border-radius:20px; border:1px solid #d9dee7; overflow:hidden; height:604px; position:relative; margin-top:6px; box-shadow:0 2px 10px rgba(20,30,50,.06);}
+  .scroll{position:absolute; inset:0 0 52px 0; padding:10px 10px 0;}
+  .nav{position:absolute; left:0; right:0; bottom:0; height:52px; background:rgba(255,255,255,.96); border-top:1px solid var(--line); display:flex;}
+  .nav div{flex:1; text-align:center; font-size:9.5px; color:var(--dim); padding-top:9px;}
+  .nav div.on{color:var(--brand); font-weight:700;}
+  .nav i{display:block; font-size:15px; font-style:normal; margin-bottom:2px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:10px 11px; margin-bottom:8px;}
+  .cap{font-size:10.5px; font-weight:700;}
+  .cap span{font-weight:400; color:var(--dim); font-size:9.5px;}
+  .row{display:flex; align-items:center; gap:8px;}
+  .grow{flex:1; min-width:0;}
+  .t{font-size:11.5px; font-weight:600;}
+  .m{font-size:9.5px; color:var(--dim); margin-top:2px; line-height:1.45;}
+  .btn{background:var(--brand); color:#fff; border-radius:999px; font-size:10px; font-weight:700; padding:6px 11px; white-space:nowrap;}
+  .btn.ghost{background:#f1f3f7; color:var(--ink);}
+  .pill{background:#f1f3f7; border-radius:999px; font-size:9.5px; color:var(--dim); padding:4px 9px; white-space:nowrap;}
+  .fold{display:flex; align-items:center; gap:8px; background:#eef1f6; border:1px solid #e2e7f0; border-radius:11px; padding:6px 10px; margin-bottom:8px;}
+  .fold .t{font-size:10.5px; color:var(--dim); font-weight:600;}
+  .fab{position:absolute; right:12px; bottom:62px; width:44px; height:44px; border-radius:999px; background:var(--brand); color:#fff; display:grid; place-items:center; font-size:17px; box-shadow:0 4px 12px rgba(47,111,235,.35); z-index:3;}
+  .anno{position:absolute; left:0; right:0; bottom:56px; background:rgba(28,36,48,.86); color:#fff; font-size:9.5px; line-height:1.5; padding:6px 9px; z-index:4;}
+  /* 紧凑行：全天表/接下来列 */
+  .mini{display:flex; align-items:center; gap:8px; padding:5px 2px; border-bottom:1px solid #f0f2f7;}
+  .mini:last-child{border-bottom:0;}
+  .mini .hm{width:38px; font-size:10px; font-weight:700; color:var(--dim); flex:none; font-variant-numeric:tabular-nums;}
+  .mini .nm{flex:1; font-size:11px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .mini .st{font-size:9px; color:var(--faint); flex:none;}
+  .mini.past .nm{color:var(--faint); font-weight:500;}
+  .mini.past .hm{color:var(--faint);}
+  .mini.now{background:var(--brand-soft); border-radius:9px; border-bottom:0; padding:6px 8px; margin:2px 0;}
+  .mini.now .hm{color:var(--brand);}
+  .mini.now .st{color:var(--brand); font-weight:700;}
+  .dot4{width:6px; height:6px; border-radius:99px; background:#d6dbe6; flex:none;}
+  .dot4.a{background:var(--amber);} .dot4.m{background:var(--mint);} .dot4.l{background:var(--lav);} .dot4.p{background:var(--pink);}
+  .acch{display:flex; align-items:center; gap:7px; padding:7px 10px; background:#eef1f6; border-radius:11px; margin-bottom:7px;}
+  .acch .t{font-size:11px; font-weight:700;}
+  .acch .m{font-size:9.5px; color:var(--dim); font-weight:400;}
+  /* 横向卡 */
+  .hs{display:flex; gap:8px; margin-bottom:6px;}
+  .hcard{flex:0 0 78%; background:#fff; border:1px solid var(--line); border-radius:14px; padding:10px 11px;}
+  .hcard.now{border-color:#bcd0fb; box-shadow:0 2px 10px rgba(47,111,235,.12);}
+  .dots{display:flex; gap:4px; justify-content:center; margin:4px 0 9px;}
+  .dots i{width:5px; height:5px; border-radius:9px; background:#d6dbe6; display:block;}
+  .dots i.on{background:var(--brand); width:14px;}
+  .big{font-size:15px; font-weight:800; line-height:1.3;}
+  .kv{display:flex; justify-content:space-between; font-size:10px; color:var(--dim); margin-top:3px;}
+  .tag{font-size:9px; border-radius:6px; padding:2px 6px; font-weight:700; background:#f1f3f7; color:var(--dim);}
+  .tag.a{background:var(--amber-soft); color:#9a6414;} .tag.b{background:var(--brand-soft); color:#1f54b8;}
+</style>
+</head>
+<body>
+<h1>第二轮：让「已完成」不占地方、日程多也不变长</h1>
+<div class="sub">
+  四个方案都遵守两条硬约束：① 已过去/已完成的不占纵向空间（压成一行摘要，点开才看）；② 纵向高度与日程条数脱钩（只渲染「现在 + 接下来 N」，或横向承载数量）。
+  例子里这一天故意排满 6 件（含 3 件已完成），用来暴露「多了会变长」这件事。
+</div>
+
+<div class="grid">
+
+  <!-- ============ D ============ -->
+  <div class="col">
+    <h3>D · 只向前看（窗口化）</h3>
+    <div class="note">只渲染「现在 + 接下来 3 件」，过去的折成一行。20 件也只占一屏，底部永远有一行「还有 N 件 · 展开」。</div>
+    <div class="phone">
+      <div class="scroll">
+        <div class="card now" style="border-color:#bcd0fb; padding:9px 11px">
+          <div class="row"><div class="grow"><div class="t">现在 · 结构力学Ⅰ</div><div class="m">还剩 85 分钟 · 教三 201</div></div><span class="btn">录音</span></div>
+        </div>
+        <div class="fold"><div class="grow"><span class="t">已过 3 节 · 08:00–12:25</span></div><span class="pill">▸</span></div>
+        <div class="card" style="padding:6px 10px">
+          <div class="cap" style="margin:2px 0 4px">接下来 <span>· 今天还有 4 件</span></div>
+          <div class="mini"><div class="hm">12:30</div><div class="dot4 a"></div><div class="nm">交《马原》课程论文</div><div class="st">今天到期</div></div>
+          <div class="mini"><div class="hm">14:00</div><div class="dot4 m"></div><div class="nm">大学英语（读写）</div><div class="st">外语楼 203</div></div>
+          <div class="mini"><div class="hm">19:30</div><div class="dot4 l"></div><div class="nm">练耳 2 段</div><div class="st">3 遍</div></div>
+          <div class="mini"><div class="hm">23:00</div><div class="dot4 p"></div><div class="nm">收个尾 · 复盘</div><div class="st">2 分钟</div></div>
+        </div>
+        <div class="fold" style="border-style:dashed"><div class="grow"><span class="t">今天一共 6 件 · 展开全部</span></div><span class="pill">▾</span></div>
+        <div class="card" style="padding:8px 11px">
+          <div class="kv" style="margin:0"><span>学期进度</span><span>第 4 / 16 周 · 距期末 85 天</span></div>
+        </div>
+      </div>
+      <div class="fab">◉</div>
+      <div class="anno">纵向高度固定：已过的一行收起 · 接下来固定 3–4 行 · 剩下一律「展开全部」</div>
+      <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+    </div>
+  </div>
+
+  <!-- ============ E ============ -->
+  <div class="col">
+    <h3>E · 今天横向滑</h3>
+    <div class="note">纵向永远一屏：现在这张卡占 78% 宽，往左滑看后面几件。已过的不在右边（往回滑才看到），顶部小点表示今天共几件。</div>
+    <div class="phone">
+      <div class="scroll">
+        <div class="row" style="margin:2px 2px 8px"><div class="grow"><div class="cap">周日 · 第 4 周 · 20:57</div></div><span class="pill">今天 6 件</span></div>
+        <div class="hs">
+          <div class="hcard now">
+            <div class="row"><span class="tag b">现在</span><div class="grow"></div><span class="m" style="margin:0">14:00 前</span></div>
+            <div class="big" style="margin-top:7px">结构力学Ⅰ</div>
+            <div class="m">教三 201 · 还剩 85 分钟 · 已过 41%</div>
+            <div class="bar" style="height:5px; border-radius:9px; background:#e3e8f3; overflow:hidden; margin-top:9px"><i style="display:block; height:100%; width:41%; background:var(--brand)"></i></div>
+            <div class="row" style="margin-top:10px; gap:6px"><span class="btn">开始录音</span><span class="btn ghost">详情</span></div>
+          </div>
+          <div class="hcard" style="opacity:.55">
+            <div class="row"><span class="tag">下一件</span></div>
+            <div class="big" style="margin-top:7px; font-size:14px">交《马原》论文</div>
+            <div class="m">12:30 前 · 待办</div>
+          </div>
+        </div>
+        <div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="fold"><div class="grow"><span class="t">已过 3 节 · 08:00–12:25</span></div><span class="pill">▸</span></div>
+        <div class="card" style="padding:8px 11px">
+          <div class="kv" style="margin:0"><span>晚上收尾</span><span>打卡 0/2 · 练耳 2 段 · 复盘 23:00</span></div>
+        </div>
+      </div>
+      <div class="fab">◉</div>
+      <div class="anno">数量交给横向 · 纵向恒定一屏 · 已过的不占右侧通道</div>
+      <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+    </div>
+  </div>
+
+  <!-- ============ F ============ -->
+  <div class="col">
+    <h3>F · 全天一张表（密度最高）</h3>
+    <div class="note">一天压进一张卡：每行 26px，已完成的只占一行灰字，不额外占位。信息最全、最省空间，代价是看着像清单。</div>
+    <div class="phone">
+      <div class="scroll">
+        <div class="row" style="margin:2px 2px 8px"><div class="grow"><div class="cap">今天 · 6 件 <span>· 已完成 3</span></div></div><span class="pill">＋</span></div>
+        <div class="card" style="padding:6px 10px">
+          <div class="mini past"><div class="hm">08:00</div><div class="dot4 m" style="opacity:.45"></div><div class="nm">高等数学 A</div><div class="st">已上完</div></div>
+          <div class="mini past"><div class="hm">10:00</div><div class="dot4 m" style="opacity:.45"></div><div class="nm">大学物理</div><div class="st">已上完</div></div>
+          <div class="mini past"><div class="hm">12:00</div><div class="dot4 a" style="opacity:.45"></div><div class="nm">背单词 20 个</div><div class="st">已打卡</div></div>
+          <div class="mini now"><div class="hm">14:00</div><div class="dot4 m"></div><div class="nm">结构力学Ⅰ · 教三 201</div><div class="st">还剩 85 分</div></div>
+          <div class="mini"><div class="hm">16:00</div><div class="dot4 a"></div><div class="nm">交《马原》课程论文</div><div class="st">今天到期</div></div>
+          <div class="mini"><div class="hm">19:30</div><div class="dot4 l"></div><div class="nm">练耳 2 段</div><div class="st">3 遍</div></div>
+          <div class="mini"><div class="hm">23:00</div><div class="dot4 p"></div><div class="nm">收个尾 · 复盘</div><div class="st">2 分钟</div></div>
+        </div>
+        <div class="card" style="padding:8px 11px">
+          <div class="row"><div class="grow"><div class="t">现在该做的</div><div class="m">结构力学Ⅰ 还剩 85 分钟 · 可以直接开录音</div></div><span class="btn">录音</span></div>
+        </div>
+        <div class="card" style="padding:8px 11px">
+          <div class="kv" style="margin:0"><span>本周</span><span>周三 4 节 · 周四 3 节 · 周五 2 节</span></div>
+        </div>
+      </div>
+      <div class="fab">◉</div>
+      <div class="anno">20 件事 ≈ 520px，照样一屏 · 已完成只有一行灰字，划掉但不隐藏</div>
+      <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+    </div>
+  </div>
+
+  <!-- ============ H ============ -->
+  <div class="col">
+    <h3>H · 三段手风琴（只开当前段）</h3>
+    <div class="note">上午 / 下午 / 晚上三个段头，默认只展开「当前时段」，其余折成一行。日程再多也只展开一段。</div>
+    <div class="phone">
+      <div class="scroll">
+        <div class="row" style="margin:2px 2px 8px"><div class="grow"><div class="cap">周日 · 第 4 周 <span>· 晚上 20:57</span></div></div><span class="pill">⋯</span></div>
+        <div class="acch"><div class="grow"><div class="t">上午 <span class="m">· 3 件 · 已完成</span></div></div><span class="pill">▸</span></div>
+        <div class="acch"><div class="grow"><div class="t">下午 <span class="m">· 2 件</span></div></div><span class="pill">▸</span></div>
+        <div class="acch" style="background:var(--brand-soft); border:1px solid #cddbfa"><div class="grow"><div class="t" style="color:#1f54b8">晚上 <span class="m" style="color:#4a6ba8">· 现在</span></div></div><span class="pill" style="background:#fff">▾</span></div>
+        <div class="card" style="padding:6px 10px">
+          <div class="mini now"><div class="hm">20:57</div><div class="dot4 l"></div><div class="nm">练耳 2 段（今天到点）</div><div class="st">去听</div></div>
+          <div class="mini"><div class="hm">23:00</div><div class="dot4 p"></div><div class="nm">收个尾 · 复盘</div><div class="st">2 分钟</div></div>
+        </div>
+        <div class="fold"><div class="grow"><span class="t">今天还有 1 条待办到期</span></div><span class="pill">去看</span></div>
+        <div class="card" style="padding:8px 11px">
+          <div class="kv" style="margin:0"><span>打卡</span><span>日精进 未开始 · 背单词 已完成</span></div>
+        </div>
+      </div>
+      <div class="fab">◉</div>
+      <div class="anno">段头即摘要（＋「已完成」）· 只有当前段展开 · 切换时段用手势或段头</div>
+      <div class="nav"><div class="on"><i>◎</i>今日</div><div><i>▤</i>周课表</div><div><i>◔</i>我的</div></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

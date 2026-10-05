@@ -1,0 +1,11 @@
+/* 把 tmp/simplify-mock.html 渲染成一张对比图。跑法：node tmp/simplify-mock-shot.mjs */
+const { chromium } = await import('file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs')
+const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+const ctx = await browser.newContext({ viewport: { width: 1348, height: 800 }, deviceScaleFactor: 2 })
+const page = await ctx.newPage()
+await page.goto('file:///D:/Document/Project/vibe-coding-project/web2/tmp/simplify-mock.html', { waitUntil: 'load' })
+await page.waitForTimeout(400)
+await page.screenshot({ path: 'tmp/simplify-options.png', fullPage: true })
+const h = await page.evaluate(() => document.body.scrollHeight)
+console.log('已写出 tmp/simplify-options.png（1348×' + h + ' 逻辑像素）')
+await browser.close()
