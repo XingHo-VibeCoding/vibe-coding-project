@@ -3,11 +3,13 @@
 > 本文件是 AI 助手（DSH / Claude Code / 其他 Agent）的导读。
 > 分工：`AGENTS.md` 管「**怎么和用户配合干活**」（规矩，必须先读），本文件管「**项目是什么、东西在哪、做到哪、有哪些坑**」，**`docs/交接说明.md` 管「新对话怎么快速接手」**（环境事实 / 常用命令 / 当前版本 / 已知坑 / 下一步计划，一读完就能开工）。三份都读完再动手。
 
-*最后更新：2026-10-05（Day 21 收尾 —— **全应用简化十段计划 Stage 0–10 全部完成**，版本出到 **v1.42.0** 并已在真机复验 S1–S8 全过。要点：今日页三段壳（头/中滚动/尾固定）→ 26px 行组件 `components/RowItem.vue` → 「只向前看」D↔F 两种密度 → 录音入口归位三处（顶卡 / 课表页正在上的那节课 / 通知栏状态框）→ 「我的」页变索引 + 四个全屏二级页（`pages/sub/*.vue`）→ 课表页去掉重复问候卡、「其他日程」收进右上 ＋ 选单 → **Stage 9 组件化**：`App.vue` 从 6902 行降到 4127 行，拆出 `pages/{TodayPage,WeekPage,MePage,OnboardingPage}.vue` 与 12 个 `sheets/*.vue`，状态仍由 App.vue 单一持有、用文件末尾生成的 `APP_CTX`（**717 个绑定**，`web2/tmp/gen-app-ctx.mjs` 生成/校验）注入，子组件 `useApp()` 取用。测试基线 **84 个脚本 / 非 0 退出 0 个**（2026-10-06，六期两步 + 工程卫生三连后首次全绿；`step2-check` 的 5 条过期期望已按自洽口径重写，详见 `docs/交接说明.md` §6.1）。**真机复验结果与两条真机坑（底部系统手势区吞 tap、录音中常驻小条命中区偏移）见 `docs/真机复验清单.md` 第八节**；设计正本与逐段进度见 `docs/结构动效前置约定.md`。*
+*最后更新：2026-10-05（Day 21 收尾 —— **全应用简化十段计划 Stage 0–10 全部完成**，版本出到 **v1.42.0** 并已在真机复验 S1–S8 全过。要点：今日页三段壳（头/中滚动/尾固定）→ 26px 行组件 `components/RowItem.vue` → 「只向前看」D↔F 两种密度 → 录音入口归位三处（顶卡 / 课表页正在上的那节课 / 通知栏状态框）→ 「我的」页变索引 + 四个全屏二级页（`pages/sub/*.vue`）→ 课表页去掉重复问候卡、「其他日程」收进右上 ＋ 选单 → **Stage 9 组件化**：`App.vue` 从 6902 行降到 4127 行，拆出 `pages/{TodayPage,WeekPage,MePage,OnboardingPage}.vue` 与 12 个 `sheets/*.vue`，状态仍由 App.vue 单一持有、用文件末尾生成的 `APP_CTX`（**721 个绑定**，`web2/tmp/gen-app-ctx.mjs` 生成/校验）注入，子组件 `useApp()` 取用。测试基线 **85 个脚本 / 非 0 退出 0 个**（2026-10-06 全绿；`step2-check` 的 5 条过期期望已按自洽口径重写，详见 `docs/交接说明.md` §6.1）。**真机复验结果与两条真机坑（底部系统手势区吞 tap、录音中常驻小条命中区偏移）见 `docs/真机复验清单.md` 第八节**；设计正本与逐段进度见 `docs/结构动效前置约定.md`。*
 
 *同日**美术收口**（十段计划后补的一轮，已完成，并出了 **v1.42.1** 装机包 `dist-apk/schedule-v1.42.1-20261005.apk` / `versionCode 14201`，真机抽查已过）：① 84 处 `bg-ink/<alpha>` 次要底色换成逐主题不透明 token `bg-soft` / `bg-soft-2`（`web2/src/style.css`，四套皮肤各给值；工具 `web2/tmp/alpha-to-soft.mjs`）；② 二级页加 `.push` 推入动效（0.28s `translateX(100%)`，与 `.slide` 同曲线）。自检 `web2/tmp/motion-check.mjs`（9/0），真机抽查记录见 `docs/真机复验清单.md` 第八节末。*
 
 ---
+
+*2026-10-06（P1 / P2）：**P1 正式签名链**本地一半就位 —— 仓库外密钥 `D:\Document\Project\.keys\schedule-release.jks`、壳仓 `android/key.properties`、`signingConfigs.release` 由 `scripts/patch-android.js` 幂等固化（重生成原生工程也能复现）、出包 `dist-apk/schedule-v1.42.1-20261006-release.apk`（证书 `CN=Schedule Assistant`），**真机换签名挂起**（要先留 debug 包做 P3 远程调试）。**P2 练耳记号可见可撤销**：通知栏按过的「我去听了」现在在碎片练耳二级页顶部（收起态也看得见）和今日页「今天要听」那行都能看到、能撤销（`web2/src/data/statusFrame.js` 新增 `unmarkListenDone`，`App.vue` 新增 `frameMarksToday` / `frameMarkedClips` / `unmarkListenDone`），顺带修掉 `dueClips()` 不看记号导致的两处口径打架。自检 `web2/tmp/listen-mark-check.mjs`（19/0）。*
 
 ## 一、这是什么项目
 
@@ -53,7 +55,7 @@ vibe-coding-project/
 
 | 路径 | 是什么 |
 |---|---|
-| `App.vue` | 单一状态持有者 + 外壳（顶卡 / 内容平移层 / 底部 nav / 二级页 Teleport 容器）；Day 21 起 **6902 → 4127 行**，页面与浮层全部拆到下面几处，靠文件末尾生成的 `APP_CTX` 区块（**717 个绑定**）provide 给子组件 |
+| `App.vue` | 单一状态持有者 + 外壳（顶卡 / 内容平移层 / 底部 nav / 二级页 Teleport 容器）；Day 21 起 **6902 → 4127 行**，页面与浮层全部拆到下面几处，靠文件末尾生成的 `APP_CTX` 区块（**721 个绑定**）provide 给子组件 |
 | `components/` | 通用件：`RowItem.vue`（**26px 时间行的唯一实现处**）、`BottomSheet.vue`、`MonthCalendar.vue`、`TimeWheel.vue` / `NumberWheel.vue` 等 |
 | `pages/` | 页面主体：`TodayPage.vue` / `WeekPage.vue` / `MePage.vue` / `OnboardingPage.vue`；二级页四块在 `pages/sub/`（`LecturesPanel` / `ListenPanel` / `TodosPanel` / `SettingsPanel`） |
 | `sheets/` | 十二个浮层：`PickerSheet` / `ConfirmClearSheet` / `DeleteLectureSheet` / `HabitSheet` / `DetailSheet` / `ReviewGridSheet` / `PressTypeSheet` / `AddSheet` / `TodoSheet` / `ReviewSheet` / `EventSheet` / `SemesterSheet` |
@@ -106,7 +108,7 @@ web2 导出 JSON ──→ 主项目 js/store.js 校验（硬闸门）──→ 
 - **数据兼容**：动 `store.js` 字段或 `schema_version` 必须带旧数据升级方案，并实测旧数据可读。
 - **验证要实证**：结论要附用户能亲眼确认的证据；web2 发布后的线上实证用版本串/特征串/行为断言，**hash 与字节数不适用**（沙箱重构建，产物必不同）。
 - **界面质量门**：`cd web2` 再 `node tmp/quality-scan.mjs` → **0 处问题**（2 视口 360×640 / 390×844 × 亮/暗 2 主题 × 12 个状态；查异常文案 `NaN` / 横向溢出 / 元素出界 / 触控目标 <24px / 对比度 / 被遮挡 / 浮层超屏）。**改主题色、文案颜色、色板之后必须跑，跑到 0 处**；`SHOT_ALL=1` 出 32 张 `qa-*.png` 肉眼复核。颜色规则见 `TECH_DESIGN.md` §2.2.1（说明文字实色、主色当文字用 `primary-600`、暗色单独看）。
-- **测试基线**：`cd web2` 再 `node tmp/day19-baseline.mjs` → 全量 **84 个脚本、非 0 退出 0 个**（2026-10-06，六期第二步与工程卫生三连后；`step2-check.mjs` 的 5 条过期期望已重写为自洽断言。脚本清单与逐个退出码见 `web2/tmp/day19-baseline.txt`，以那份为准）。脚本变红**先怀疑脚本自己的陈旧前提**，不是产品坏了：日期敏感（今天没课/周末）、端口写死（dist 静态服务在 **4177**、Vite dev 在 **5180**）、缺 `[data-page="me"]` 作用域（报 `element is outside of the viewport`）、dist 上没有 `/src/…`。排查套路见 `TECH_DESIGN.md` 附录速查最后一行。**状态断言别 match class 名**（当前 tab 用 `nav button[data-active]`）。**带假原生桥的脚本，假桥必须有状态**：`getPending()` 要回上一轮排的、`cancel()` 要真按 id 摘掉，否则第二次排程清不掉旧的、条数翻倍（`slots-notify-check.mjs` 首跑就是这么误报 14 条）。**改完必须先 `npx vite build`**（断言的脚本走 dist 静态服务，不重建就等于测旧包）。
+- **测试基线**：`cd web2` 再 `node tmp/day19-baseline.mjs` → 全量 **85 个脚本、非 0 退出 0 个**（2026-10-06；`step2-check.mjs` 的 5 条过期期望已重写为自洽断言。脚本清单与逐个退出码见 `web2/tmp/day19-baseline.txt`，以那份为准）。脚本变红**先怀疑脚本自己的陈旧前提**，不是产品坏了：日期敏感（今天没课/周末）、端口写死（dist 静态服务在 **4177**、Vite dev 在 **5180**）、缺 `[data-page="me"]` 作用域（报 `element is outside of the viewport`）、dist 上没有 `/src/…`。排查套路见 `TECH_DESIGN.md` 附录速查最后一行。**状态断言别 match class 名**（当前 tab 用 `nav button[data-active]`）。**带假原生桥的脚本，假桥必须有状态**：`getPending()` 要回上一轮排的、`cancel()` 要真按 id 摘掉，否则第二次排程清不掉旧的、条数翻倍（`slots-notify-check.mjs` 首跑就是这么误报 14 条）。**改完必须先 `npx vite build`**（断言的脚本走 dist 静态服务，不重建就等于测旧包）。
 
 ## 七、新 Agent 的第一个任务（建议）
 
