@@ -86,7 +86,7 @@ export function buildIcs({ semester, courses, events, routines }) {
     if (isNaN(anchor)) continue
     const dur = minOf(c.end) - minOf(c.start)
     for (let w = 1; w <= total; w++) {
-      if (!matchWeek(c, w)) continue
+      if (!matchWeek(c, w, semester.subTerms)) continue
       const d = new Date(anchor)
       d.setDate(d.getDate() + (w - 1) * 7 + (Number(c.weekday) - 1))
       const loc = c.place ? (semName + ' 第' + w + '周 · ' + c.place) : ''
@@ -108,7 +108,7 @@ export function buildIcs({ semester, courses, events, routines }) {
       ? (r.week_rule === 'odd' ? '单周' : '双周')
       : ''
     for (let w = 1; w <= total; w++) {
-      if (!matchWeek(r, w)) continue
+      if (!matchWeek(r, w, semester.subTerms)) continue
       const d = new Date(anchor)
       d.setDate(d.getDate() + (w - 1) * 7 + (Number(r.weekday) - 1))
       const loc = r.place ? (semName + ' · ' + r.place) : semName

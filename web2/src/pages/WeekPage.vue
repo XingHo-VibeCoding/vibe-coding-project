@@ -9,6 +9,7 @@ const {
   courseCovering,
   gridStyleOf,
   isAligned,
+  weekSubTerm,
   weekSub,
   setWeekSub,
   weekMenuOpen,
@@ -71,6 +72,10 @@ const {
           <p class="text-sm font-semibold" data-week-label>
             第 {{ weekNo }} 周
             <span class="ml-1 text-xs font-normal text-ink-dim">/ 共 {{ semester.totalWeeks }} 周</span>
+            <!-- P13：这一周属于哪个小学期（标「秋/冬」的课只在各自那半段出现，显示出来好核对）。
+                 用 ink-dim 而不是 primary-500：质量门 E4 实测过 —— primary-500 在暗色卡片上只有 3.69:1
+                 （需 4.5），属于元信息就该用次要文字色。 -->
+            <span v-if="weekSubTerm" class="ml-1 text-xs font-normal text-ink-dim" data-week-subterm>· {{ weekSubTerm }}</span>
           </p>
           <button
             data-week-next

@@ -138,8 +138,8 @@ export function nextCourseDate(courses, semester, wdNow, courseName) {
   if (!semester || !semester.firstMonday) return null
   const slots = courses.filter((c) => c.name === courseName)
   const wk = Number(semester.week) || 1
-  const thisWeek = slots.filter((c) => c.weekday > wdNow && matchWeek(c, wk)).sort((a, b) => a.weekday - b.weekday)[0]
-  const nextWeek = slots.filter((c) => matchWeek(c, wk + 1)).sort((a, b) => a.weekday - b.weekday)[0]
+  const thisWeek = slots.filter((c) => c.weekday > wdNow && matchWeek(c, wk, semester.subTerms)).sort((a, b) => a.weekday - b.weekday)[0]
+  const nextWeek = slots.filter((c) => matchWeek(c, wk + 1, semester.subTerms)).sort((a, b) => a.weekday - b.weekday)[0]
   const pick = thisWeek || nextWeek
   if (!pick) return null
   const targetWk = thisWeek ? wk : wk + 1
@@ -177,8 +177,54 @@ export function weekTagOf(c) {
  *     mock、手动加的课）行为一模一样，不受影响。
  * 注意 weeks 为 null 表示「没有周次信息」，按「每周」处理 —— 这与「有 weeks 但不在里面」
  * 是两回事，不能混（前者是每周都有，后者是这周没课）。 */
-export function matchWeek(c, weekNo) {
+/* ---------- P13 小学期（一个大学期分成两半） ----------
+   用户 2026-10-06 拍板：**秋/冬各 8 周对半分**、做成学期设置里可编辑、短学期（暑假）先不管。
+   为什么要这个：课程上的「学期」文本分三档 —— 秋（只在前半段上）/ 冬（只在后半段）/ 秋冬（整学期）。
+   不做这一层的话，只上前半段的课会在整 16 周里都显示出来（用户当场发现的问题）。
+   存在 `semester.subTerms`，跟节次表 `periods` 同一处（都是校历参数，且跟着主项目 JSON 导出走）。 */
+
+/** 默认小学期表：按总周数对半分（16 周 → 秋 1-8 / 冬 9-16）。老数据没有这个字段就走它。 */
+export function defaultSubTerms(totalWeeks) {
+  const n = Math.max(1, Math.floor(Number(totalWeeks) || 16))
+  const half = Math.ceil(n / 2)
+  return [
+    { name: '秋', from: 1, to: half },
+    { name: '冬', from: half + 1, to: n },
+  ]
+}
+
+/** 取小学期表：学期里存了就清洗着用（名字非空、from≤to、都 ≥1），否则按总周数对半分兜底。
+    两种拼写都认：主项目原文是 snake（sub_terms / total_weeks），界面层是 camel（subTerms / totalWeeks）。 */
+export function subTermsOf(semester) {
+  const raw = semester && (semester.subTerms || semester.sub_terms)
+  if (Array.isArray(raw)) {
+    const clean = []
+    for (const x of raw) {
+      if (!x) continue
+      const name = String(x.name == null ? '' : x.name).trim()
+      if (!name) continue
+      const from = Math.max(1, Math.floor(Number(x.from) || 1))
+      const to = Math.max(from, Math.floor(Number(x.to) || from))
+      clean.push({ name, from, to })
+    }
+    if (clean.length) return clean
+  }
+  const tw = semester && (semester.totalWeeks != null ? semester.totalWeeks : semester.total_weeks)
+  return defaultSubTerms(tw)
+}
+
+/* P12a/P13：这门课在第 weekNo 周上不上。
+   weekNo：第几周；subTerms：小学期表（不传 = 不做小学期判断，行为与 P13 之前完全一致）。
+   判断顺序：先看小学期（课程写了「秋/冬」就只在该小学期出现的周里出现；
+   写「秋冬」时两个小学期名都命中 → 并集 = 整学期），再看 weeks，最后回落 every/odd/even。 */
+export function matchWeek(c, weekNo, subTerms) {
   if (!(weekNo > 0)) return false
+  if (c && c.term && Array.isArray(subTerms) && subTerms.length) {
+    const hit = subTerms.filter((s) => String(c.term).indexOf(s.name) >= 0)
+    /* 命中了小学期名、但这一周不在它的范围内 → 这周不上。
+       （没命中任何小学期名，比如「短学期」或认不出的写法 → 不做限制，照旧） */
+    if (hit.length && !hit.some((s) => weekNo >= s.from && weekNo <= s.to)) return false
+  }
   if (c && Array.isArray(c.weeks) && c.weeks.length) return c.weeks.indexOf(weekNo) !== -1
   const r = c.week_rule || 'every'
   if (r === 'every') return true
@@ -296,6 +342,9 @@ function buildFromExport(data) {
       firstMonday: sem.first_monday,
       week: currentWeekNo(sem.first_monday),
       periods: Array.isArray(sem.periods) ? sem.periods : [],
+      /* P13：小学期（秋/冬，各占一半周数）。跟 periods 放同一处 —— 都是"校历参数"，
+         且跟着主项目 JSON 导出走；老数据没有这个字段时按总周数对半分兜底。 */
+      subTerms: subTermsOf(sem),
     },
     courses: [...courses, ...loadAdded()],
     events: allEvents(events),
@@ -1381,7 +1430,7 @@ export function createManualSemester({ name, first_monday, total_weeks, periods 
 /* ---------- 学期信息/节次表编辑（差距②增补） ----------
    仅导入态/手动创建态可用（DATA_KEY 存在）；mock 是代码数据，改不了。
    校验口径同主项目 validateSemester / validatePeriods。 */
-export function updateImportedSemester({ name, first_monday, total_weeks, periods }) {
+export function updateImportedSemester({ name, first_monday, total_weeks, periods, subTerms }) {
   const raw = localStorage.getItem(DATA_KEY)
   if (!raw) return { ok: false, error: '当前是示例数据，学期信息不能编辑。' }
   let doc
@@ -1415,6 +1464,30 @@ export function updateImportedSemester({ name, first_monday, total_weeks, period
       if (Number.isInteger(sg) && sg >= 1) o.seg = sg
       return o
     })
+  }
+
+  /* P13：小学期表（秋/冬）。存成 `sub_terms`（跟主项目 JSON 的 snake 风格一致，
+     读取侧 subTermsOf() 两种拼写都认）。给两行以内的表，名字非空、from ≤ to、范围落在学期内。 */
+  if (subTerms !== undefined && subTerms !== null) {
+    if (!Array.isArray(subTerms)) return { ok: false, error: '小学期格式不正确。' }
+    if (subTerms.length > 3) return { ok: false, error: '小学期最多 3 段（大学期两半 + 短学期）。' }
+    const clean = []
+    for (const x of subTerms) {
+      const nm = String((x && x.name) || '').trim()
+      if (!nm) return { ok: false, error: '小学期名字不能空（如「秋」「冬」）。' }
+      if (nm.length > 4) return { ok: false, error: '小学期名字太长（最多 4 个字）。' }
+      const from = Math.floor(Number(x && x.from))
+      const to = Math.floor(Number(x && x.to))
+      if (!(from >= 1) || !(to >= from)) return { ok: false, error: '「' + nm + '」的周次要满足 起始 ≥ 1 且 结束 ≥ 起始。' }
+      if (to > tw) return { ok: false, error: '「' + nm + '」的周次超出了学期总周数（' + tw + '）。' }
+      clean.push({ name: nm, from, to })
+    }
+    const seenName = {}
+    for (const x of clean) {
+      if (seenName[x.name]) return { ok: false, error: '小学期名字重复了（' + x.name + '）。' }
+      seenName[x.name] = true
+    }
+    doc.semester.sub_terms = clean
   }
 
   doc.semester.name = n

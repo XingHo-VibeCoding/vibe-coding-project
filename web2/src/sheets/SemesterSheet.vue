@@ -14,6 +14,7 @@ const {
   semErr,
   DEFAULT_PERIODS,
   saveSemEdit,
+  evenSplitSubTerms,
 } = toRefs(app)
 </script>
 
@@ -65,6 +66,48 @@ const {
           :fallback="DEFAULT_PERIODS"
           @error="(m) => (semErr = m)"
         />
+      </div>
+
+      <!-- P13 小学期（一个大学期分成两半）：决定「只上前半段的课」什么时候出现。
+           没有这一层的话，标「秋」的课会在整 16 周里都显示（用户 2026-10-06 发现的问题）。 -->
+      <p class="mt-5 text-sm font-semibold">小学期周次</p>
+      <p class="mt-1 text-[11px] text-ink-dim">
+        课程标着「秋」就只在前半段出现、「冬」只在后半段出现、「秋冬」整学期都在。
+        默认按总周数对半分；短学期（暑假）暂不区分。
+      </p>
+      <div class="mt-2 space-y-2">
+        <div v-for="(st, i) in semForm.subTerms" :key="i" class="flex items-center gap-2">
+          <input
+            v-model="st.name"
+            :data-subterm-name="i"
+            maxlength="4"
+            class="w-16 rounded-xl border border-line bg-canvas px-2.5 py-2 text-center text-sm outline-none focus:border-primary-400"
+          />
+          <input
+            v-model.number="st.from"
+            :data-subterm-from="i"
+            type="number"
+            min="1"
+            class="w-16 rounded-xl border border-line bg-canvas px-2.5 py-2 text-center text-sm tabular-nums outline-none focus:border-primary-400"
+          />
+          <span class="text-xs text-ink-dim">–</span>
+          <input
+            v-model.number="st.to"
+            :data-subterm-to="i"
+            type="number"
+            min="1"
+            class="w-16 rounded-xl border border-line bg-canvas px-2.5 py-2 text-center text-sm tabular-nums outline-none focus:border-primary-400"
+          />
+          <span class="text-[11px] text-ink-dim">周</span>
+        </div>
+        <button
+          type="button"
+          data-subterm-even
+          class="rounded-xl bg-soft px-3 py-1.5 text-xs font-medium text-ink-dim transition active:scale-[0.98]"
+          @click="evenSplitSubTerms"
+        >
+          按总周数对半分
+        </button>
       </div>
 
       <p v-if="semErr" class="mt-3 text-xs text-red-600 dark:text-red-400">{{ semErr }}</p>

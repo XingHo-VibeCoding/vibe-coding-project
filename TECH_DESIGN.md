@@ -228,6 +228,7 @@ web2 (App.vue watch / visibilitychange)
 | first_monday | string `YYYY-MM-DD` | ✅ | 第一周周一日期——**周次换算的锚点** |
 | total_weeks | number | ✅ | 总周数，如 18 |
 | periods | array | ⬜ | 各节次的起止时间表（**Day 8 新增**），形态与约定见下方说明；不填则回落到默认 10 节模板 |
+| sub_terms | array | ⬜ | **小学期的周次划分（P13，2026-10-06 新增）**：`[{name:'秋',from:1,to:8},{name:'冬',from:9,to:16}]`。一个「大学期」分两半，课程上的 `term`（秋/冬/秋冬）据此决定它出现在哪些周。**默认按 `total_weeks` 对半分**（16 周 → 秋 1-8 / 冬 9-16），在学期设置里可编辑（名字也能改，所以春夏学期填 春/夏 即可）。**老数据没有这个字段 → 走对半分兜底，不做迁移**（`subTermsOf()` 两种拼写都认：主项目 snake `sub_terms` / 界面 camel `subTerms`）。短学期（暑假）**暂不参与** |
 | created_at | string ISO | ✅ | 创建时间 |
 
 **`periods` 的存储形态（Day 8 增补）**
