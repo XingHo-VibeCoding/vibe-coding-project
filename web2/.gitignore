@@ -9,3 +9,5 @@ tmp/pre-stage9/
 tmp/ui-*/
 # 真机复验截图（adb 拉回来的）也只在本地
 tmp/real-*/
+# 测试自造的样例文件（edu-ui-check.mjs 每次跑都会重新生成，不进仓库）
+tmp/*.xlsx

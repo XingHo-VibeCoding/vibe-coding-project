@@ -1,11 +1,12 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, provide, reactive } from 'vue'
-import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, dayScope, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, addRoutine, updateRoutine, removeRoutine, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, isGraceKey, graceKeysOf, isBackfilled, totalDoneOf, weekMondayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY } from './data/store.js'
+import { loadDataset, importFromText, clearImport, matchWeek, minOf, addCourse, dedupAdded, countAddedDups, removeCourse, updateCourse, updateImportedCourse, removeImportedCourse, patchMockCourse, removeMockCourse, findConflicts, dayScope, exportImportedText, addTodo, patchTodo, removeTodoById, addEvent, addRoutine, updateRoutine, removeRoutine, periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture, setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord, streakOf, todayKeyOf, isGraceKey, graceKeysOf, isBackfilled, totalDoneOf, weekMondayKeyOf, ADDED_KEY, TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY, replaceCoursesFromEdu, hasEduSnapshot, eduSnapshotInfo, restoreEduSnapshot, weekTagOf } from './data/store.js'
 import { normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt } from './data/periods.js'
 import { GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange, clampCoursesToSegments } from './data/weekGrid.js'
 import { recorderAvailable, ensureMicPermission, startRecording as recStart, stopRecording as recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning, scheduleAutoStop, consumeAutoStop } from './data/recorder.js'
 import { transcriberAvailable, modelState, ensureModel, transcribeLecture, startLiveTranscribe, stopLiveTranscribe } from './data/transcriber.js'
 import { loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable, testConnection, DEEPSEEK_MODELS, phraseFact } from './data/summarizer.js'
+import { parseEduXlsx } from './data/eduImport.js'
 import { compressImageForRecognize, recognizeScheduleImage, recognizerAvailable } from './data/recognizer.js'
 import { buildIcs, downloadText } from './data/ics.js'
 import { notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL, exactAlarmState, askExactAlarm } from './data/notify.js'
@@ -442,6 +443,87 @@ function onClearImport() {
   clearImport()
   importMsg.value = ''
   reloadDataset()
+}
+
+/* ---------------- P12a：从教务导出的文件导入课表 ----------------
+   流程固定成「选文件 → 解析 → **预览** → 确认才写」，中间那步是用户拍板的：
+   导入会**替换**现有课表（用户要的就是"只有一套课表"），所以必须先让他看一眼。
+   解析全程在本地做（xlsx 自己解，不联网、不上传）；失败绝不动本机数据。 */
+const eduPreview = ref(null) // null | { semester, courses, skipped, notes, noTime, dupRows, error }
+const eduBusy = ref(false)
+const eduMsg = ref('')
+const eduMsgBad = ref(false)
+/* 二次确认：点了「确认替换」才置 true，再点一次才真写 */
+const eduConfirming = ref(false)
+const eduSnapshot = ref(eduSnapshotInfo())
+
+function closeEduPreview() {
+  eduPreview.value = null
+  eduConfirming.value = false
+  eduBusy.value = false
+}
+
+async function onEduFile(e) {
+  const file = e.target.files && e.target.files[0]
+  e.target.value = '' // 允许重复选同一文件
+  if (!file) return
+  eduBusy.value = true
+  eduMsg.value = ''
+  eduConfirming.value = false
+  try {
+    const buf = await file.arrayBuffer()
+    /* 节次表要用**用户自己的**（defaultPeriods 已在 store 里兜底），学期周数用当前学期的 */
+    const r = await parseEduXlsx(new Uint8Array(buf), {
+      periods: periodsOf({ semester: semester.value }),
+      totalWeeks: (semester.value && semester.value.totalWeeks) || 16,
+    })
+    eduPreview.value = r
+    if (!r.ok) {
+      eduMsgBad.value = true
+      eduMsg.value = r.error || '这个文件解析不了。'
+    }
+  } catch (err) {
+    eduPreview.value = null
+    eduMsgBad.value = true
+    eduMsg.value = '读文件失败：' + ((err && err.message) || '未知原因')
+  } finally {
+    eduBusy.value = false
+  }
+}
+
+/* 确认替换：真正落库。只换课程段，待办/日程不动；旧课表进快照可恢复 */
+function confirmEduImport() {
+  const p = eduPreview.value
+  if (!p || !p.ok || !p.courses.length) return
+  if (!eduConfirming.value) {
+    eduConfirming.value = true // 第一次点＝亮出后果，第二次才动手
+    return
+  }
+  const r = replaceCoursesFromEdu(p.courses)
+  if (!r.ok) {
+    eduMsgBad.value = true
+    eduMsg.value = r.error || '替换失败。'
+    eduConfirming.value = false
+    return
+  }
+  reloadDataset()
+  eduSnapshot.value = eduSnapshotInfo()
+  eduMsgBad.value = false
+  eduMsg.value = `已换成教务课表：${p.courses.length} 门课，清掉 ${r.removedAdded} 门手动加的课，待办和日程没动`
+  closeEduPreview()
+}
+
+function onRestoreEduSnapshot() {
+  const r = restoreEduSnapshot()
+  if (!r.ok) {
+    eduMsgBad.value = true
+    eduMsg.value = r.error || '恢复失败。'
+    return
+  }
+  reloadDataset()
+  eduSnapshot.value = eduSnapshotInfo()
+  eduMsgBad.value = false
+  eduMsg.value = '已恢复上一套课表。'
 }
 
 /* ---------------- 课前提醒 + 完成通知（二期 M5，App 平台专属） ----------------
@@ -3884,32 +3966,34 @@ provide(APP_CTX, reactive({
   periodsOf, createManualSemester, updateImportedSemester, LECTURES_KEY, loadLectures, addLecture, updateLecture, removeLecture,
   setLectureSummary, courseCovering, nextCourseDate, HABITS_KEY, loadHabits, addHabit, removeHabit, toggleHabitRecord,
   streakOf, todayKeyOf, isGraceKey, graceKeysOf, isBackfilled, totalDoneOf, weekMondayKeyOf, ADDED_KEY,
-  TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY, normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment,
-  removePeriodAt, GRID_AXIS_W, buildGridRows, rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned,
-  findCellOverlaps, secRowRange, clampCoursesToSegments, recorderAvailable, ensureMicPermission, recStart, recStop, resolvePlayableUri,
-  statClip, deleteClipFile, startKeepAlive, stopKeepAlive, keepAliveRunning, scheduleAutoStop, consumeAutoStop, transcriberAvailable,
-  modelState, ensureModel, transcribeLecture, startLiveTranscribe, stopLiveTranscribe, loadLlmConfig, saveLlmConfig, summarizeTranscript,
-  summarizerAvailable, testConnection, DEEPSEEK_MODELS, phraseFact, compressImageForRecognize, recognizeScheduleImage, recognizerAvailable, buildIcs,
-  downloadText, notifyAvailable, loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone,
-  testNotify, onNotificationAction, LISTEN_TAG, LISTEN_CHANNEL, exactAlarmState, askExactAlarm, loadClips, saveClips,
-  loadListenSettings, saveListenSettings, reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds,
-  todayKey, addDaysKey, minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices,
-  parseIntervals, formatIntervals, intInRange, isTimeStr, LISTEN_DEFAULTS, fileToBase64, writeClipBytes, resolveListenUri,
-  makeClipBlobUrl, statClipFile, loadReviews, saveReviews, upsertReview, findReview, loadReviewSettings, saveReviewSettings,
-  newRecord, summarizeReview, MOODS, QUESTIONS, noticeItem, noticeDate, REVIEW_TAG, REVIEW_CHANNEL,
-  loadDaily, saveDaily, upsertDay, dayOf, recentDays, baselineOf, dayLine, loadBook,
-  saveBook, upsertReason, pickCallout, markSaid, muteReason, weekdayGaps, gapLine, canTellPattern,
-  markPatternTold, QUICK_REASONS, MonthCalendar, NumberWheel, TimeWheel, DropdownSelect, PeriodsEditor, BottomSheet,
-  RowItem, APP_CTX, TodayPage, WeekPage, MePage, LecturesPanel, ListenPanel, TodosPanel,
-  SettingsPanel, OnboardingPage, TodoSheet, ReviewSheet, EventSheet, SemesterSheet, PickerSheet, ConfirmClearSheet,
-  DeleteLectureSheet, AddSheet, PressTypeSheet, ReviewGridSheet, DetailSheet, HabitSheet, APP_VERSION, tab,
-  TAB_KEYS, tabIndex, weekSub, habitSheet, stripDelay, switchTab, setWeekSub, weekMenuOpen,
-  toggleWeekMenu, closeWeekMenu, menuAddSlot, menuAddCourse, menuAddEvent, menuScan, menuOpenList, onWeekMenuAway,
-  stripRef, stripH, measureStrip, todayH, todayRef, todayTopOffset, measureTodayH, swipeDx,
-  swiping, sw, onStripTouchStart, onStripTouchMove, onStripTouchEnd, onStripTouchCancel, APP_PLUGIN, backHint,
-  closeTopmostLayer, lastBackTs, backHintTimer, initBackButton, picker, pickerRef, openDateField, openTimeField,
-  openNumberField, pickerConfirm, initial, source, semester, weekAll, events, routines,
-  importMsg, reloadDataset, addedDupCount, dedupCourses, onImportFile, onClearImport, notifySettings, notifyPerm,
+  TODOS_KEY, EVENTS_KEY, COURSE_OV_KEY, replaceCoursesFromEdu, hasEduSnapshot, eduSnapshotInfo, restoreEduSnapshot, weekTagOf,
+  normalizeSegs, segmentView, reperiodAll, shiftWithinSegment, addPeriodToSegment, removePeriodAt, GRID_AXIS_W, buildGridRows,
+  rowIndexMap, courseItems, previewItems, gridStyleOf, isAligned, findCellOverlaps, secRowRange, clampCoursesToSegments,
+  recorderAvailable, ensureMicPermission, recStart, recStop, resolvePlayableUri, statClip, deleteClipFile, startKeepAlive,
+  stopKeepAlive, keepAliveRunning, scheduleAutoStop, consumeAutoStop, transcriberAvailable, modelState, ensureModel, transcribeLecture,
+  startLiveTranscribe, stopLiveTranscribe, loadLlmConfig, saveLlmConfig, summarizeTranscript, summarizerAvailable, testConnection, DEEPSEEK_MODELS,
+  phraseFact, parseEduXlsx, compressImageForRecognize, recognizeScheduleImage, recognizerAvailable, buildIcs, downloadText, notifyAvailable,
+  loadNotifySettings, saveNotifySettings, ensureNotifyEnv, buildScheduleItems, applySchedule, notifyDone, testNotify, onNotificationAction,
+  LISTEN_TAG, LISTEN_CHANNEL, exactAlarmState, askExactAlarm, loadClips, saveClips, loadListenSettings, saveListenSettings,
+  reviewAdvance, countPlayed, compareDateKey, newClipFromImport, clipDuration, fmtSeconds, todayKey, addDaysKey,
+  minOfTime, dueClips, buildListenItems, repeatTimesOf, nextPlayRound, buildListenNotices, parseIntervals, formatIntervals,
+  intInRange, isTimeStr, LISTEN_DEFAULTS, fileToBase64, writeClipBytes, resolveListenUri, makeClipBlobUrl, statClipFile,
+  loadReviews, saveReviews, upsertReview, findReview, loadReviewSettings, saveReviewSettings, newRecord, summarizeReview,
+  MOODS, QUESTIONS, noticeItem, noticeDate, REVIEW_TAG, REVIEW_CHANNEL, loadDaily, saveDaily,
+  upsertDay, dayOf, recentDays, baselineOf, dayLine, loadBook, saveBook, upsertReason,
+  pickCallout, markSaid, muteReason, weekdayGaps, gapLine, canTellPattern, markPatternTold, QUICK_REASONS,
+  MonthCalendar, NumberWheel, TimeWheel, DropdownSelect, PeriodsEditor, BottomSheet, RowItem, APP_CTX,
+  TodayPage, WeekPage, MePage, LecturesPanel, ListenPanel, TodosPanel, SettingsPanel, OnboardingPage,
+  TodoSheet, ReviewSheet, EventSheet, SemesterSheet, PickerSheet, ConfirmClearSheet, DeleteLectureSheet, AddSheet,
+  PressTypeSheet, ReviewGridSheet, DetailSheet, HabitSheet, APP_VERSION, tab, TAB_KEYS, tabIndex,
+  weekSub, habitSheet, stripDelay, switchTab, setWeekSub, weekMenuOpen, toggleWeekMenu, closeWeekMenu,
+  menuAddSlot, menuAddCourse, menuAddEvent, menuScan, menuOpenList, onWeekMenuAway, stripRef, stripH,
+  measureStrip, todayH, todayRef, todayTopOffset, measureTodayH, swipeDx, swiping, sw,
+  onStripTouchStart, onStripTouchMove, onStripTouchEnd, onStripTouchCancel, APP_PLUGIN, backHint, closeTopmostLayer, lastBackTs,
+  backHintTimer, initBackButton, picker, pickerRef, openDateField, openTimeField, openNumberField, pickerConfirm,
+  initial, source, semester, weekAll, events, routines, importMsg, reloadDataset,
+  addedDupCount, dedupCourses, onImportFile, onClearImport, eduPreview, eduBusy, eduMsg, eduMsgBad,
+  eduConfirming, eduSnapshot, closeEduPreview, onEduFile, confirmEduImport, onRestoreEduSnapshot, notifySettings, notifyPerm,
   notifyOk, notifyTesting, notifyMsg, notifyMsgBad, exactAlarm, exactAsking, exactMsg, exactMsgBad,
   exactHint, refreshExactAlarm, onAskExactAlarm, goMeTab, applyNotifySchedule, toggleNotify, setNotifyLead, onTestNotify,
   initNotify, frameSettings, frameIsApp, frameMarksToday, refreshFrameMarks, unmarkListenDone, frameMarkedClips, frameMsg,
@@ -4322,6 +4406,89 @@ provide(APP_CTX, reactive({
 <ConfirmClearSheet />
 
 <DeleteLectureSheet />
+
+    <!-- P12a 教务课表导入的预览确认浮层。
+         为什么必须有这一步：导入是**替换**现有课表（用户：「不要追加，我只希望有一套课表」），
+         所以先把解析结果摆出来让人看一眼再动手。固定自建外壳（不走 BottomSheet 组件），
+         因为它要显示表格、比一般浮层宽，且与引导页第 3 步「核对导入」同构。 -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="eduPreview" data-edu-preview class="fixed inset-0 z-[70] flex flex-col bg-canvas" :style="{ paddingTop: 'var(--sat, 0px)' }">
+        <header class="flex shrink-0 items-center gap-2 px-3 py-2.5">
+          <button type="button" data-edu-preview-close class="flex h-9 items-center gap-0.5 rounded-full pl-1 pr-2 text-sm text-ink-dim transition active:scale-95" @click="closeEduPreview">
+            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>关闭
+          </button>
+          <h2 class="min-w-0 flex-1 truncate text-center text-sm font-semibold">核对教务课表</h2>
+          <span class="w-12 shrink-0"></span>
+        </header>
+
+        <div data-edu-body class="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-4 pt-1 pb-28">
+          <p v-if="!eduPreview.ok" data-edu-error class="rounded-2xl border border-line bg-card p-4 text-[13px] text-red-600 dark:text-red-400">
+            {{ eduPreview.error }}
+          </p>
+
+          <template v-else>
+            <div class="rounded-2xl border border-line bg-card p-4">
+              <p class="text-sm font-medium" data-edu-semester>{{ eduPreview.semester && eduPreview.semester.name }}</p>
+              <p class="mt-1 text-[11px] text-ink-dim" data-edu-count>
+                识别到 {{ eduPreview.courses.length }} 条上课记录
+                <template v-if="eduPreview.dupRows"> · 去掉了 {{ eduPreview.dupRows }} 条完全重复的</template>
+              </p>
+              <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">
+                确认后会<b class="font-semibold text-ink">替换</b>你现在的课表（只换课程；待办和日程不动，手动加的课会清掉）。替换前会自动存一份旧课表，随时能恢复。
+              </p>
+            </div>
+
+            <ul data-edu-list class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
+              <li v-for="c in eduPreview.courses" :key="c.id" :data-edu-row="c.id" class="p-3.5">
+                <div class="flex items-baseline justify-between gap-2">
+                  <span class="min-w-0 flex-1 truncate text-[13px] font-medium">{{ c.name }}</span>
+                  <span data-edu-week class="shrink-0 text-[10px] text-ink-dim">{{ weekTagOf(c) }}</span>
+                </div>
+                <p class="mt-1 text-[11px] text-ink-dim">
+                  周{{ '一二三四五六日'[c.weekday - 1] }} 第{{ c.secs.join(',') }}节 · {{ c.start }}–{{ c.end }}<template v-if="c.place"> · {{ c.place }}</template>
+                </p>
+                <p v-if="c.teacher || c.term" class="mt-0.5 text-[11px] text-ink-dim">
+                  <template v-if="c.teacher">{{ c.teacher }}</template><template v-if="c.teacher && c.term"> · </template><template v-if="c.term">{{ c.term }}学期</template>
+                </p>
+              </li>
+            </ul>
+
+            <div v-if="eduPreview.noTime && eduPreview.noTime.length" data-edu-notime class="rounded-2xl border border-line bg-card p-4">
+              <p class="text-[12px] font-medium">这 {{ eduPreview.noTime.length }} 门没进课表（文件里没写上课时间）</p>
+              <ul class="mt-1.5 space-y-1">
+                <li v-for="(n, i) in eduPreview.noTime" :key="i" class="text-[11px] text-ink-dim">
+                  {{ n.name }}<template v-if="n.teacher"> · {{ n.teacher }}</template><template v-if="n.term"> · {{ n.term }}学期</template>
+                </li>
+              </ul>
+              <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">这类多半是实践/短学期课，需要你自己加，或者以后告诉我怎么排。</p>
+            </div>
+
+            <div v-if="eduPreview.notes && eduPreview.notes.length" data-edu-notes class="rounded-2xl border border-line bg-card p-4">
+              <p class="text-[12px] font-medium">需要注意</p>
+              <ul class="mt-1.5 space-y-1">
+                <li v-for="(t, i) in eduPreview.notes" :key="i" class="text-[11px] leading-relaxed text-ink-dim">· {{ t }}</li>
+              </ul>
+            </div>
+          </template>
+
+          <p v-if="eduMsg" data-edu-msg class="text-[11px]" :class="eduMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ eduMsg }}</p>
+        </div>
+
+        <footer v-if="eduPreview.ok" class="shrink-0 border-t border-line bg-card px-4 py-3" :style="{ paddingBottom: 'max(12px, calc(var(--sab, 0px) + 12px))' }">
+          <button
+            type="button"
+            data-edu-confirm
+            class="w-full rounded-xl py-3 text-sm font-medium text-white transition active:scale-[0.99]"
+            :class="eduConfirming ? 'bg-red-500' : 'bg-primary-500'"
+            @click="confirmEduImport"
+          >
+            {{ eduConfirming ? '再点一次：确认替换现有课表' : '确认导入（替换现有课表）' }}
+          </button>
+        </footer>
+      </div>
+    </Transition>
+  </Teleport>
 
     <!-- 初始设定引导页：首次打开出现，选一次就记住 -->
   <OnboardingPage />

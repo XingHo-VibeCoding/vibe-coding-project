@@ -152,9 +152,34 @@ function fmtMin(min) {
   return pad(Math.floor(min / 60)) + ':' + pad(min % 60)
 }
 
-/* 周次规则（移植自主项目 Rules.matchWeek） */
+/* P12a：课程的周次标签。
+   没有 weeks（老数据/mock/手动加课）→ 老口径「每周 / 单周 / 双周」；
+   有 weeks（教务导入）→ 说人话：连续区间写 `1-8 周`，否则列前几个；单/双周仍优先这么叫。 */
+export function weekTagOf(c) {
+  const w = c && Array.isArray(c.weeks) && c.weeks.length ? c.weeks.slice().sort((a, b) => a - b) : null
+  if (!w) return { every: '每周', odd: '单周', even: '双周' }[c && c.week_rule] || ''
+  const isOdd = w.every((x) => x % 2 === 1)
+  const isEven = w.every((x) => x % 2 === 0)
+  if (isOdd && w.length > 2) return '单周'
+  if (isEven && w.length > 2) return '双周'
+  const contiguous = w.every((x, i) => i === 0 || x === w[i - 1] + 1)
+  if (contiguous) return w.length === 1 ? `第 ${w[0]} 周` : `${w[0]}-${w[w.length - 1]} 周`
+  return w.length <= 4 ? w.join('、') + ' 周' : `${w.length} 个指定周`
+}
+
+/* 周次规则（移植自主项目 Rules.matchWeek）
+ *
+ * P12a 扩展（2026-10-06）：教务导出的课表带**任意周次集合**（`{单周}` → [1,3,5,…,15]、
+ * `{1-8周}` → [1..8]、`{1-8,10-16周}` → 两段合并），原来的 every/odd/even 三档表达不了。
+ * 所以课程多了一个可选字段 `weeks: number[]`：
+ *   · 有 weeks（非空数组）→ 只认它，weekNo 在里面才算有课；
+ *   · 没有 weeks → **完全走原来的 every/odd/even 分支**，老数据（主项目导出 JSON、
+ *     mock、手动加的课）行为一模一样，不受影响。
+ * 注意 weeks 为 null 表示「没有周次信息」，按「每周」处理 —— 这与「有 weeks 但不在里面」
+ * 是两回事，不能混（前者是每周都有，后者是这周没课）。 */
 export function matchWeek(c, weekNo) {
   if (!(weekNo > 0)) return false
+  if (c && Array.isArray(c.weeks) && c.weeks.length) return c.weeks.indexOf(weekNo) !== -1
   const r = c.week_rule || 'every'
   if (r === 'every') return true
   if (r === 'odd') return weekNo % 2 === 1
@@ -225,10 +250,15 @@ function buildFromExport(data) {
       weekday: Number(s.weekday),
       name: s.title,
       place: String(s.location || '').trim(),
-      tag: { every: '每周', odd: '单周', even: '双周' }[s.week_rule] || '',
+      /* P12a：带 weeks 的课（教务导入）标签写实际周次，否则还是每周/单周/双周 */
+      tag: weekTagOf(s),
       start: s.start_time,
       end: fmtMin(minOf(s.start_time) + Number(s.duration)),
       week_rule: s.week_rule,
+      /* P12a：把周次集合透传到界面层，matchWeek 认它 */
+      weeks: Array.isArray(s.weeks) && s.weeks.length ? s.weeks.slice() : null,
+      term: s.term || '',
+      teacher: s.teacher || '',
     }))
 
   const events = schedules
@@ -299,6 +329,122 @@ export function importFromText(text) {
 export function clearImport() {
   localStorage.removeItem(DATA_KEY)
   return buildMock()
+}
+
+/* ---------- P12a 教务课表导入：只换「课程」这一段 + 旧课表快照 ----------
+   用户拍板（2026-10-06）：「不要追加，我只希望有一套课表」+「A + 要快照」。
+   所以口径是：
+     · `web2.data.schedules` 里 `type === 'course'` 的条目**整体替换**成教务解析出来的；
+     · `web2.data` 其余（todos / events / routines / semester）**原样不动**；
+     · `web2.added` 里的**课程条目清掉**（否则旧的手动加课会浮在新课表上），
+       但 `web2.added` 里非课程的东西保留；
+     · 替换前把「当前这套课表」存进快照，用户能从设置里退回去。
+   为什么不能整份换掉 `web2.data`：它里面同时装着待办和日程，整换＝用户的待办全没。 */
+export const EDU_SNAPSHOT_KEY = 'web2.eduSnapshot'
+
+/**
+ * 把教务解析出来的课换成唯一那套课表。
+ * @param {Array} courses parseEduXlsx 的输出（含 weekday/name/place/teacher/code/term/start/end/weeks/week_rule）
+ * @returns {{ ok: boolean, error?: string, replaced: number, removedAdded: number, keptTodos: number }}
+ */
+export function replaceCoursesFromEdu(courses) {
+  const list = Array.isArray(courses) ? courses : []
+  if (!list.length) return { ok: false, error: '没有可导入的课程。', replaced: 0, removedAdded: 0, keptTodos: 0 }
+  const raw = localStorage.getItem(DATA_KEY)
+  if (!raw) {
+    /* 还没导入过主项目数据（示例态）：没有 web2.data 可改，直接告诉调用方先导入 */
+    return { ok: false, error: '还没导入主项目数据，先「导入主项目数据」再换课表。', replaced: 0, removedAdded: 0, keptTodos: 0 }
+  }
+  let doc
+  try {
+    doc = JSON.parse(raw)
+  } catch {
+    return { ok: false, error: '本机存的课表数据坏了，读不出来。', replaced: 0, removedAdded: 0, keptTodos: 0 }
+  }
+  if (!doc || doc.app !== 'sched' || !Array.isArray(doc.schedules)) {
+    return { ok: false, error: '本机存的不是主项目导出格式，无法替换课表。', replaced: 0, removedAdded: 0, keptTodos: 0 }
+  }
+  /* 1) 存快照（只存这一份 JSON 原文 + added 的课程部分，够还原就行） */
+  try {
+    const addedCourses = loadAdded().filter((c) => c && c.type === 'course')
+    localStorage.setItem(
+      EDU_SNAPSHOT_KEY,
+      JSON.stringify({ at: new Date().toISOString(), data: raw, added: addedCourses }),
+    )
+  } catch {
+    /* 快照存不下（配额）不该挡住导入本身，但要让用户知道 */
+  }
+  /* 2) 换掉课程段。semester_id 保留原来的（教务课属于当前学期） */
+  const semId = doc.semester && doc.semester.id ? doc.semester.id : undefined
+  const kept = doc.schedules.filter((s) => !(s && s.type === 'course'))
+  const replaced = doc.schedules.length - kept.length
+  for (const c of list) {
+    kept.push({
+      id: c.id,
+      type: 'course',
+      title: c.name,
+      location: c.place || '',
+      teacher: c.teacher || '',
+      code: c.code || '',
+      term: c.term || '',
+      weekday: Number(c.weekday),
+      start_time: c.start,
+      duration: Math.max(1, minOf(c.end) - minOf(c.start)),
+      week_rule: c.week_rule || 'every',
+      /* weeks 是 P12a 新增字段；老的主项目/App 读不懂会忽略它，不会报错 */
+      weeks: Array.isArray(c.weeks) && c.weeks.length ? c.weeks.slice() : null,
+      ...(semId ? { semester_id: semId } : {}),
+    })
+  }
+  doc.schedules = kept
+  doc.updated_at = new Date().toISOString()
+  localStorage.setItem(DATA_KEY, JSON.stringify(doc))
+  /* 3) 清掉手动加的课（只清课程，别的保留） */
+  const all = loadAdded()
+  const remain = all.filter((c) => !(c && c.type === 'course'))
+  const removedAdded = all.length - remain.length
+  if (removedAdded) localStorage.setItem(ADDED_KEY, JSON.stringify(remain))
+  return { ok: true, replaced, removedAdded, keptTodos: Array.isArray(doc.todos) ? doc.todos.length : 0 }
+}
+
+/** 有没有可恢复的旧课表快照 */
+export function hasEduSnapshot() {
+  try {
+    const s = JSON.parse(localStorage.getItem(EDU_SNAPSHOT_KEY) || '')
+    return !!(s && s.data)
+  } catch {
+    return false
+  }
+}
+
+/** 快照的时间与课程数（设置页那行文案用；读不出来返回 null） */
+export function eduSnapshotInfo() {
+  try {
+    const s = JSON.parse(localStorage.getItem(EDU_SNAPSHOT_KEY) || '')
+    if (!s || !s.data) return null
+    const doc = JSON.parse(s.data)
+    const n = (Array.isArray(doc.schedules) ? doc.schedules : []).filter((x) => x && x.type === 'course').length
+    return { at: s.at || '', courses: n, added: Array.isArray(s.added) ? s.added.length : 0 }
+  } catch {
+    return null
+  }
+}
+
+/** 恢复上一套课表：把快照里的 web2.data 原文与 added 课程写回去 */
+export function restoreEduSnapshot() {
+  let s
+  try {
+    s = JSON.parse(localStorage.getItem(EDU_SNAPSHOT_KEY) || '')
+  } catch {
+    s = null
+  }
+  if (!s || !s.data) return { ok: false, error: '没有可恢复的上一套课表。' }
+  localStorage.setItem(DATA_KEY, String(s.data))
+  const now = loadAdded().filter((c) => !(c && c.type === 'course'))
+  const back = Array.isArray(s.added) ? s.added : []
+  localStorage.setItem(ADDED_KEY, JSON.stringify([...now, ...back]))
+  localStorage.removeItem(EDU_SNAPSHOT_KEY)
+  return { ok: true, restored: back.length }
 }
 
 /* ---------- 待办增删改（增删改按源分支：导入态改原始导出文本，示例态用覆盖层） ---------- */

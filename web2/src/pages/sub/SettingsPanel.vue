@@ -13,6 +13,11 @@ const {
   addedDupCount,
   dedupCourses,
   onImportFile,
+  onEduFile,
+  eduMsg,
+  eduMsgBad,
+  eduSnapshot,
+  onRestoreEduSnapshot,
   onClearImport,
   notifySettings,
   notifyPerm,
@@ -79,6 +84,51 @@ const {
           <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
           <input type="file" accept=".json,application/json" class="hidden" @change="onImportFile" />
         </label>
+
+        <!-- P12a 从教务导出文件导入课表（2026-10-06）。
+             与上面「导入主项目数据」是两条不同的路：那条换**整份数据**（含待办/日程），
+             这条只换**课程**、且要先过一遍预览确认（见 App.vue 的 data-edu-preview）。
+             放在「导入主项目数据」下面，因为它依赖已有一份主项目数据当底子。 -->
+        <label class="flex cursor-pointer items-center gap-3.5 p-4 active:bg-soft">
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2" /><path d="M2 6h12M6 6v8M10 6v8" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">从教务导入课表</span>
+            <span class="block text-[11px] text-ink-dim">选教务导出的 .xlsx，先核对再替换（待办和日程不动）</span>
+          </span>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+          <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" data-edu-file @change="onEduFile" />
+        </label>
+
+        <!-- 教务导入的回执（成功/失败都留在这行）。
+             为什么还要在浮层外面再挂一次：解析**失败到抛异常**那条路上，浮层根本没打开
+             （App 侧把它设回 null），而回执原来只写在浮层里面 ⇒ 用户点完文件**什么都看不到**。
+             2026-10-06 就是被这个坑耽误了一轮排查：测试只知道「预览没出现」。 -->
+        <p
+          v-if="eduMsg"
+          data-edu-msg-out
+          class="px-4 pb-3 text-[11px]"
+          :class="eduMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'"
+        >{{ eduMsg }}</p>
+
+        <!-- 恢复上一套课表：只在有教务导入留下的快照时出现（没有就不摆这个按钮） -->
+        <button
+          v-if="eduSnapshot"
+          data-edu-restore
+          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-soft"
+          @click="onRestoreEduSnapshot"
+        >
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 109.8-3.4M2.5 2.5v3h3" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">恢复上一套课表</span>
+            <span class="block text-[11px] text-ink-dim">
+              换教务课表前自动存的（{{ eduSnapshot.courses }} 门课<template v-if="eduSnapshot.added">，含 {{ eduSnapshot.added }} 门手动加的</template>）
+            </span>
+          </span>
+        </button>
 
         <!-- 恢复示例数据（仅导入态出现） -->
         <button
