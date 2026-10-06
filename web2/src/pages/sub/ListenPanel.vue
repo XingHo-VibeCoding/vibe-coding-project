@@ -17,6 +17,8 @@ const {
   listenIsApp,
   listenSuggestions,
   listenStageLabel,
+  frameMarkedClips,
+  unmarkListenDone,
   onListenPick,
   toggleListenNotify,
   listenSettingsOpen,
@@ -34,6 +36,33 @@ const {
 </script>
 
 <template>
+      <!-- P2：今天「已去听过」的记号（可见可撤销）。
+           **必须在卡片外面**：这个二级页默认是「收起」态（listenOpen=false），
+           塞进下面那个 v-if 区块里就等于永远看不见 —— 而「为什么今天没提醒我」
+           恰恰是用户进来要找的答案。父容器 [data-sub-body] 是 flex+gap-4，不用自带间距。 -->
+      <div v-if="frameMarkedClips.length" data-listen-marks class="rounded-2xl border border-line bg-card p-4 shadow-sm">
+        <div class="flex items-start gap-3.5">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6" /><path d="M5.5 8.2l1.7 1.7 3.4-3.6" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">今天已去听过</span>
+            <span class="block text-[11px] text-ink-dim">这几段今天不再提醒你；撤掉就还会再提醒</span>
+          </span>
+        </div>
+        <ul class="mt-2.5 space-y-1.5">
+          <li v-for="m in frameMarkedClips" :key="m.id" class="flex items-center gap-2 rounded-xl bg-soft px-3 py-2">
+            <span class="min-w-0 flex-1 truncate text-[12px]">{{ m.name }}</span>
+            <button
+              type="button"
+              :data-listen-unmark="m.id"
+              class="shrink-0 rounded-full bg-soft-2 px-3 py-1 text-[11px] font-medium text-ink-dim transition active:scale-95"
+              @click="unmarkListenDone(m.id)"
+            >撤销</button>
+          </li>
+        </ul>
+      </div>
+
       <!-- 碎片练耳（四期 Day 18）：导入 + 列表（L1）。通知/播放见后续板块 -->
       <section class="rounded-2xl border border-line bg-card p-4 shadow-sm">
         <div class="flex items-center gap-3.5">

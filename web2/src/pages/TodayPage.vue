@@ -21,6 +21,8 @@ const {
   todayReview,
   openReview,
   listenDue,
+  frameMarksToday,
+  unmarkListenDone,
   listenTodayAll,
   listenPlayId,
   listenPlayRound,
@@ -334,11 +336,27 @@ const {
             class="flex items-center gap-3 p-3.5"
           >
             <div class="min-w-0 flex-1">
-              <p class="truncate text-sm text-ink">{{ c.name }}</p>
+              <p class="truncate text-sm text-ink">
+                {{ c.name }}
+                <!-- P2：通知栏按过「我去听了」的那段，这里不再假装没发生过：
+                     仍然列出来（今天确实到期、你可能还想听），只是打个标记并给「撤销」。 -->
+                <span
+                  v-if="frameMarksToday.listenDone.includes(c.id)"
+                  data-today-listen-mark
+                  class="ml-1.5 rounded-full bg-soft-2 px-2 py-0.5 align-middle text-[10px] font-normal text-ink-dim"
+                >今天已去听过</span>
+              </p>
               <p class="mt-0.5 text-[11px] text-ink-dim">
                 已听 {{ c.played_count }} 次 · {{ fmtSeconds(c.seconds) }}<template v-if="listenPlayId === c.id && listenPlayTotal > 1"> · <span class="font-medium text-primary-600" data-listen-round>第 {{ listenPlayRound }}/{{ listenPlayTotal }} 遍</span></template>
               </p>
             </div>
+            <button
+              v-if="frameMarksToday.listenDone.includes(c.id)"
+              type="button"
+              :data-today-listen-unmark="c.id"
+              class="h-11 shrink-0 rounded-full px-3 text-xs font-medium text-ink-dim transition active:scale-95"
+              @click="unmarkListenDone(c.id)"
+            >撤销</button>
             <button
               type="button"
               :data-today-listen-play="c.id"

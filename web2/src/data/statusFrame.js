@@ -79,6 +79,14 @@ export function markListenDone(id) {
   if (id && m.listenDone.indexOf(id) === -1) m.listenDone.push(id)
   return saveFrameMarks(m)
 }
+/* P2：撤销今天给这段音频打的「我去听了」记号（记号要看得见、也要撤得回）。
+   撤销后它重新进入状态框快照（statusFrame.js:114 那层过滤），也就是「今天再提醒我一次」。
+   只动提醒口径：已听次数与复习档位在 listen.js 那边，跟这个记号无关。 */
+export function unmarkListenDone(id) {
+  const m = loadFrameMarks()
+  m.listenDone = m.listenDone.filter((x) => x !== id)
+  return saveFrameMarks(m)
+}
 
 /* ── 快照 ──────────────────────────────────────────────────────────────
    纯函数（可单测）：把 App 侧的数据压成原生要的那几个字段。
