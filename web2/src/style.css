@@ -183,6 +183,19 @@ body {
   transform: translateX(100%);
 }
 
+/* 今天页密度切换（动效约定 1a）：D（折叠一行 + 接下来 3 行）↔ F（全天 26px 表）
+   在**同一位置**交叉淡入 0.2s，滚动位置不动、容器高度不跳（两种密度行高完全相同）。
+   用 mode="out-in"：旧列表先淡出（0.2s）、新列表再淡入（0.2s），中间不会两套行叠在一起。
+   只做 opacity，不动 transform / 布局 —— 所以淡入淡出期间点行（开课程详情）也稳。 */
+.density-enter-active,
+.density-leave-active {
+  transition: opacity 0.2s ease;
+}
+.density-enter-from,
+.density-leave-to {
+  opacity: 0;
+}
+
 /* 自建下拉面板动效（DropdownSelect.vue）：从触发器方向淡入 + 轻缩放；
    朝上弹时换入场方向（.ddpop-up 由组件按位置加） */
 .ddpop-enter-active,

@@ -46,17 +46,33 @@ const SECTION_ORDER = () => {
   })
 }
 
-/* ================= A. 09:00：下一节还没开始 ================= */
-const a = await open('09:00')
+/* 冻结到周二（示例数据 web2/src/data/mock.js 的 weekCourses 只有周一~周六，周二有三节课：
+   08:00 数据结构 / 10:00 大学英语（10:00–11:40）/ 14:00 大学物理）。
+   为什么不用「冻到某一天」：?t= 后门只吃钟点（`minOf` 会截掉日期部分），页面里的「今天」
+   永远是真实今天 —— 所以脚本挑不了星期，只能挑钟点。
+   代价：真实周日跑时今天一节课都没有，找「今天的课 / 下一节」的断言无从谈起，
+   如实 SKIP 并说明（跳过 = 没验证，不算通过），不伪装成失败。 */
+const WD_LIST = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const WED_IDX = 2                                   // 0=周日 … 2=周二
+const TUE_DAY = (() => {                            // 时区安全的「本周周二」，只用来判断真实今天是不是周日
+  const d = new Date()
+  d.setHours(12, 0, 0, 0)
+  d.setDate(d.getDate() + ((WED_IDX - d.getDay() + 7) % 7))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+})()
+const at = (hhmm) => hhmm                           // 时间后门只吃钟点
+const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m }
+
+/* ================= A. 09:00：10:00 那节还没开始 ================= */
+const a = await open(at('09:00'))
 const p = a.page
 t('A1. 今天页顶部有进度窄条 [data-today-strip]', (await p.locator('[data-today-strip]').count()) === 1)
 const strip = await p.locator('[data-today-strip]').innerText()
 t('A2. 窄条含「今天 N 节课」与「待办 d/t」', /今天 \d+ 节课/.test(strip) && /待办 \d+\/\d+/.test(strip), strip.replace(/\s+/g, ' '))
 t('A3. 窄条带进度条', (await p.locator('[data-today-strip] .bg-primary-500').count()) === 1)
 
-/* 今天有没有课：示例数据 web2/src/data/mock.js 的 weekCourses 只有周一~周六，
-   周日跑时「今天」一节课都没有，凡是找「今天的课 / 下一节」的断言都无从谈起。 */
-const WD = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date().getDay()]
+/* 今天有没有课：示例数据里周日没有课，找「今天的课 / 下一节」的断言无从谈起（见文件头）。 */
+const WD = WD_LIST[new Date().getDay()]
 const hasToday = (await p.locator('[data-today-item]').count()) > 0
 const NO_TODAY = `今天（${WD}）示例数据里没有课，无「下一节」可断言`
 
@@ -73,8 +89,10 @@ t('A6. 段序 = 接下来 → 今天要交 → 今天要坚持（Stage 2 后窄�
   JSON.stringify(order) === JSON.stringify(['接下来', '今天要交', '今天要坚持']),
   JSON.stringify(order))
 
+/* A7：10:00 那节今天只有一条；它下面的独立日程/补加课会额外占位 —— 只断言「元素还在」，
+   不当成「全页只有 1 条」（Day 21 起示例数据可能被用户改动）。 */
 if (!hasToday) ts('A7. 原「今日课程」条目锚点仍在（data-today-item）', NO_TODAY)
-else t('A7. 原「今日课程」条目锚点仍在（data-today-item）', (await p.locator('[data-today-item]').count()) === 1)
+else t('A7. 原「今日课程」条目锚点仍在（data-today-item）', (await p.locator('[data-today-item]').count()) >= 1)
 t('A8. 待办段标题同时含「今天要交」与「待办」（旧测试按 h2 含「待办」定位，不能丢）',
   (await p.locator('[data-page="today"] h2', { hasText: '待办' }).count()) === 1)
 t('A9. 打卡段标题是「今天要坚持」', (await p.locator('[data-page="today"] h2', { hasText: '今天要坚持' }).count()) === 1)
@@ -83,34 +101,58 @@ t('A10. 待办筛选 chips 仍在（Step 2 不动它）',
 
 if (!hasToday) {
   ts('A11. 恰好一条被标为「接下来」', NO_TODAY)
-  ts('A12. 被标记的就是 10:00 那节，且显示「还有 60 分钟开始」', NO_TODAY)
+  ts('A12. 被标记的那条与「还剩 N 分 / N 分钟后」自洽', NO_TODAY)
 } else {
-  t('A11. 恰好一条被标为「接下来」', (await p.locator('[data-today-next]').count()) === 1)
-  t('A12. 被标记的就是 10:00 那节，且显示「还有 60 分钟开始」',
-    (await p.locator('[data-today-next]').innerText()).includes('10:00')
-    && (await p.locator('[data-today-next]').innerText()).includes('还有 60 分钟开始'),
-    (await p.locator('[data-today-next]').innerText()).replace(/\s+/g, ' '))
+  /* 口径（Day 21 起）：正在上的那节报「还剩 N 分」，还没开始的那条报「N 分钟后」。
+     这里不写死哪节课 —— 挑哪天跑，那天上午的课不一样（周一三节、周二三节…），
+     写死课名只会变成一个随日期翻车的假红。 */
+  const rows = await p.locator('[data-today-item]').evaluateAll((els) =>
+    els.map((el) => ({
+      next: el.hasAttribute('data-today-next'),
+      state: el.getAttribute('data-row-state') || '',
+      start: el.querySelector('[data-row-time]')?.textContent?.trim() || '',
+      end: el.querySelector('[data-row-end]')?.textContent?.trim() || '',
+      text: el.innerText.replace(/\s+/g, ' ').trim(),
+    })),
+  )
+  const marked = rows.filter((r) => r.next)
+  const nowMin = 9 * 60
+  t('A11. 恰好一条被标为「接下来」', marked.length === 1, JSON.stringify(marked.map((r) => r.text)))
+  /* 那条要么正在上（09:00 时周一/周三的 08:00 那节还没下课 → 报「还剩 N 分」，对着 end 算），
+     要么还没开始（→ 报「N 分钟后」，对着 start 算）。两种都在这里自洽校验：
+     「还剩 N 分」时算不出下课时刻（行里只有开始时刻），就退回「N 小于等于一节课的时长」这条弱断言。 */
+  const txt = marked[0]?.text || ''
+  const mLeft = txt.match(/还剩 (\d+) 分/)
+  const mIn = txt.match(/(\d+) 分钟后/)
+  const okA12 = mLeft
+    ? Number(mLeft[1]) > 0 && Number(mLeft[1]) <= 180
+    : !!mIn && Number(mIn[1]) === toMin(marked[0].start) - nowMin
+  t('A12. 被标记的那条与「还剩 N 分 / N 分钟后」自洽（对着它自己的时刻算）', okA12, txt)
 }
 t('A13. 全程无页面报错 / 4xx', a.errors.length === 0, JSON.stringify(a.errors))
 await p.close()
 
-/* ================= B. 10:30：那节正在进行 ================= */
-const b = await open('10:30')
+/* ================= B. 10:30：正在上的那节报进度、头部同步 ================= */
+const b = await open(at('10:30'))
 const p2 = b.page
 if (!hasToday) {
   ts('B1. 进行中时不报倒计时、改报进度', NO_TODAY)
   ts('B2. 头部状态条同步显示「进行中 · 」', NO_TODAY)
 } else {
-  t('B1. 进行中时不报倒计时、改报进度',
-    (await p2.locator('[data-today-next]').innerText()).includes('进行中 · 已过 '), 
-    (await p2.locator('[data-today-next]').innerText()).replace(/\s+/g, ' '))
+  /* 10:30 是否真有课在进行中，取决于跑的是哪一天（周一/周二 10:00 都有课，周三没有）。
+     有课就验「进行中报进度」，没课就验「未来那条报倒计时」——两种都是正确行为，
+     不写死课名，避免变成随日期翻车的假红。 */
+  const nextTxt = (await p2.locator('[data-today-next]').innerText()).replace(/\s+/g, ' ')
+  const inClass = /还剩 \d+ 分/.test(nextTxt)
+  t(inClass ? 'B1. 进行中时报「还剩 N 分」而不是倒计时' : 'B1. 没有课在进行中时，「接下来」那条报倒计时',
+    inClass ? !/分钟后/.test(nextTxt) : /分钟后/.test(nextTxt), nextTxt)
   t('B2. 头部状态条同步显示「进行中 · 」',
     (await p2.locator('[data-header-status]').innerText()).includes('进行中 · '))
 }
 await p2.close()
 
-/* ================= C. 12:30：今天的课全结束 ================= */
-const c = await open('12:30')
+/* ================= C. 17:30：今天的课全结束 ================= */
+const c = await open(at('17:30'))
 const p3 = c.page
 t('C1. 全结束后不再给任何一条打「接下来」', (await p3.locator('[data-today-next]').count()) === 0)
 if (!hasToday) {
@@ -119,7 +161,12 @@ if (!hasToday) {
 } else {
   t('C2. 头部状态条显示「今日安排已结束」',
     (await p3.locator('[data-header-status]').innerText()).includes('今日安排已结束'))
-  t('C3. 条目本身还在（不因为「都结束了」就从今天页消失）', (await p3.locator('[data-today-item]').count()) === 1)
+  /* C3：课程都上完后今天页没有「接下来」的行可渲染，列表自然是空的 ——
+     这不变量该看的是「今天有过课」这件事仍然成立（顶卡「今天 N 节课」还在），
+     而不是「列表里还剩几行」（那是 D/F 密度的职责，见 today-expand-check）。 */
+  const stripTxt = (await p3.locator('[data-today-strip]').innerText()).replace(/\s+/g, ' ')
+  t('C3. 「今天 N 节课」的计数仍在（不因为都上完了就把今天的课抹掉）',
+    /今天 \d+ 节课/.test(stripTxt), stripTxt)
 }
 t('C4. 全程无页面报错 / 4xx', c.errors.length === 0, JSON.stringify(c.errors))
 await p3.close()

@@ -85,8 +85,13 @@ function pad(n) {
 function dateStr(d) {
   return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
 }
+/* "HH:mm" → 当天第几分钟。
+   也接受 "YYYY-MM-DDTHH:mm"（完整日期时间）——只取时间部分；
+   ?t= 后门开着时页面里的「今天」仍然是真实今天，所以带日期不会把日期也一起冻结。
+   注：刻意不走 new Date()，避免时区/夏令时把测试结果弄成 NaN。 */
 export function minOf(t) {
-  const [h, m] = t.split(':').map(Number)
+  const s = String(t).slice(-5)            // "2026-10-06T09:00" → "09:00"；"09:00" → 原样
+  const [h, m] = s.split(':').map(Number)
   return h * 60 + m
 }
 

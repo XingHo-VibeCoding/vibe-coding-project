@@ -2958,7 +2958,9 @@ const conflictPool = computed(() => {
 })
 
 /* ---------------- 问候：可爱系（时段轴 + 状态轴，状态优先） ---------------- */
-/* 时间后门：?t=09:35 可假装时间（演示/测试用），不带参数走真实时间 */
+/* 时间后门：?t=09:35（或带日期的 2026-10-06T09:35，只取时间部分）可假装时间（演示/测试用），
+   不带参数走真实时间。注意它只冻结「钟点」，不冻结日期 —— 页面里的「今天」永远是真实今天，
+   所以日期敏感的老脚本靠它挑不到星期，得自己把日期选好。 */
 const tParam = new URLSearchParams(location.search).get('t')
 const nowTime = ref(tParam ? minOf(tParam) : new Date().getHours() * 60 + new Date().getMinutes())
 

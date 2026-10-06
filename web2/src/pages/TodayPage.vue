@@ -78,41 +78,67 @@ const {
             <span class="min-w-0 flex-1 truncate">{{ todayPast.length }} 件 · {{ pastSpan }}</span>
             <span class="flex-none">{{ pastOpen ? '收起 ▴' : '展开 ▾' }}</span>
           </button>
-          <template v-if="todayExpanded || pastOpen">
-            <RowItem
-              v-for="c in todayPast"
-              :key="c.id"
-              data-today-item
-              data-today-past-row
-              :data-item-type="c.type || 'course'"
-              :time="c.start"
-              :title="c.name"
-              :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
-              :meta="rowMeta(c)"
-              state="done"
-              :tone="isRoutine(c) ? pal(c).text : ''"
-              :routine="isRoutine(c)"
-              clickable
-              @click="openDetail(c)"
-            />
-          </template>
-          <RowItem
-            v-for="c in livePreview"
-            :key="c.id"
-            data-today-item
-            :data-today-next="c.id === nextTodayId || undefined"
-            :data-item-type="c.type || 'course'"
-            :time="c.start"
-            :title="c.name"
-            :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
-            :meta="rowMeta(c)"
-            :state="courseStatus(c) === 'now' ? 'now' : 'plain'"
-            :tone="isRoutine(c) ? pal(c).text : ''"
-            :routine="isRoutine(c)"
-            clickable
-            @click="openDetail(c)"
-          />
-          <!-- 展开全部 = 就地换密度（D → F），不换页、行高不变；收起后回到「已过一行 + 接下来 3 行」 -->
+          <!-- 动效约定 1a：D（折叠一行）↔ F（全天 26px 表）在同一位置交叉淡入 0.2s，
+               滚动位置不动。key 挂在 Transition 上：换密度时旧列表整体淡出、新列表淡入；
+               行高两种密度完全一样，所以淡入淡出期间容器高度不跳。 -->
+          <Transition name="density" mode="out-in">
+            <div v-if="todayExpanded" key="dense">
+              <RowItem
+                v-for="c in todayCourses"
+                :key="c.id"
+                data-today-item
+                :data-today-next="c.id === nextTodayId || undefined"
+                :data-item-type="c.type || 'course'"
+                :time="c.start"
+                :title="c.name"
+                :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
+                :meta="rowMeta(c)"
+                :state="courseStatus(c) === 'past' ? 'done' : courseStatus(c) === 'now' ? 'now' : 'plain'"
+                :tone="isRoutine(c) ? pal(c).text : ''"
+                :routine="isRoutine(c)"
+                clickable
+                @click="openDetail(c)"
+              />
+            </div>
+            <div v-else key="list">
+              <template v-if="pastOpen">
+                <RowItem
+                  v-for="c in todayPast"
+                  :key="c.id"
+                  data-today-item
+                  data-today-past-row
+                  :data-item-type="c.type || 'course'"
+                  :time="c.start"
+                  :title="c.name"
+                  :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
+                  :meta="rowMeta(c)"
+                  state="done"
+                  :tone="isRoutine(c) ? pal(c).text : ''"
+                  :routine="isRoutine(c)"
+                  clickable
+                  @click="openDetail(c)"
+                />
+              </template>
+              <RowItem
+                v-for="c in livePreview"
+                :key="c.id"
+                data-today-item
+                :data-today-next="c.id === nextTodayId || undefined"
+                :data-item-type="c.type || 'course'"
+                :time="c.start"
+                :title="c.name"
+                :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
+                :meta="rowMeta(c)"
+                :state="courseStatus(c) === 'now' ? 'now' : 'plain'"
+                :tone="isRoutine(c) ? pal(c).text : ''"
+                :routine="isRoutine(c)"
+                clickable
+                @click="openDetail(c)"
+              />
+            </div>
+          </Transition>
+          <!-- 展开全部 = 就地换密度（D → F），不换页、行高不变；收起后回到「已过一行 + 接下来 3 行」
+               —— 密度切换的交叉淡入见上面 <Transition name="density">（动效约定 1a） -->
           <button
             v-if="hiddenCount > 0 || todayExpanded"
             data-today-expand

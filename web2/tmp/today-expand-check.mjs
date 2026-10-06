@@ -66,7 +66,14 @@ const SNAP = () => {
     text: el.innerText.replace(/\s+/g, ' ').trim(),
     h: Math.round(el.getBoundingClientRect().height),
   }))
-  return { rows, items: sec.querySelectorAll('[data-today-item]').length, past: sec.querySelectorAll('[data-today-past-row]').length }
+  return {
+    rows,
+    items: sec.querySelectorAll('[data-today-item]').length,
+    /* 「已过」这一态不靠额外锚点，靠行自己的 state 属性：
+       D 折叠形态里已过明细整块不渲染（所以展开前后行数会变），
+       F 全天表里已过的行 state="done" 一条不少。 */
+    past: sec.querySelectorAll('[data-today-item][data-row-state="done"]').length,
+  }
 }
 
 /* ================= A. 5 件（2 已过）：默认 D ================= */
