@@ -14,6 +14,7 @@ const {
   dedupCourses,
   onImportFile,
   onEduFile,
+  openEduLogin,
   eduMsg,
   eduMsgBad,
   eduSnapshot,
@@ -89,6 +90,21 @@ const {
              与上面「导入主项目数据」是两条不同的路：那条换**整份数据**（含待办/日程），
              这条只换**课程**、且要先过一遍预览确认（见 App.vue 的 data-edu-preview）。
              放在「导入主项目数据」下面，因为它依赖已有一份主项目数据当底子。 -->
+        <button
+          data-edu-login-open
+          class="flex w-full items-center gap-3.5 p-4 text-left active:bg-soft"
+          @click="openEduLogin"
+        >
+          <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5l5 2.2v4c0 3-2.1 5.4-5 6.3-2.9-.9-5-3.3-5-6.3v-4z" /><path d="M5.8 8l1.6 1.6L10.6 6" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">登录教务网抓课表</span>
+            <span class="block text-[11px] text-ink-dim">填一次统一身份认证账号，直接抓回来核对（不用手动导出）</span>
+          </span>
+          <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
+        </button>
+
         <label class="flex cursor-pointer items-center gap-3.5 p-4 active:bg-soft">
           <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2" /><path d="M2 6h12M6 6v8M10 6v8" /></svg>
