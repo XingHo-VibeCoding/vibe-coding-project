@@ -226,3 +226,102 @@ export async function summarizeTranscript(transcript, opts = {}) {
   if (opts.onStage) opts.onStage('parse')
   return raw
 }
+
+/* ---------- P4 六期第三步：把「规则算出来的事实」交给 AI 换一句人话 ----------
+   铁律：**规则负责算哪个数，AI 只负责说哪句**。所以这里有**两道闸**：
+     ① 提示词明确禁止新增数字/日期/次数/推断（软约束，靠模型守规矩）；
+     ② 拿回来的句子必须过 sameFacts() 的数字闸门，对不上就整句丢弃（硬约束，代码保证）。
+   拿不到（没配 Key / 超时 / 报错 / 数字对不上）一律返回 { ok:false }，调用方退回规则原句，
+   界面绝不留空白。 */
+export const PHRASE_PROMPT_VERSION = 1
+
+/* 抓出一段文本里的数字（阿拉伯数字）。
+   为什么**不**把中文数字也换算成数字：中文里「一共」「一次都没动过」这类说法极常见，
+   一换算就会冒出原句没有的数字，把合法的改写误判成「改了事实」。
+   （第一版就是这么写的，A1/B4 当场红：『一共 3 个』里那个「一」被换成了 1。） */
+function nums(s) {
+  return (String(s == null ? '' : s).match(/\d+(?:\.\d+)?/g) || []).map((x) => String(Number(x)))
+}
+
+/** 「只换说法、不动事实」的机械判据：**AI 那句话里不许冒出原句没有的数字**。
+    用子集（而不是相等）是因为 AI 很自然会把「断了 3 次（共 3 个周三）」说成
+    「3 个周三都没动过事」——重复的数字只说一次、或干脆写成中文，都不算改事实。
+    已知边界（如实记下）：AI 把数量写成中文且写错（原文 3 说成「五次」）这条闸门拦不住；
+    那是提示词（不许新增/丢掉数字）该管的。真要更严就得引入中文数字词法，
+    代价是误杀「一次都没动过」这类正常说法 —— 宁可漏拦，不可误杀。 */
+export function sameFacts(a, b) {
+  const orig = new Set(nums(a))
+  if (!orig.size) return true // 原句本来就没数字（如「最近没什么事」）→ 无从比对
+  for (const v of new Set(nums(b))) if (!orig.has(v)) return false
+  return true
+}
+
+const PHRASE_TIMEOUT_MS = 8000
+const PHRASE_MAX_TOKENS = 120
+
+/* 系统提示词只放规矩，事实放在 user 消息里（免得模型把两者混着抄） */
+function buildPhraseSystem() {
+  return [
+    '你只负责改写一句话，不负责判断事实。',
+    '这句话里的事实已经由程序算好了，你要做的只是换一种说法。',
+    '规则：',
+    '1) 意思和事实必须完全一致，只能改语气和措辞；',
+    '2) 不许新增任何数字、日期、次数、推断或建议，也不许把原有的数字丢掉；',
+    '3) 不要引号、不要 emoji、不要任何前后缀，只输出这一句话；',
+    '4) 不超过 40 个字。',
+  ].join('\n')
+}
+
+/** 把一句「规则事实」交给 AI 换个说法。
+    返回 { ok:true, line }（line 不带句号，调用方自己补）或 { ok:false, message }。 */
+export async function phraseFact(fact, opts = {}) {
+  const src = String(fact || '').trim()
+  if (!src) return { ok: false, message: '没有要改写的事实' }
+  const c = loadLlmConfig()
+  if (c.provider !== 'deepseek' || !c.key) return { ok: false, message: '没配 DeepSeek Key' }
+  const model = DEEPSEEK_MODELS.some((m) => m.id === c.model) ? c.model : 'deepseek-flash'
+  const ms = Number(opts.timeoutMs) > 0 ? Number(opts.timeoutMs) : PHRASE_TIMEOUT_MS
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = ctl ? setTimeout(() => ctl.abort(), ms) : null
+  let res
+  try {
+    res = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: buildPhraseSystem() },
+          { role: 'user', content: '原句：' + src },
+        ],
+        thinking: { type: 'disabled' }, // 只是换个说法，不需要思考模式（快且省）
+        temperature: 0.7, // 这活儿是「说话」不是「算数」，留点温度但别放飞
+        max_tokens: PHRASE_MAX_TOKENS,
+      }),
+      signal: ctl ? ctl.signal : undefined,
+    })
+  } catch (e) {
+    return { ok: false, message: e && e.name === 'AbortError' ? 'AI 超时' : '网络请求失败' }
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+  if (!res.ok) return { ok: false, message: 'AI 返回 ' + res.status }
+  let content = ''
+  try {
+    const data = await res.json()
+    const choice = data && data.choices && data.choices[0]
+    content = choice && choice.message && choice.message.content ? String(choice.message.content) : ''
+  } catch {
+    return { ok: false, message: 'AI 回的不是合法 JSON' }
+  }
+  /* 归一：去两头引号 → 只要第一行 → 去掉句末标点（模板自己补「。」） */
+  let line = content
+    .trim()
+    .replace(/^["'“”「『]+|["'“”」』]+$/g, '')
+    .trim()
+  line = (line.split('\n').map((x) => x.trim()).filter(Boolean)[0] || '').replace(/[。.！!？?]+$/, '').trim()
+  if (!line) return { ok: false, message: 'AI 回了空内容' }
+  if (line.length > 60) return { ok: false, message: 'AI 说得太长' }
+  if (!sameFacts(src, line)) return { ok: false, message: 'AI 改了数字，已丢弃' }
+  return { ok: true, line }
+}

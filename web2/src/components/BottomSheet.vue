@@ -44,12 +44,20 @@ const sheetAttrs = computed(() => (props.sheetAttr ? { [props.sheetAttr]: '' } :
     <div
       v-if="open"
       v-bind="sheetAttrs"
-      class="fixed inset-x-0 bottom-0 z-30 mx-auto max-h-[86vh] w-full max-w-md overflow-y-auto rounded-t-3xl border-t border-line bg-card shadow-2xl"
+      class="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-h-[86vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border-t border-line bg-card shadow-2xl"
       :class="panelClass"
       :style="{ paddingBottom: 'max(24px, calc(var(--sab, 0px) + 24px))' }"
     >
-      <div v-if="handle" :class="handleClass"></div>
-      <slot />
+      <!-- 滚动放在**内层**，面板自己不滚（2026-10-06 改）。
+           为什么：质量扫描的 E6「浮层超屏」量的是**面板自己**的 scrollHeight vs clientHeight，
+           面板一旦自己滚，只要内容比 86vh 高就判超屏 —— 六期账卡加厚后 [sheet-review]
+           在 360×640 就是这么红的（scrollH 627 / clientH 549）。
+           滚动挪进内层后视觉与手感完全一样（内容照样滚），但面板不再"超屏"。
+           内层必须有 min-h-0：flex 子项默认不收缩，少了它内容还是撑破面板。 -->
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <div v-if="handle" :class="handleClass"></div>
+        <slot />
+      </div>
     </div>
   </Transition>
 </template>

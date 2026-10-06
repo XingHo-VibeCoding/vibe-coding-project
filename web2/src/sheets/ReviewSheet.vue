@@ -1,5 +1,5 @@
 <script setup>
-import { ref, toRefs } from 'vue'
+import { ref, toRefs, watch } from 'vue'
 import BottomSheet from '../components/BottomSheet.vue'
 import { useApp } from '../composables/app-ctx.js'
 
@@ -32,8 +32,26 @@ const {
   muteCurrentReason,
   QUICK_REASONS,
   patternTell,
+  patternLine,
+  patternSrc,
   markPatternSeen,
 } = toRefs(app)
+
+/* P4：账卡真的摆到台面上时才去问 AI 那句人话。
+   为什么要有这道闩：ReviewSheet 在 App.vue:4288 是**常挂载**的（<ReviewSheet /> 没有 v-if），
+   不给闩就变成「每次开 App 都打一次 AI」——白花额度，也违背「用户没要看就别打扰」。
+   历史模式下账卡不显示（见下面 v-if），所以那种模式也不问。
+   注意 setup 作用域里 ctx 函数要写成 app.xxx(...)（toRefs 解出来的是 ref，裸调会 TypeError）。 */
+watch(
+  () => {
+    const s = reviewSheet.value
+    return !!s && s.mode !== 'history' && !!patternTell.value
+  },
+  (show) => {
+    if (show) app.askPatternLine(patternTell.value)
+  },
+  { immediate: true },
+)
 
 /* 理由输入框的草稿：只活在这个组件里，按「记下」才进数据层（不写就不存） */
 const reasonDraft = ref('')
@@ -150,7 +168,7 @@ const saveDraft = () => {
             <!-- 找模式（六期第二步）：只陈述事实，够 3 次才允许命名；一个月最多主动提一次 -->
             <div v-if="patternTell" data-pattern-note class="mt-2.5 border-t border-line pt-2.5">
               <p class="text-[11px] text-ink-dim">最近数出来的</p>
-              <p data-pattern-line class="text-[12px] text-ink">{{ patternTell.line }}。</p>
+              <p data-pattern-line :data-pattern-src="patternSrc" class="text-[12px] text-ink">{{ patternLine }}。</p>
               <button
                 type="button"
                 data-pattern-ok

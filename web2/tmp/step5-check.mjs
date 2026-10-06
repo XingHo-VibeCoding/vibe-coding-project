@@ -57,7 +57,15 @@ const box = (sel) => page.evaluate((s) => {
   const el = document.querySelector(s)
   if (!el) return null
   const r = el.getBoundingClientRect()
-  return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height), sh: el.scrollHeight, ch: el.clientHeight }
+  /* 2026-10-06：滚动从**面板**挪到**内层**（见 components/BottomSheet.vue 的注释）——
+     面板自己不再滚，因为质量扫描的 E6「浮层超屏」量的是面板的 scrollHeight；
+     所以"内容能不能滚"要量内层 .overflow-y-auto，顺带把"面板自己不再滚"也守起来。 */
+  const sc = el.querySelector('.overflow-y-auto') || el
+  return {
+    top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height),
+    sh: sc.scrollHeight, ch: sc.clientHeight, inner: sc !== el,
+    panelSh: el.scrollHeight, panelCh: el.clientHeight,
+  }
 }, sel)
 
 try {
@@ -74,11 +82,14 @@ try {
   const sem = await box('[data-sheet-sem]')
   t('A1. 编辑学期浮层已打开（data-sheet-sem）', !!sem)
   t(`A2. 面板高度被 86vh 卡住（实测 ${sem && sem.h}px，上限 ${Math.round(640 * 0.86) + 1}px）`, sem && sem.h <= Math.round(640 * 0.86) + 1)
-  t(`A3. 内容确实比可视区高、可以滚（scrollHeight ${sem && sem.sh} > clientHeight ${sem && sem.ch}）`, sem && sem.sh > sem.ch + 1)
+  t(`A3. 内容确实比可视区高、可以滚（滚动区 scrollHeight ${sem && sem.sh} > clientHeight ${sem && sem.ch}）`, sem && sem.sh > sem.ch + 1)
+  t(`A3b. 滚动确实在内层、面板自己不再滚（内层=${sem && sem.inner}，面板 ${sem && sem.panelSh} ≤ ${sem && sem.panelCh}）`,
+    !!sem && sem.inner === true && sem.panelSh <= sem.panelCh + 1)
   /* 滚到底后，面板底部那几个按钮必须真的落在可视区内（就是这次要修的「够不着」） */
   const reach = await page.evaluate(() => {
     const panel = document.querySelector('[data-sheet-sem]')
-    panel.scrollTop = panel.scrollHeight
+    const sc = panel.querySelector('.overflow-y-auto') || panel
+    sc.scrollTop = sc.scrollHeight
     const btns = [...panel.querySelectorAll('button')]
     const save = btns.find((b) => (b.innerText || '').trim() === '保存')
     if (!save) return { ok: false, why: '没找到保存按钮' }
