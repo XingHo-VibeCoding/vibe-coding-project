@@ -85,7 +85,7 @@ vibe-coding-project/
 | 4 | 碎片练耳 | ✅ 完成（Day 18 起，v1.41.x 持续打磨） |
 | 5 | 复盘 | 🔄 进行中（Day 20，v1.41.7 最小闭环：四题引导 + 本机日精进 + 每晚轻提醒；AI 引导式对话与 `reviews` 云表留后续） |
 
-后端线（跟五期并行）：Day 15 `/api/health` 上线 → Day 16 建库灌数 → Day 17 `/api/list` 读接口上线（契约见 `docs/api-contract.md`，只实现了表里的 1、2 号接口，3–5 号还是占位）→ Day 20 前端页面从 mock 练习页改成「数据检查台」（真实数据 + 最后更新时间 + 刷新 / 写入测试入口）并重新部署到静态托管。
+后端线（跟五期并行）：Day 15 `/api/health` 上线 → Day 16 建库灌数 → Day 17 `/api/list` 读接口上线 → **Day 22 写闭环上线**：`write` 云函数 + `POST /api/create` / `PUT /api/update` / `DELETE /api/delete` 三条网关路由公网验收（契约见 `docs/api-contract.md`，1–5 号接口现全部「✅ 已实现」；原 `/api/favorite` 业务上不存在已移除）→ Day 20 前端页面从 mock 练习页改成「数据检查台」（真实数据 + 最后更新时间 + 刷新 / 写入测试入口）并重新部署到静态托管。**Day 22 收尾时检查台的删除按钮补上了两段式二次确认**（第一次点只进入待确认、3 秒不点自动复位，避免误删），并新增了一份「同一个 id 操作前后各 select 一次」的对比验证脚本（见 `docs/api-contract.md` 第 7、8 节）。
 
 📱 **攒着等手机连上验的项**（状态框勿扰时段 / 精确提醒引导 / 时间感三件套 / 每日复盘提醒链路）见 `docs/真机复验清单.md`——电脑上验不了，别重复怀疑是代码坏了。
 
@@ -95,9 +95,11 @@ vibe-coding-project/
 web2 导出 JSON ──→ 主项目 js/store.js 校验（硬闸门）──→ db/schema.sql 三张表
 （semesters / schedules / todos，CloudBase PostgreSQL）
         ↑ cloudfunctions/list 用 CloudBase REST API 读这三张表，公网返回 {ok, data}
+        ↑ cloudfunctions/write 用同一套 REST API 写这三张表（create/update/delete，
+          需 X-Write-Token；「id 不存在」一律中文 404）
 ```
 
-- 三个接口已上线的公网地址见 `docs/api-contract.md`「环境信息」。
+- 五个接口已上线的公网地址见 `docs/api-contract.md`「环境信息」。
 - 云函数凭据只放在**函数环境变量**（`TCB_ENV_ID` / `CLOUDBASE_API_KEY`），永远不进代码、不进 git、不进聊天。
 - **两个线上地址别混淆**：`college-schedule-assistant.app.workbuddy.host` ＝ web2 应用本体（TECH_DESIGN §2.3 的线上入口）；`*.tcloudbaseapp.com` ＝ Day 15 mock 练习页（api-contract 的静态托管）。互不替代。
 - **`/api/list` 的 type 白名单目前只有 `course/event/routine`**（`cloudfunctions/list/index.js` 的 `allowedTypes`）——exam 与未来预留的 lectures/reviews 还没进白名单，**四期/五期开单时必须同步扩**（函数白名单 + api-contract + schema 注释三处）。

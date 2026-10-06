@@ -53,6 +53,8 @@
     button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
     button.danger { color: #b91c1c; border-color: #fecaca; }
     button:active { transform: translateY(1px); }
+    /* 二次确认：第一次点进入「待确认」态，按钮变红并改字，3 秒不点自动复位 */
+    button.arming { background: #fef2f2; border-color: #ef4444; color: #b91c1c; font-weight: 600; }
     .note { margin-top: 10px; font-size: 12px; line-height: 1.7; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px; }
     .note b { color: #78350f; }
     .note.ok { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
@@ -97,6 +99,11 @@
         <button class="danger" id="btn-delete">删这一条</button>
       </div>
       <p class="url" id="write-target">当前测试行：<code id="last-id">（还没建）</code></p>
+      <div class="meta">
+        <span class="k">或手填一个 id</span>
+        <span class="v"><input class="token" id="manual-id" type="text" placeholder="例如 todo_不存在" /></span>
+      </div>
+      <p class="url">填一个库里**没有**的 id 再点删除，就能看到后端返回的中文错误说明（HTTP 404）。留空则删上面「当前测试行」。</p>
       <div class="note" id="write-note" style="display:none"></div>
       <pre class="json" id="write-json" style="display:none"></pre>
       <p class="url" id="create-url">POST …</p>
@@ -142,6 +149,12 @@
       document.getElementById('last-id').textContent = lastId || '（还没建）'
     }
     refreshTarget()
+
+    // 本次操作针对哪一行：优先手填的 id（用来演示「id 不存在」的中文报错），否则用本页刚建的那条
+    function targetId() {
+      var manual = (document.getElementById('manual-id').value || '').trim()
+      return manual || lastId
+    }
 
     function pad(n) { return (n < 10 ? '0' : '') + n }
     function nowText() {
@@ -279,8 +292,9 @@
 
     document.getElementById('btn-update').addEventListener('click', function () {
       if (!token()) { showNote(false, '<b>先填口令。</b>'); return }
-      if (!lastId) { showNote(false, '先在这一次会话里「新增测试待办」，才有东西可改（本页不拿库里的正式数据做实验）。'); return }
-      var body = { table: 'todos', id: lastId, patch: { title: '检查台改过 ' + nowText(), done: true } }
+      var id = targetId()
+      if (!id) { showNote(false, '<b>还没有可改的行。</b>先在这一次会话里「新增测试待办」，或在上面的「或手填一个 id」里填一个 id（本页不拿库里的正式数据做实验）。'); return }
+      var body = { table: 'todos', id: id, patch: { title: '检查台改过 ' + nowText(), done: true } }
       callApi(UPDATE_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -298,22 +312,58 @@
       }).catch(function (e) { showNote(false, '请求出错：' + (e && e.message ? e.message : '未知错误')) })
     })
 
-    document.getElementById('btn-delete').addEventListener('click', function () {
-      if (!token()) { showNote(false, '<b>先填口令。</b>'); return }
-      if (!lastId) { showNote(false, '这一轮没有可删的测试行（删除只针对本页刚建的那条）。'); return }
-      var url = DELETE_URL + '?table=todos&id=' + encodeURIComponent(lastId)
+    // ---- 删除：两段式二次确认 ----
+    // 第一次点只「待确认」（按钮变红改字，不碰网络）；3 秒内再点一次才真发 DELETE。
+    // 这样误触一次不会删数据 —— 删除比新增更容易出事，所以把确认放在最靠近动作的地方。
+    var delTimer = null
+    var delArmed = false
+
+    function disarmDelete() {
+      delArmed = false
+      if (delTimer) { clearTimeout(delTimer); delTimer = null }
+      var b = document.getElementById('btn-delete')
+      b.classList.remove('arming')
+      b.textContent = '删这一条'
+    }
+
+    function doDeleteNow() {
+      var id = targetId()
+      var url = DELETE_URL + '?table=todos&id=' + encodeURIComponent(id)
       callApi(url, { method: 'DELETE' }).then(function (res) {
         showJson(res.body)
         if (res.body && res.body.ok) {
           showNote(true, '<b>删除成功（HTTP ' + res.status + '）。</b>被删的那一行由接口原样带回，方便核对删掉的是什么；待办数会 -1。')
-          lastId = ''
-          refreshTarget()
+          if (id === lastId) { lastId = ''; refreshTarget() }
+          var mi = document.getElementById('manual-id')
+          if (mi.value.trim() === id) mi.value = ''
         } else {
           showNote(false, '<b>删除失败（HTTP ' + res.status + '）。</b>' + ((res.body && res.body.message) || ''))
         }
         return loadList()
       }).catch(function (e) { showNote(false, '请求出错：' + (e && e.message ? e.message : '未知错误')) })
+    }
+
+    document.getElementById('btn-delete').addEventListener('click', function () {
+      if (!token()) { showNote(false, '<b>先填口令。</b>'); return }
+      var id = targetId()
+      if (!id) { showNote(false, '<b>这一轮没有可删的行。</b>先在这一次会话里「新增测试待办」，或在上面的「或手填一个 id」里填一个 id。'); return }
+      if (!delArmed) {
+        // 第一段：只改按钮，不发请求
+        delArmed = true
+        var b = document.getElementById('btn-delete')
+        b.classList.add('arming')
+        b.textContent = '再点一次确认删除'
+        showNote(false, '<b>要删除 ' + id + ' 吗？</b>已进入待确认：3 秒内在同一个按钮上再点一次才会真的删；不点会自动取消。')
+        delTimer = setTimeout(disarmDelete, 3000)
+        return
+      }
+      // 第二段：确认，真删
+      disarmDelete()
+      doDeleteNow()
     })
+
+    // 改手填 id / 换测试行时，把待确认态清掉，避免「确认」跨到另一条记录上
+    document.getElementById('manual-id').addEventListener('input', disarmDelete)
 
     document.getElementById('btn-refresh').addEventListener('click', loadAll)
 

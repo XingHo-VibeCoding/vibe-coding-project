@@ -1,7 +1,8 @@
 # 接口契约（api-contract.md）
 
 > 本文件登记大学生日程助手后端接口的形状。  
-> Day 15 只实现 `/api/health` 并保证公网可访问；Day 17 补 `GET /api/list`；**Day 22 补齐写闭环**：新增 `POST /api/create`、`PUT /api/update`、`DELETE /api/delete`（三条路由共用 `write` 云函数 + `X-Write-Token` 口令）。原 `POST /api/favorite`（收藏/取消收藏）在业务上并不存在，已移除。
+> Day 15 只实现 `/api/health` 并保证公网可访问；Day 17 补 `GET /api/list`；**Day 22 补齐写闭环**：新增 `POST /api/create`、`PUT /api/update`、`DELETE /api/delete`（三条路由共用 `write` 云函数 + `X-Write-Token` 口令）。原 `POST /api/favorite`（收藏/取消收藏）在业务上并不存在，已移除。  
+> **Day 22 当日复核补充**：`PUT` / `DELETE` 的「id 不存在」都以中文 404 明确回答（文案见第 4、5 节）；数据检查台的删除按钮补上**两段式二次确认**（第 7 节）；并补了一份「同 id 前后各 select 一次」的对比验证脚本（第 8 节）。
 
 ---
 
@@ -13,7 +14,7 @@
 | HTTP 网关（后端接口） | `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com` |
 | 静态托管（前端页面） | `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com` |
 | 已上线接口 | `GET /api/health`、`GET /api/list`、`POST /api/create`、`PUT /api/update`、`DELETE /api/delete` |
-| 静态托管当前页面 | 「大学生日程助手 · 数据检查台」（Day 22 版；首次访问会先落 CloudBase 测试域名的「风险提醒」页，点一次「确定访问」才进页面） |
+| 静态托管当前页面 | 「大学生日程助手 · 数据检查台」（Day 22 版；删除按钮已是**两段式二次确认**。首次访问会先落 CloudBase 测试域名的「风险提醒」页，点一次「确定访问」才进页面） |
 | 写接口实现 | 云函数 `write`（Nodejs20.19、Event 型，网关路径 `/api/create`、`/api/update`、`/api/delete`）；`WRITE_TOKEN` 与数据库凭据只在函数环境变量里 |
 | 部署清单 | 本地 `cloudbaserc.json`（含 `WRITE_TOKEN` 与服务端 API Key，已在 `.gitignore` 里**绝不提交**）；模板见仓库根 `cloudbaserc.example.json`。部署两步：`tcb fn deploy write -e <envId> --force`，再 `tcb deploy --only gateway`（按 `gateway.routes` 幂等收敛网关路由，不动的路由会 Skip） |
 
@@ -111,7 +112,7 @@
       "row": { "id": "todo_002", "title": "高数作业 §2.1", "due_date": "2026-09-30" }
     }
     ```
-  - `table` 白名单：`todos` / `schedules`（`cloudfunctions/write/index.js` 的 `TABLES`）
+  - `table` 白名单：`todos` / `schedules` / `semesters`（`cloudfunctions/write/index.js` 的 `TABLES`；三张表的可写列与必填列也都在那里）
   - `row.id` 必填，沿用前端的字符串 id 口径（`todo_*` / `sch_*` / `evt_*` / `rout_*`）
   - 只接受出现在该表列白名单里的字段；多传的列会被拒绝（`400`），防止写出库里不存在的列
 
@@ -152,7 +153,13 @@
              "created_at": "2026-10-05T13:00:52.328", "updated_at": "2026-10-05T21:01:05.383426" }
   }
   ```
-  HTTP `200`；id 不存在 → `404`。
+  HTTP `200`；id 不存在 → `404`，body：
+
+  ```json
+  { "ok": false, "message": "没有找到这条记录：todos / todo_不存在的id", "status": 404 }
+  ```
+
+  （文案由 `cloudfunctions/write/index.js:189` 拼出：`'没有找到这条记录：' + table + ' / ' + id`，报错里带够排查所需的定位信息，而不是一句「失败了」。）
 
 ---
 
@@ -171,7 +178,13 @@
     "row": { "id": "todo_002", "title": "改后的标题", "…": "被删那一行的完整字段" }
   }
   ```
-  HTTP `200`；id 不存在 → `404`。
+  HTTP `200`；id 不存在 → `404`，与第 4 节同一条中文文案：
+
+  ```json
+  { "ok": false, "message": "没有找到这条记录：todos / todo_不存在的id", "status": 404 }
+  ```
+
+  因为删除是「先让 PostgREST 回传被删的那一行、空数组即没命中」，所以对同一条 id **重复删除**也是这个 `404`（幂等地告诉你「这条已经没有了」），而不是静默返回成功。
 
 ---
 
@@ -188,10 +201,48 @@
   | 口令错 | 401 | `{"ok":false,"message":"口令不正确","status":401}` |
   | 方法不支持（如 GET） | 405 | `{"ok":false,"message":"不支持的方法：GET（写接口只接受 POST / PUT / DELETE）","status":405}` |
   | 表不在白名单 / 字段超白名单 / 缺必填 / body 非 JSON 对象 | 400 | `{"ok":false,"message":"…","status":400}` |
-  | id 不存在 | 404 | `{"ok":false,"message":"…","status":404}` |
+  | id 不存在 | 404 | `{"ok":false,"message":"没有找到这条记录：todos / todo_不存在的id","status":404}` |
   | 函数环境变量缺失 | 500 | `{"ok":false,"message":"环境变量未配置：TCB_ENV_ID / CLOUDBASE_API_KEY","status":500}` |
 
 - **实现位置**：`cloudfunctions/write/index.js`（接口层：口令 / 方法 / body / 列白名单 / 错误码）+ `cloudfunctions/write/db.js`（数据访问层：PostgREST 读写）。与 `list` 同规矩——接口层不出现 URL、headers、`process.env`。
+
+---
+
+## 7. 前端删除的二次确认（Day 22 检查台）
+
+「删除比新增更容易出事」，所以确认要放在**最靠近动作**的地方，而不是离得老远的设置页。
+
+- **App 内**（`web2/src/App.vue`）：待办删除走 `onDeleteTodo()`（第一次点只置 `confirmDelTodo=true` 并起 3 秒定时器，第二次才调 `deleteTodoNow()` 真删），按钮文案由 `TodoSheet.vue:49` 按 `confirmDelTodo` 在「删除 / 再点一次确认」间切换。
+- **课程与循环日程**：同一套思路，`App.vue:4069` 起的 `confirmDel` + `onDelCourse()` / `onDelRoutine()`，文案在 `DetailSheet.vue:86,104`。
+- **录音场次**：另有 `DeleteLectureSheet.vue`（整场连同录音文件、文字稿、纪要一起删的独立确认浮层）。
+- **数据检查台**（`mock-frontend/index.html`）：`#btn-delete` 同样两段式——
+  1. 第一次点：只改按钮（加 `.arming` 类变红、文字改成「再点一次确认删除」）并提示「要删除 xxx 吗？」，**不发网络请求**；
+  2. 3 秒内在同一按钮上再点一次才真的发 `DELETE`；
+  3. 3 秒不点 `setTimeout` 复位；「或手填一个 id」输入框一改动也会清掉待确认态（避免确认跨到另一条记录上）。
+- 检查台另有「或手填一个 id」输入框：填一个库里**不存在**的 id 再点删除，就能亲眼看到第 5 节那个中文 `404`。
+
+---
+
+## 8. 「数据库 select 前后对比」验证法（Day 22）
+
+要证明「改一条真的改了、删一条真的没了」，不能只看页面上的提示，要看**同一个 id 在操作前后各查一次库**。做法与脚本：
+
+- **怎么 select**：用只读接口 `GET /api/list` —— 它就是 `list` 云函数对 PostgreSQL 的 `SELECT`（`cloudfunctions/list/index.js` → PostgREST `/v1/rdb/rest/{table}`）。它**免鉴权、不需要数据库密码**，所以任何人随时能自己重跑。
+- **脚本**：`.workbuddy/tmp/day22-db-diff.mjs`（跑法 `node .workbuddy/tmp/day22-db-diff.mjs`，口令读 `.workbuddy/tmp/write-token.txt`）。它只创建/修改/删除自己的 `todo_difftest_*`，**不碰库里已有的正式数据**；跑完把总数还原（实测回到 10，库里零残留）。
+  > `.workbuddy/` 是**本地工具临时区、被 `.gitignore` 忽略**（见 `docs/PROJECT_MAP.md`），所以这份脚本不在仓库里；要重跑请按本节步骤自己建一份，或直接照上面的「怎么 select」手敲命令。
+- **它打印的对比**：同一个 id 的整行「改之前 / 改之后」并列 + 变了哪些字段；以及「删之前 / 删之后」+ 待办总数。
+- **实测结果（17 通过 / 0 失败）**：
+
+  | 步骤 | 观察到的库内实况 |
+  |------|------------------|
+  | 开局 select | 该 id 不存在，待办总数 **10** |
+  | `POST /api/create` | HTTP **201**；再 select 能查到，待办 **11**（+1） |
+  | `PUT /api/update` | HTTP **200**；select 对比：`title` 旧→新、`done` **false→true**、`note` 变、`done_at` null→值；**`created_at` 没动**、`updated_at` 变；总数仍 **11** |
+  | `PUT` 不存在的 id | HTTP **404** + `没有找到这条记录：todos / todo_根本不存在` |
+  | `DELETE /api/delete` | HTTP **200**，被删整行原样带回；再 select **查不到**，总数回到 **10** |
+  | `DELETE` 已删过的 id | HTTP **404** + 同一条中文文案（幂等告知「已经没有了」） |
+
+- **页面侧同一件事的另一个证据**：`.workbuddy/tmp/day22-check-page.mjs`（真实浏览器、不关 CORS，打公网静态托管页）**25 通过 / 0 失败**，其中 E0c 专门断言「只点一次删除时库里那行还在」——把「二次确认真的挡住了误删」变成可核对的断言，而不是口头保证。（同在本地 `.workbuddy/` 区，不入库。）
 
 ---
 
@@ -205,3 +256,4 @@
 ---
 
 *最后更新：2026-10-05（Day 22，写闭环上线：`write` 云函数 + `/api/create`、`/api/update`、`/api/delete` 三条网关路由已公网验收；`/api/favorite` 因业务上不存在而移除；本次不涉及类型白名单与表结构变化，函数白名单与 `db/schema.sql` 无需同步）*
+*同日复核补充：① `PUT`/`DELETE` 的「id 不存在 → 中文 404」文案按实现写准（第 4、5、6 节）；② `table` 白名单此前漏写了 `semesters`，已补（第 3 节，与 `cloudfunctions/write/index.js` 的 `TABLES` 一致）；③ 新增第 7 节「前端删除的二次确认」（检查台已实测）与第 8 节「数据库 select 前后对比验证法」（附脚本与实测数字）。*
