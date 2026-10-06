@@ -1,5 +1,5 @@
 <script setup>
-import { toRefs } from 'vue'
+import { ref, toRefs } from 'vue'
 import BottomSheet from '../components/BottomSheet.vue'
 import { useApp } from '../composables/app-ctx.js'
 
@@ -25,7 +25,34 @@ const {
   accountToday,
   accountHistory,
   dailyLineOf,
+  reasonCallout,
+  reasonAskedToday,
+  noteReason,
+  sayReasonBack,
+  muteCurrentReason,
+  QUICK_REASONS,
+  patternTell,
+  markPatternSeen,
 } = toRefs(app)
+
+/* 理由输入框的草稿：只活在这个组件里，按「记下」才进数据层（不写就不存） */
+const reasonDraft = ref('')
+/* 理由输入框的草稿：只活在这个组件里，按「记下」才进数据层（不写就不存）。
+   坑：toRefs(app) 解出来的名字在 setup 作用域里是 **ref**（模板里才自动解包），
+   所以 setup 里调 ctx 函数必须走 app.xxx(...)，不能写解构出来的裸名字 ——
+   裸名字调起来是 `TypeError: x is not a function`（Button 的 handler 挂在渲染期，
+   而 setup 箭头函数跑在这个解包规则之外）。 */
+const saveDraft = () => {
+  const t = String(reasonDraft.value || '').trim()
+  if (!t) return
+  app.noteReason(t)
+  reasonDraft.value = ''
+}
+/* 认了这条理由 → 记一次「甩回去了」；到第 3 次它自己先软（§2.2 的降级）
+   注意：这里不要再包一层 `function acceptReason(){ sayReasonBack() }`。
+   一个只转发调用的空壳函数会被编译器当成静态 handler 提升掉（实测 acceptReason 整段
+   从 bundle 里消失、onClick 指向了别的东西，点了完全不落盘；drop 那侧因为写在模板里
+   包成闭包才活着）。直接绑数据层函数最稳。 */
 </script>
 
 <template>
@@ -65,6 +92,73 @@ const {
             </p>
             <p class="mt-2 text-[11px] text-ink-dim">今天主笔</p>
             <p data-account-lead class="text-[12px] text-ink">{{ accountToday.lead }}</p>
+
+            <!-- 可回嘴（六期第二步）：账难看时才追问一句，写了才存 —— 做完了还问就是刻薄。
+                 顺序要紧：**手上有记得住的理由就先甩回去**（§2.2「还嘴」），
+                 没有可甩的、今天也还没问过，才轮到追问。反过来先问就成了「你明明记着还装不记得」。 -->
+            <div v-if="accountToday.rest && reasonCallout" data-reason-callout class="mt-2.5 border-t border-line pt-2.5">
+              <p class="text-[11px] text-ink-dim">上次你说是</p>
+              <p data-reason-said class="text-[12.5px] font-semibold text-ink">「{{ reasonCallout.text }}」</p>
+              <p class="mt-0.5 text-[11px] text-ink-dim">这回还成立吗？</p>
+              <div class="mt-1.5 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-reason-accept
+                  class="rounded-full bg-soft-2 px-2.5 py-1 text-[11px] text-ink"
+                  @click="() => sayReasonBack()"
+                >算它成立</button>
+                <button
+                  type="button"
+                  data-reason-drop
+                  class="rounded-full bg-soft-2 px-2.5 py-1 text-[11px] text-ink-dim"
+                  @click="muteCurrentReason"
+                >以后别提了</button>
+              </div>
+            </div>
+
+            <!-- 没有可甩的旧理由、今天也还没问过 → 才追问一句（不写也行） -->
+            <div v-else-if="accountToday.rest && !reasonAskedToday" data-reason-ask class="mt-2.5 border-t border-line pt-2.5">
+              <p class="text-[11px] text-ink-dim">有 {{ accountToday.rest }} 件没动，有原因吗？（不写也行）</p>
+              <div class="mt-1.5 flex flex-wrap gap-1.5">
+                <button
+                  v-for="q in QUICK_REASONS"
+                  :key="q.key"
+                  type="button"
+                  :data-reason-quick="q.key"
+                  class="rounded-full bg-soft-2 px-2.5 py-1 text-[11px] text-ink"
+                  @click="noteReason(q.text)"
+                >{{ q.label }}</button>
+              </div>
+              <div class="mt-1.5 flex items-center gap-1.5">
+                <input
+                  data-reason-input
+                  class="min-w-0 flex-1 rounded-lg border border-line bg-card px-2 py-1.5 text-[12px]"
+                  placeholder="或者写一句你自己的说法"
+                  :value="reasonDraft"
+                  @input="reasonDraft = $event.target.value"
+                  @keyup.enter="saveDraft"
+                />
+                <button
+                  type="button"
+                  data-reason-save
+                  class="shrink-0 rounded-lg bg-soft-2 px-2.5 py-1.5 text-[11px] text-ink"
+                  @click="saveDraft"
+                >记下</button>
+              </div>
+            </div>
+
+            <!-- 找模式（六期第二步）：只陈述事实，够 3 次才允许命名；一个月最多主动提一次 -->
+            <div v-if="patternTell" data-pattern-note class="mt-2.5 border-t border-line pt-2.5">
+              <p class="text-[11px] text-ink-dim">最近数出来的</p>
+              <p data-pattern-line class="text-[12px] text-ink">{{ patternTell.line }}。</p>
+              <button
+                type="button"
+                data-pattern-ok
+                class="mt-1.5 rounded-full bg-soft-2 px-2.5 py-1 text-[11px] text-ink"
+                @click="markPatternSeen"
+              >知道了</button>
+            </div>
+
             <p v-if="!accountToday.baseline.enough" data-account-baseline class="mt-2 text-[11px] text-ink-dim">
               基线建立中 {{ accountToday.baseline.kept }} / {{ accountToday.baseline.need }} 天 · 攒够才说「比平时多还是少」
             </p>

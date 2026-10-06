@@ -25,6 +25,8 @@ export function sanitizeDay(v) {
   return {
     date: v.date,
     stats: sanitizeStats(v.stats),
+    /* 六期第二步：今天有没有就地问过「没做完的原因」（问过就不再问，一天只打扰一次） */
+    reason_asked: v.reason_asked === true,
     updated_at: Number.isFinite(t) && t > 0 ? t : Date.now(),
   }
 }
@@ -75,12 +77,16 @@ export function saveDaily(book) {
 }
 
 /* 同一天只有一条：数字没变就不算 changed（调用方据此决定要不要写盘，避免每分钟都写一遍） */
-export function upsertDay(book, { date, stats, now = Date.now() } = {}) {
+export function upsertDay(book, { date, stats, now = Date.now(), reasonAsked = null } = {}) {
   const cur = sanitizeBook(book)
-  const day = sanitizeDay({ date: date || todayKeyOf(), stats, updated_at: now })
+  const key = date || todayKeyOf()
+  const prev = cur.days[key]
+  /* reasonAsked 只在**显式传了**的时候才动它 —— 每分钟一次的静默快照不能把「问过了」抹掉 */
+  const asked = reasonAsked === null ? !!(prev && prev.reason_asked) : reasonAsked === true
+  const day = sanitizeDay({ date: key, stats, reason_asked: asked, updated_at: now })
   if (!day) return { book: cur, day: null, changed: false }
-  const prev = cur.days[day.date]
-  const same = prev && JSON.stringify(prev.stats) === JSON.stringify(day.stats)
+  const same =
+    prev && JSON.stringify(prev.stats) === JSON.stringify(day.stats) && prev.reason_asked === day.reason_asked
   if (same) return { book: cur, day: prev, changed: false }
   const days = Object.assign({}, cur.days, { [day.date]: day })
   return { book: pruneDays({ version: 1, days }, DAILY_KEEP), day, changed: true }
