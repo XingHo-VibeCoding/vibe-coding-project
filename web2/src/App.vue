@@ -31,7 +31,6 @@ import {
   loadFrameSettings,
   saveFrameSettings,
   loadFrameMarks as loadFrameMarksNow,
-  markClassDone as frameMarkClassDone,
   markListenDone as frameMarkListenDone,
   unmarkListenDone as frameUnmarkListenDone,
   buildFrameSnapshot,
@@ -841,14 +840,14 @@ async function initNotify() {
    web2/src/data/statusFrame.js）。用户按通知栏按钮时原生就地记账，网页起来后领回来落地。 */
 const frameSettings = ref(loadFrameSettings())
 const frameIsApp = ref(false) // 只在 App 内为 true（决定设置里那行要不要出现）
-/* P2：今天「已去听过」的记号（可见可撤销）。以前这个记号只在通知栏能打，
-   App 里既看不见、也撤不掉 —— 点错了只能等明天。
+/* P2：今天「已去听过」的记号（可见可撤销）。它只影响「状态框今天还提不提醒这一段」。
+   写入点只有一个：真放满设定遍数时的 listenAutoMark()（P5 按钮收窄前是通知栏那枚按钮写的）。
    loadFrameMarks() 每次返回新对象，直接赋值即触发刷新。 */
 const frameMarksToday = ref(loadFrameMarksNow())
 function refreshFrameMarks() {
   frameMarksToday.value = loadFrameMarksNow()
 }
-/* 撤销某一段的「我去听了」：撤掉 → 刷新 → 重推快照（通知栏当天恢复提醒它）。 */
+/* 撤销某一段的「我去听了」：撤掉 → 刷新 → 重推快照（状态框当天恢复提醒它）。 */
 function unmarkListenDone(id) {
   if (!id) return
   frameUnmarkListenDone(id)
@@ -946,8 +945,10 @@ async function pushFrameNow() {
   if (!r.ok && r.error) setFrameMsg('状态框同步失败：' + r.error, true)
 }
 /* 落地原生记下的按钮动作。
-   注意「我去听了」**不替用户记账**：只把这段从状态框撤下（今天不再提醒），
-   已听次数与复习档位仍由 App 内「放满设定遍数」自动记 —— 通知栏那一下不该冒充已听。 */
+   按钮收窄后（2026-10-07 用户拍板）只剩两类：
+   - startRec：唯一那枚按钮。
+   - openLedger：点通知本体、且在「不上课 + 已过 18:00」时跳进来的场景动作。
+   「上完了 / 我去听了」两枚已砍，对应分支一并删除（App 内各有入口）。 */
 function applyFrameActions(list) {
   let touched = false
   for (const a of list || []) {
@@ -965,26 +966,6 @@ function applyFrameActions(list) {
         else if (recMsg.value) showFrameToast('没能开始录音：' + recMsg.value)
       })
       continue
-    }
-    if (type === 'classDone') {
-      if (id) frameMarkClassDone(id)
-      /* 「这节上完了」= 这节课真的结束：正为这节课录音就顺手停掉，不等下课自动停 */
-      if (id && recActiveId.value) {
-        const lec = lectures.value.find((l) => l.id === recActiveId.value)
-        if (lec && lec.schedule_id === id) stopRec()
-      }
-      setFrameMsg('已记下：这节上完了')
-      showFrameToast('已记下：这节上完了')
-      touched = true
-    }
-    if (type === 'listenDone') {
-      if (!id) continue
-      frameMarkListenDone(id)
-      refreshFrameMarks() // 通知栏按的那一下，App 里也要立刻看得见
-      const c = listenClips.value.find((x) => x.id === id)
-      setFrameMsg(`已记下「我去听了」：今天不再提醒${c ? '「' + c.name + '」' : ''}`)
-      showFrameToast(`已记下「我去听了」${c ? '：' + c.name : ''} · 今天不再提醒它`)
-      touched = true
     }
     /* P5「甲」：晚上点通知本体 → 直接开「日精进」，省掉「进 App → 我的 → 日精进」两步。
        这是「打开某处」的动作，不改任何数据，所以不置 touched、不需要 pushFrameNow。 */
@@ -1978,7 +1959,12 @@ async function onListenPick(e) {
    到复习日（或刚导入当天）→ 走 reviewAdvance：已听次数 +1、复习档位 +1、按艾宾浩斯重算下次复习日；
    还没到复习日 → 只加已听次数（countPlayed），排期不动。
    为什么去掉手工确认：用户说"听完次数自动加上去就好了"；代价是中途停掉不算，
-   只有真放满设定遍数才算一次（仍然不会自动播放，"点通知不出声"这条口径不变）。 */
+   只有真放满设定遍数才算一次（仍然不会自动播放，"点通知不出声"这条口径不变）。
+
+   P5 按钮收窄（2026-10-07）后，这里**顺手补上「今天已去听过」的记号**：
+   原先那记记号只有通知栏那枚「我去听了」按钮会写，按钮一砍，P2 的
+   「看得见、撤得回」就成了死代码。现在改成「真放满遍数」才写 —— 比按一下按钮更实在，
+   而且它只影响「状态框今天还提不提醒这一段」，与已听次数/复习档位互不干扰。 */
 function listenAutoMark(p) {
   const c = listenClips.value.find((x) => x.id === p.id)
   if (!c) return
@@ -1988,10 +1974,13 @@ function listenAutoMark(p) {
     : countPlayed(c)
   if (!next) return setListenMsg('这条数据有问题，先不记账。', true)
   listenClips.value = saveClips(listenClips.value.map((x) => (x.id === c.id ? next : x)))
+  frameMarkListenDone(p.id)
+  refreshFrameMarks()
   setListenMsg(due
     ? `放满 ${listenPlayTotal.value} 遍，自动记一次：「${next.name}」共听 ${next.played_count} 次 · ${listenStageLabel(next)}`
     : `放满 ${listenPlayTotal.value} 遍，自动记一次：「${next.name}」共听 ${next.played_count} 次（还没到复习日，排期先不动）`)
   applyListenSchedule()
+  pushFrameNow() // 记号变了，状态框今天不再提醒这一段（听满就撤下）
 }
 /* 「到点提醒我去听」开关（2026-10-03 修 bug：此前 enabled 默认 false 且界面上没有开关，
    于是练耳通知永远排不出来）。写进 web2.listen.set.enabled，watch 会触发重排。 */

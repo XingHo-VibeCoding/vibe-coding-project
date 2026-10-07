@@ -347,7 +347,10 @@ const R_ME = R_H.body
 await R_H.enterOpen()
 await R_ME.locator('[data-listen-import]').setInputFiles({ name: '连放测试.wav', mimeType: 'audio/wav', buffer: wavBuffer() })
 await rpage.waitForTimeout(900)
-const rrow = R_ME.locator('li', { hasText: '连放测试' }).first()
+// **必须排除「今天已去听过」记号卡片**：它里面也有一个含段名的 <li>，且排在 DOM 更前面。
+// P5 按钮收窄后该记号改由 listenAutoMark() 在放满遍数时写入，于是 J 段放满 3 遍后卡片会凭空出现，
+// 原先的 `li:hasText(段名).first()` 就会挑到记号卡（没有 [data-listen-play]）→ 超时。
+const rrow = R_ME.locator('li', { hasText: '连放测试' }).filter({ has: rpage.locator('[data-listen-play]') }).first()
 const roundOf = async () => ((await rrow.locator('[data-listen-round]').count())
   ? (await rrow.locator('[data-listen-round]').innerText()).trim()
   : '')

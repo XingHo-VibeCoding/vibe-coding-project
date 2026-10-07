@@ -4,8 +4,10 @@
  *  - 网页只管「数据」：把今天剩余安排压成一份**快照 JSON**推给原生（pushFrame）。
  *  - 原生管「呈现与计时」：自己每 30s 重画（剩余分钟数由原生按快照里的 start/end 现算），
  *    网页被冻结/进程被回收都不影响。所以这里**不**需要每分钟推一次。
- *  - 用户在通知栏按的三枚按钮（开始录音 / 这节上完了 / 我去听了）由原生就地记账，
+ *  - 用户在通知栏按的那一枚按钮（开始录音）由原生记成「待领动作」，
  *    网页起来后用 consumeFrameActions() 领走并落地成 App 内的真实动作。
+ *    2026-10-07 用户拍板收窄：状态框是**状态显示牌，不是操作台**，
+ *    「上完了 / 我去听了 / 结账」三枚已砍（App 内都有入口）。
  *
  * 与 recorder.js / notify.js 同样的降级约定：没有原生插件时一律
  * 返回 {ok:false,unsupported:true}，绝不抛 —— 网页版/浏览器里静默失效。 */
@@ -41,13 +43,14 @@ export function saveFrameSettings(s) {
   return clean
 }
 
-/* 「今天已经处理过的」记号：原生按「这节上完了」「我去听了」时也会同步记一份，
-   两边都以今天为界 —— 日期一变自动作废，不需要清理。 */
+/* 「今天已经处理过的」记号：以今天为界 —— 日期一变自动作废，不需要清理。
+   按钮收窄后（2026-10-07）只剩 listenDone 一个：它由 App 内「放满设定遍数」自动写
+   （listenAutoMark），不再由通知栏按钮写。classDone 已随「上完了」按钮一起删掉。 */
 export function sanitizeMarks(m) {
   const o = m && typeof m === 'object' ? m : {}
   const day = typeof o.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.date) ? o.date : todayKey()
   const arr = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x) : [])
-  return { date: day, classDone: arr(o.classDone), listenDone: arr(o.listenDone) }
+  return { date: day, listenDone: arr(o.listenDone) }
 }
 export function loadFrameMarks() {
   let m
@@ -68,11 +71,6 @@ function saveFrameMarks(m) {
     /* 忽略 */
   }
   return clean
-}
-export function markClassDone(id) {
-  const m = loadFrameMarks()
-  if (id && m.classDone.indexOf(id) === -1) m.classDone.push(id)
-  return saveFrameMarks(m)
 }
 export function markListenDone(id) {
   const m = loadFrameMarks()
@@ -102,16 +100,16 @@ function dndMin(v) {
   return m >= 0 ? m : null
 }
 
-/* P5「甲」场景门：通知栏那三个按钮槽位与「点通知本体去哪儿」都要跟着场景换，
-   但**策略只写在这一处**，原生只照着画（与 classDone / listen 的口径一致）。
-   - canLedger：18:00 前不放「结账」。上课中与课间课后都按同一条时间线算。
-   - tapLedger：上课中点通知 = 回今日页；晚上/课后点通知 = 直接开日精进。
-   两条都从同一个 nowMin 推出来，测试跑一次就能锁住。 */
+/* P5「甲」场景门：删到只剩「点通知本体去哪儿」一处判断，但**策略只写在这一处**，
+   原生只照着画。
+   - tapLedger：上网课中点通知 = 回今日页；不在上课且已过 18:00 点通知 = 直接开日精进。
+   从 nowMin 推出来，测试跑一次就能锁住。
+   （原先还有 canLedger：18:00 前不放「结账」按钮。按钮已砍，这个门随之删除。） */
 export const LEDGER_FROM = 18 * 60
 
 /* 场景门要吃两个数：当前时刻与门槛。二者都可能以「分钟数」直接给（网页侧 nowTime 就是数字），
    也可能以 'HH:mm' 给。listen.js 的 minOf 只认字符串（传 1080 会当非法回 -1 —— 真踩过：
-   于是 canLedger 永远 false、「结账」按钮白天晚上都不出现），所以这里先认数字再回落字符串。
+   于是那扇门永远 false、按钮白天晚上都不出现），所以这里先认数字再回落字符串。
    拿不到一律 -1，调用方以此为准「不给结论」。 */
 function minAny(v) {
   if (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1440) return Math.round(v)
@@ -142,20 +140,23 @@ export function buildFrameSnapshot(input) {
   const dndEnd = dndMin(s.dndEnd)
   const nowMin = minAny(s.nowMin)
   const ledgerFrom = minAny(s.ledgerFrom)
+  /* 上课中？用同一份 today 列表与 nowMin 判断（原生 frameText 也是这么挑 cur 的）：
+     上课中点通知本体回今日页；不在上课且已过 18:00 才直接开「日精进」。 */
+  const inClass = day(s.today).some((x) => nowMin >= x.start && nowMin < x.end)
+  const afterLedger = nowMin >= 0 && ledgerFrom >= 0 && nowMin >= ledgerFrom
   const snap = {
     enabled: s.enabled === undefined ? true : !!s.enabled,
     updatedAt: Date.now(),
     dndStart,
     dndEnd,
     todosDue: Math.max(0, Number(s.todosDue) || 0),
-    classDone: marks.classDone.slice(),
     listen,
     today: day(s.today),
     tomorrowFirst: tf && tf.name ? { name: String(tf.name), start: minOf(tf.start) } : null,
     recTitle: typeof s.recTitle === 'string' ? s.recTitle : '',
-    /* 18:00 前不放「结账」。nowMin 拿不到时**不给结论**（false），
-       宁可少一个按钮，也不要在白天把「结账」顶上来。 */
-    canLedger: nowMin >= 0 && ledgerFrom >= 0 && nowMin >= ledgerFrom,
+    /* 点通知本体去哪儿（原生 tapIntent 照着画）。nowMin 拿不到时不给结论（false）：
+       宁可回今日页，也不要在白天莫名其妙弹出「日精进」。 */
+    tapLedger: afterLedger && !inClass,
   }
   /* 拿不到就整个删掉这个键，让原生用它的默认值（别留 undefined —— 序列化后是 null，原生一样读不到） */
   if (snap.dndStart === null) delete snap.dndStart

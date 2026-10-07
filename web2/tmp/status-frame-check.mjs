@@ -77,14 +77,15 @@ const SF = await import('../src/data/statusFrame.js')
   t('A9. 非法待办数归 0（不显示负号）', SF.buildFrameSnapshot({ todosDue: -3 }).todosDue === 0)
 }
 
-/* A10–A12：记号（「这节上完了」「我去听了」）落库 + 过滤 */
+/* A10–A12：记号（今天「已去听过」）落库 + 过滤。
+   P5 按钮收窄（2026-10-07）后 classDone 已随「上完了」按钮删除，
+   保留 listenDone 一个（写入点改为 listenAutoMark 真放满遍数）。 */
 {
   SF.markListenDone('lis1')
-  SF.markClassDone('c2')
-  SF.markClassDone('c2') // 重复按下只记一条
+  SF.markListenDone('lis1') // 重复记只留一条
   const marks = SF.loadFrameMarks()
-  t('A10. 「我去听了」的记号落库', marks.listenDone.includes('lis1'))
-  t('A11. 「这节上完了」去重（重复按不会记两条）', marks.classDone.filter((x) => x === 'c2').length === 1)
+  t('A10. 「已去听过」的记号落库', marks.listenDone.includes('lis1'))
+  t('A11. 「已去听过」去重（重复记不会留两条）', marks.listenDone.filter((x) => x === 'lis1').length === 1)
   const snap = SF.buildFrameSnapshot({
     today: [{ kind: 'c', id: 'c2', name: '数据结构', start: '14:00', end: '15:40' }],
     listen: [
@@ -94,27 +95,35 @@ const SF = await import('../src/data/statusFrame.js')
     marks,
   })
   t('A12. 记过的练耳段从快照里撤下（今天不再提醒）', snap.listen.length === 1 && snap.listen[0].id === 'lis2', JSON.stringify(snap.listen))
-  t('A13. 「上完了」的课号透传给原生（原生据此不显示「上完了」按钮）', snap.classDone.includes('c2'))
+  t('A13. 快照里不再有 classDone（按钮砍了，这个概念随之删掉）', !('classDone' in snap), JSON.stringify(Object.keys(snap)))
 }
 
 /* A14–A16：昨天的记号作废 + 设置默认值 */
 {
   localStorage.setItem('web2.frame.marks', JSON.stringify({ date: '2020-01-01', classDone: ['old'], listenDone: ['oldlis'] }))
   const marks = SF.loadFrameMarks()
-  t('A14. 隔天的记号自动作废', marks.date === dkey() && marks.classDone.length === 0 && marks.listenDone.length === 0)
+  t('A14. 隔天的记号自动作废', marks.date === dkey() && marks.listenDone.length === 0, JSON.stringify(marks))
   t('A15. 设置默认开（装了就有，不用先去设置里开）', SF.loadFrameSettings().enabled === true)
   t('A16. 设置归一化（非法值当开）', SF.saveFrameSettings({ enabled: 0 }).enabled === false && SF.loadFrameSettings().enabled === false)
   SF.saveFrameSettings({ enabled: true })
 }
 
-/* A17–A21：P5「甲」新增的三件事 —— 老师字段、canLedger 场景门、新图标之外的文案输入。
-   场景门只在网页侧算（LEDGER_FROM = 18:00），原生只读 canLedger，所以这几条断言就是策略的全部。 */
+/* A17–A22：P5「甲」场景门 —— 只剩「点通知本体去哪儿」一处判断。
+   策略只在网页侧算（LEDGER_FROM = 18:00），原生只读 tapLedger，所以这几条断言就是策略的全部。
+   上课中即便已过 18:00 也必须回今日页（正上课不可能去结账）。 */
 {
   t('A17. 场景门常量是 18:00（改口径只改这一处）', SF.LEDGER_FROM === 1080, String(SF.LEDGER_FROM))
-  const mk = (nowMin) => SF.buildFrameSnapshot({ nowMin, ledgerFrom: SF.LEDGER_FROM, today: [] })
-  t('A18. 17:59 不给「结账」', mk(17 * 60 + 59).canLedger === false)
-  t('A19. 18:00 整开始给「结账」', mk(18 * 60).canLedger === true)
-  t('A20. 拿不到当前时间就不给「结账」（宁可少一枚按钮，也别在白天顶上来）', SF.buildFrameSnapshot({ ledgerFrom: SF.LEDGER_FROM }).canLedger === false && SF.buildFrameSnapshot({ nowMin: 20 * 60 }).canLedger === false)
+  const classItem = { kind: 'c', id: 'c1', name: '结构力学', start: '14:00', end: '15:40' }
+  /* 19:00 正上着的那节课：18:30–20:00（用它才能验「上课中不跳日精进」） */
+  const eveningClass = { kind: 'c', id: 'c2', name: '晚课', start: '18:30', end: '20:00' }
+  const mk = (nowMin, today = []) => SF.buildFrameSnapshot({ nowMin, ledgerFrom: SF.LEDGER_FROM, today })
+  t('A18. 17:59 不在上课 → 点通知不开日精进', mk(17 * 60 + 59).tapLedger === false)
+  t('A19. 18:00 整、不在上课 → 点通知开日精进', mk(18 * 60).tapLedger === true)
+  t('A20. 拿不到当前时间就不给结论（宁可回今日页，也别在白天弹日精进）', SF.buildFrameSnapshot({ ledgerFrom: SF.LEDGER_FROM }).tapLedger === false && SF.buildFrameSnapshot({ nowMin: 20 * 60 }).tapLedger === false)
+  t('A20b. 上课中即便已过 18:00 也回今日页（正上课不可能去结账）', mk(19 * 60, [eveningClass]).tapLedger === false)
+  t('A20b2. 白天上课中同样回今日页（14:30 在上 14:00–15:40）', mk(14 * 60 + 30, [classItem]).tapLedger === false)
+  t('A20c. 课后（20:00）→ 开日精进', mk(20 * 60).tapLedger === true)
+  t('A20d. 快照里不再有 canLedger（「结账」按钮已砍，那个门随之删除）', !('canLedger' in mk(20 * 60)))
   const withT = SF.buildFrameSnapshot({
     today: [{ kind: 'c', id: 'c9', name: '结构力学', place: '4-317', teacher: '沈国辉', start: '14:00', end: '15:40' }],
   })
@@ -245,19 +254,34 @@ await page.waitForTimeout(500)
 t('B11. 再打开会调 setEnabled(true) 并落库', JSON.stringify(await page.evaluate(() => window.__frame.enabled)) === '[false,true]' && (await page.evaluate(() => JSON.parse(localStorage.getItem('web2.frame')).enabled)) === true)
 t('B12. 开关有回执文案（用户看得见发生什么）', (await page.locator('[data-frame-msg]').count()) === 1, await page.locator('[data-frame-msg]').innerText().catch(() => ''))
 
-/* B13–B16：按钮动作领回来落地 */
-await page.evaluate(() => { window.__frame.queue.push({ type: 'listenDone', id: 'lis_x' }) })
-await page.evaluate(() => { window.__frame.queue.push({ type: 'classDone', id: 'c_x' }) })
+/* B13–B17：动作领回来落地。P5 按钮收窄后只剩两类（startRec / openLedger），
+   顺手把「已砍掉的 classDone 动作必须被无声忽略」钉住 —— 删除要删干净，不能留半截。 */
+await page.evaluate(() => {
+  window.__frame.queue.push({ type: 'startRec' })
+  window.__frame.queue.push({ type: 'classDone', id: 'c_legacy' }) // 已砍的按钮：应被忽略
+})
 const pushesBefore = await page.evaluate(() => window.__frame.pushes.length)
 await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
 await page.waitForTimeout(700)
-const marks = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.frame.marks') || '{}'))
-t('B13. 「我去听了」的记号被领走并落库', Array.isArray(marks.listenDone) && marks.listenDone.includes('lis_x'), JSON.stringify(marks))
-t('B14. 「上完了」的记号被领走并落库', Array.isArray(marks.classDone) && marks.classDone.includes('c_x'), JSON.stringify(marks))
+const marks = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.frame.marks') || 'null'))
+t('B13. 领到「开始录音」真的开了录（不是只跳回今日页）', (await page.evaluate(() => window.__frame.recStarted)) === 1, String(await page.evaluate(() => window.__frame.recStarted)))
+t('B14. 已砍的「上完了」动作被无声忽略（不写 classDone 记号）', !(marks && Array.isArray(marks.classDone) && marks.classDone.includes('c_legacy')), JSON.stringify(marks))
 t('B15. 动作取走即清（再回到前台不会重复触发）', (await page.evaluate(() => window.__frame.queue.length)) === 0)
 const pushesAfter = await page.evaluate(() => window.__frame.pushes.length)
 t('B16. 领完动作会补推一次快照', pushesAfter > pushesBefore, pushesBefore + ' → ' + pushesAfter)
-t('B17. 落地后有回执文案', (await page.locator('[data-frame-msg]').innerText()).includes('记下'), await page.locator('[data-frame-msg]').innerText())
+t('B17. 落地后有回执文案', (await page.locator('[data-frame-toast]').innerText().catch(() => '')).includes('录音'), await page.locator('[data-frame-toast]').innerText().catch(() => '(无)'))
+/* 这一轮把录音开起来了，后面 B21 要改设置，先按 UI 停掉，
+   再整页重载回到干净起点（录音态留着会干扰后面的点击），并重新走回设置二级页。 */
+await page.locator('[data-rec-banner]').click().catch(() => {})
+await page.waitForTimeout(500)
+await page.locator('[data-sub-page][data-sub="lectures"] button:has-text("停止并保存")').first().click().catch(() => {})
+await page.waitForTimeout(600)
+await page.goto(BASE, { waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(800)
+await page.locator('nav button', { hasText: '我的' }).click()
+await page.waitForTimeout(400)
+await page.locator('[data-settings-toggle]').click()
+await page.waitForTimeout(400)
 
 /* B21–B22：改勿扰时段必须当场重推快照（v1.41.9 真机反馈：watch 列表里缺 listenSettings，
    改完要等下一次数据变动或重启 App 才生效 —— 用户看到的就是「改了等于没改」，
@@ -318,13 +342,14 @@ await page.locator('[data-rec-banner]').click()
 await page.waitForTimeout(500)
 t('C4. 点小条跳到「我的」页的录音二级页（那里才**看得见**停止并保存）', (await page.evaluate(() => document.querySelectorAll('nav button')[2].textContent)).includes('我的') && (await page.locator('[data-sub-page][data-sub="lectures"]').count()) === 1 && (await page.locator('[data-sub-page][data-sub="lectures"] button:has-text("停止并保存")').first().isVisible()), await page.evaluate(() => document.querySelectorAll('nav button')[2].className))
 
-/* C5–C6：另两枚按钮的回执 */
+/* C5–C6：已砍掉的两枚按钮（classDone / listenDone）—— 原生理论上不会再推，
+   但旧版本 App 可能还留着；网页侧必须**无声忽略**，绝不能因此报错或写脏数据。 */
 await page.evaluate(() => window.__frame.fire({ type: 'classDone', id: 'c_x' }))
 await page.waitForTimeout(300)
-t('C5. 「这节上完了」有可见回执', (await page.locator('[data-frame-toast]').innerText().catch(() => '')).includes('上完了'), await page.locator('[data-frame-toast]').innerText().catch(() => '(无)'))
+t('C5. 已砍的「上完了」动作不写脏数据、不报错', (await page.evaluate(() => localStorage.getItem('web2.frame.marks'))) === null && errors.length === 0, String(await page.evaluate(() => localStorage.getItem('web2.frame.marks'))))
 await page.evaluate(() => window.__frame.fire({ type: 'listenDone', id: 'lis_x' }))
 await page.waitForTimeout(300)
-t('C6. 「我去听了」有可见回执', (await page.locator('[data-frame-toast]').innerText().catch(() => '')).includes('我去听了'), await page.locator('[data-frame-toast]').innerText().catch(() => '(无)'))
+t('C6. 已砍的「我去听了」动作同样不写脏数据、不报错', (await page.evaluate(() => localStorage.getItem('web2.frame.marks'))) === null && errors.length === 0, String(await page.evaluate(() => localStorage.getItem('web2.frame.marks'))))
 
 /* C8：P5「甲」—— 晚上点通知本体（原生把 openLedger 记成待领动作）必须直接落到「日精进」浮层，
    省掉「进 App → 我的 → 日精进」两步。它不改数据，所以不落任何 mark。 */
@@ -339,11 +364,13 @@ t('C9. openLedger 不改数据（不写任何记号）', (await page.evaluate(()
 await page.locator('[data-sheet-mask]').last().click({ force: true }).catch(() => {})
 await page.waitForTimeout(400)
 
-/* C7：真机第二个 bug 的回归 —— 一个事件都不派，光靠前台兜底轮询也得领走 */
-await page.evaluate(() => { window.__frame.queue.push({ type: 'listenDone', id: 'lis_auto' }) })
+/* C7：真机第二个 bug 的回归 —— 一个事件都不派，光靠前台兜底轮询也得领走。
+   （用 openLedger 当「已被砍掉的旧动作类型」的替身没意义，就查「队列真的被取空了」——
+   取走即清是消费的唯一证明，跟动作类型无关。） */
+await page.evaluate(() => { window.__frame.queue.push({ type: 'openLedger' }) })
 await page.waitForTimeout(7500)
-const marksAuto = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.frame.marks') || '{}'))
-t('C7. 派发任何事件也能领走原生动作（下拉通知栏不触发 visibilitychange）', Array.isArray(marksAuto.listenDone) && marksAuto.listenDone.includes('lis_auto'), JSON.stringify(marksAuto.listenDone))
+t('C7. 派发任何事件也能领走原生动作（下拉通知栏不触发 visibilitychange）', (await page.evaluate(() => window.__frame.queue.length)) === 0, 'queue=' + (await page.evaluate(() => window.__frame.queue.length)))
+t('C7b. 领走的 openLedger 真的开了「日精进」', (await page.locator('[data-sheet-review]').count()) === 1)
 
 t('B20. 全程无报错', errors.length === 0, errors.join(' | '))
 
