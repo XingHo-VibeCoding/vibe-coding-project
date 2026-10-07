@@ -66,3 +66,9 @@
    ```
 
    它一次做完「构建 web2 → sync → patch-android → gradle 打包 → 归档 dist-apk → `verify-apk.py` 三级一致性校验」，**任一步失败立即非 0 退出**（不再出现「gradle 失败但归档照跑」那种交假包的事故）。**不要**再手工照 `docs/交接说明.md` §4.2 的五步跑——那份清单留作原理说明。参数与环境变量见 `scripts/ship.js` 顶部注释（`--help` 可打印）。
+
+5. **机密信息不进仓库（Day 23 追加）**：真实密钥、口令、连接串一律只放在**云函数的函数环境变量**或本机 `.env` / `cloudbaserc.json`（两者都被 `.gitignore` 忽略），仓库里只留**占位符模板** `.env.example` 与 `cloudbaserc.example.json`。
+   - **加/改 `.gitignore` 规则后必须实测**，唯一可信判据是 `git check-ignore -v <文件>`（读文本会漏掉 `!` 否定规则）。注意 `.env.*` 会连带忽略模板 `.env.example`，所以模板后面紧跟一行 `!.env.example` 放行——**新增任何 `.env` 变体前先跑一次 check-ignore**。
+   - **审计「有没有泄漏」要按密钥的真实形状扫**（`AKID…` / `-----BEGIN … PRIVATE KEY-----` / `sk-` 长串 / `KEY=` 实值 / JWT / 连接串），**别用裸关键词**（会把 `sk-…` 占位符、CSS 类名 `.sk-card` 全算成命中）。被跟踪文件清单用 `git ls-files -z` 按 NUL 切 + `Test-Path -LiteralPath`，否则中文文件名会被 git 转义成 `"docs/\347…"` 导致路径非法。
+   - **一旦真在历史里找到真实密钥**：不只是删代码，必须**立即作废并重新生成、更新环境变量**，然后才提交。
+   - **云端错误必须说人话**：失败响应统一 `{ok:false,kind,message,status}`，`kind` = `input`（用户填错，自己改）/ `network`（没送到，可重试）/ `server`（对方坏了，重试没用）；**绝不把 Node 的英文异常原文或 `String(err)` 的 `[object Object]` 漏给使用者**；定义与文案只有一处（`cloudfunctions/write/errors.js`，`list/errors.js` 是逐字节副本，SHA256 必须一致）。完整口径与验证方法见 `docs/api-contract.md` 第 6b 节。

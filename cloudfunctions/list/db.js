@@ -26,7 +26,12 @@
 // ── 鉴权 ────────────────────────────────────────────────────
 // 服务端 API Key（service_role）从环境变量 CLOUDBASE_API_KEY 读，
 // 绝不写进代码、绝不返回给前端 —— 它相当于管理员钥匙，泄漏=库门大开。
+//
+// Day 23 补：错误一律经 ./errors.js 收口（与 write 逐字同一份），
+// 本层只判断「网络错还是服务端错」，中文文案统一在那边拼。
 'use strict'
+
+const { network, fromUpstream, fromNonJson, missingEnv } = require('./errors')
 
 /* 两个环境变量：
    TCB_ENV_ID        环境 ID，形如 vibecoding-test-d5fqmhbb955e19dd
@@ -40,7 +45,7 @@ function readConfig() {
   if (!apiKey) missing.push('CLOUDBASE_API_KEY')
   if (missing.length) {
     // 只报变量名，不报值 —— 报错信息本身不能变成泄密口
-    throw new Error('环境变量未配置：' + missing.join(' / '))
+    throw missingEnv(missing)
   }
   return { envId, apiKey }
 }
@@ -60,22 +65,24 @@ async function restGet(url, apiKey, label) {
       signal: ctrl.signal,
     })
   } catch (e) {
-    const reason = e && e.name === 'AbortError' ? '超时(8s)' : (e && e.message ? e.message : String(e))
-    throw new Error(label + ' 请求失败：' + reason)
+    // fetch 自己抛的（超时/DNS/拒连）统一当网络错 —— 不把英文原文漏给使用者
+    throw network(label, e)
   } finally {
     clearTimeout(timer)
   }
+  // 先整体读成文本再解析：body 只能读一次，若先 res.json() 失败再 res.text()
+  // 会拿到空串，错误原文就丢了（实测踩过）
+  const text = await res.text().catch(() => '')
   if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    if (res.status === 401 || res.status === 403) {
-      throw new Error(label + ' 鉴权失败（HTTP ' + res.status + '）：检查 CLOUDBASE_API_KEY 是否填对、是否已启用')
-    }
-    if (res.status === 404) {
-      throw new Error(label + ' 返回 404：表不存在或环境 ID 不对（检查 TCB_ENV_ID）')
-    }
-    throw new Error(label + ' 返回 HTTP ' + res.status + '：' + body.slice(0, 200))
+    // 请求到了、对方回了错误码 → 服务端错（401/403/404 的中文文案在 errors.js 里统一）
+    throw fromUpstream(label, res.status, text)
   }
-  return res.json()
+  try {
+    return JSON.parse(text)
+  } catch (e) {
+    // 对方说自己是 JSON 但给不出 JSON（网关错误页最典型）
+    throw fromNonJson(label, res.status, text)
+  }
 }
 
 /* schedules 的查询串。三个可选筛选：type / semester / limit，

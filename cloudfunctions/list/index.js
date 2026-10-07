@@ -5,6 +5,10 @@
 // 组装 { ok, data, counts }、失败兜底。
 // URL / headers / process.env 一律不在这里 —— 那些都在 ./db.js。
 // 接口形状与 Day 17 上线时完全一致（自测 31 项钉住行为不变）。
+//
+// Day 23 补：错误经 ./errors.js 分类（input / network / server），
+// 响应体补上 kind 与 status —— 以前只有 { ok:false, message }，
+// 前端拿不到状态码，没法区分「你填错了」和「服务端炸了」。
 'use strict'
 
 /* 云函数代码加载即校验运行环境：fetch 需要 Node.js 18+。
@@ -15,6 +19,22 @@ if (typeof fetch !== 'function') {
 }
 
 const db = require('./db')
+const { input, toResponse } = require('./errors')
+
+/* ── 请求日志（Day 23 余力加练）──
+   一行一次请求：时间 | 方法 路径 | 结果。
+   为什么要它：出问题时第一句总是「刚才那次到底发生了什么」——
+   云函数日志里如果只有 console.log 的业务信息，就只能靠猜。
+   为什么不用 JSON.stringify 整条打印：日志是给人扫的，一行一条最好读。
+   注意：只记路径与查询串长度/键名，**不打印完整查询串** —— 万一有人把口令写进 URL，
+   打印出来等于把口令抄进日志。 */
+function logRequest(method, path, query, result) {
+  const keys = Object.keys(query || {}).filter(function (k) { return k !== 'token' })
+  const t = new Date().toISOString()
+  console.log('[list] ' + t + ' | ' + method + ' ' + path
+    + ' | 参数=' + (keys.length ? keys.join(',') : '无')
+    + ' | ' + result)
+}
 
 /* CloudBase 把 HTTP 请求包装成 event 交给函数。兼容三种形状：
    - HTTP 触发：{ path, httpMethod, queryStringParameters, ... }
@@ -45,20 +65,22 @@ function readLimit(v) {
   if (v === undefined || v === null || v === '') return null
   const n = Number(v)
   if (!Number.isFinite(n) || Math.floor(n) !== n || n < 1 || n > 500) {
-    throw new Error('limit 需要是 1~500 之间的整数')
+    throw input('limit 需要是 1~500 之间的整数，收到：' + String(v))
   }
   return n
 }
 
 exports.main = async function (event) {
+  const method = (event && (event.httpMethod || event.method)) || 'GET'
+  const path = (event && (event.path || event.rawPath)) || '/api/list'
+  const query = readQuery(event)
   try {
     /* 先做零成本的输入校验，再碰网络：参数不合法就不该发起请求 */
-    const query = readQuery(event)
     const types = toList(query.type)
     const allowedTypes = ['course', 'event', 'routine']
     for (const t of types) {
       if (!allowedTypes.includes(t)) {
-        throw new Error('type 只能是 course / event / routine 之一，收到：' + t)
+        throw input('type 只能是 course / event / routine 之一，收到：' + t)
       }
     }
     const limit = readLimit(query.limit)
@@ -66,6 +88,8 @@ exports.main = async function (event) {
 
     /* 校验通过后才交给数据访问层；三张表的读法（端点/查询串/超时/鉴权）在 ./db.js */
     const { semesters, schedules, todos } = await db.fetchAll({ types, semesterId, limit })
+
+    logRequest(method, path, query, 'OK 学期' + semesters.length + ' 日程' + schedules.length + ' 待办' + todos.length)
 
     return {
       ok: true,
@@ -82,7 +106,9 @@ exports.main = async function (event) {
       },
     }
   } catch (err) {
-    // 失败统一兜成 { ok:false, message }，不把堆栈抛给前端
-    return { ok: false, message: err && err.message ? err.message : '读取失败' }
+    // 失败统一兜成 { ok:false, kind, message, status }，不把堆栈抛给前端
+    const r = toResponse(err)
+    logRequest(method, path, query, 'FAIL [' + r.kind + ' ' + r.status + '] ' + r.message)
+    return r
   }
 }

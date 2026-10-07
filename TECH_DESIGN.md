@@ -571,15 +571,35 @@ flowchart TD
 
 ## 七、环境变量
 
-**一期无环境变量。** 原因：无后端、无密钥、无 AI 调用，页面是纯静态文件，没有任何需要区分配置的东西。
+> **2026-10-07 更新（Day 23）：本节标题里的「一期无环境变量」说的是前端。** 云端自 Day 15 起就有环境变量（CloudBase 云函数），Day 23 做了一次密钥与环境变量的完整审计，见下面 7.1。前端**仍然一个环境变量都没有**（静态页面，无密钥），规矩照 7.2。
 
-**将来引入时的约定（现在只写规矩，不落地）**：
+**一期前端无环境变量。** 原因：无密钥、无服务端密钥调用，页面是纯静态文件，没有任何需要区分配置的东西。
+
+### 7.1 云端环境变量（Day 15 起，Day 23 审计）
+
+| 变量 | 放哪 | 干什么 | 规矩 |
+|---|---|---|---|
+| `TCB_ENV_ID` | CloudBase 云函数的**函数环境变量** | 拼 PostgREST / REST API 的地址 | 只放服务端；本机另有 `cloudbaserc.json` 存一份用于部署，**该文件被 `.gitignore` 忽略、永不进仓库** |
+| `CLOUDBASE_API_KEY` | 同上 | 服务端 API Key，调用库 | **绝不写进代码、不进 git、不进聊天**；缺失时 `list`/`write` 直接 500 拒服务（fail-closed） |
+| `WRITE_TOKEN` | 同上 | 写接口的共享口令（`X-Write-Token`） | 没配 = **拒绝所有写入**（不会因为「没配」而放行）；只报变量名不报值 |
+
+**仓库里的模板**：根目录 `.env.example`（**只有占位符、必须进仓库**）+ `cloudbaserc.example.json`（同上）。真实值只在 `.env` / `cloudbaserc.json`，两者都被 `.gitignore` 忽略。
+
+**Day 23 修掉的一个真漏洞**：`.gitignore` 原第 4 行 `.env.*` 会把模板 `.env.example` **一起忽略掉**（`git check-ignore -v .env.example` 实测命中该行），于是新人拿到项目不知道要配哪几个变量。修法＝在其后补一行 `!.env.example`，让模板放行；`.env` / `.env.local` / `.env.production` 等**仍被忽略，没有放松**。
+
+**审计结论（可复核）**：`git ls-files` 全部 303 个被跟踪文件里，按密钥真实形状（`AKID…` / `-----BEGIN … PRIVATE KEY-----` / `sk-` 长串 / `API_KEY=` 实值 / JWT / 数据库连接串）扫描命中 **0 条**；`git log --all -S <value>` 查全历史 141 个提交也是 **0 命中**，历史上从未提交过 `cloudbaserc.json` 或 `.env`。因此**不需要作废重发密钥**。
+
+### 7.2 将来引入前端配置时的约定
 
 | 将来场景 | 变量放哪 | 规矩 |
 |---|---|---|
 | AI 中转服务（如 Cloudflare Workers） | 中转服务的环境变量里 | Key 只存服务端，**绝不写进前端代码** |
-| 本地开发调试 | 项目根目录 `.env.local` | 已被 `.gitignore` 第 3 行 `.env` 规则拦截，不会进仓库 |
+| 本地开发调试 | 项目根目录 `.env.local` | 被 `.gitignore` 的 `.env` / `.env.*` 规则拦截（`!.env.example` 只放行模板），不会进仓库 |
 | 前端需要区分环境 | `js/config.js` 里写常量 | 该文件只放非敏感项（如接口地址），敏感项一律不放 |
+
+### 7.3 三类错误提示（Day 23）
+
+云端所有失败响应统一成 `{ ok:false, kind, message, status }`，`kind` 取 `input`（你填错了，自己改）/ `network`（没送到，可重试）/ `server`（对方坏了，重试没用）。定义与文案只有一处：`cloudfunctions/write/errors.js`，`cloudfunctions/list/errors.js` 是它的逐字节副本（CloudBase 按目录打包，两个函数不能互相 require，用 SHA256 校验两份一致）。**绝不把 Node 的英文异常原文漏给使用者**，也不再用 `String(err)` 兜底（会变 `[object Object]`）。完整口径与验证方法见 `docs/api-contract.md` 第 6、6b 节。
 
 ---
 

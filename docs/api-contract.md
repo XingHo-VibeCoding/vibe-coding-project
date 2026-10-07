@@ -193,18 +193,57 @@
 - **口令**：请求头 `X-Write-Token`（或 `?token=`）与云函数环境变量 `WRITE_TOKEN` 比对。
   ⚠️ 当前是**共享口令**，只适合测试环境：口令写在页面里就等于公开，拿到它的人可以写库。升级路径＝CloudBase 匿名登录 + 每行 `owner_uid`（本仓尚未做，列在后续计划里）。
 - **校验顺序**：先查口令 → 再查方法 → 再解析 body。所以未授权一律 `401`，不泄露「body 格式」这类探测信息。
-- **错误码表（实测）**
+- **错误码表（实测；`kind` 列见下一节，Day 23 补）**
 
-  | 场景 | HTTP | body |
-  |------|------|------|
-  | 缺口令 | 401 | `{"ok":false,"message":"缺少口令：请带 X-Write-Token 请求头（或 ?token= 查询参数）","status":401}` |
-  | 口令错 | 401 | `{"ok":false,"message":"口令不正确","status":401}` |
-  | 方法不支持（如 GET） | 405 | `{"ok":false,"message":"不支持的方法：GET（写接口只接受 POST / PUT / DELETE）","status":405}` |
-  | 表不在白名单 / 字段超白名单 / 缺必填 / body 非 JSON 对象 | 400 | `{"ok":false,"message":"…","status":400}` |
-  | id 不存在 | 404 | `{"ok":false,"message":"没有找到这条记录：todos / todo_不存在的id","status":404}` |
-  | 函数环境变量缺失 | 500 | `{"ok":false,"message":"环境变量未配置：TCB_ENV_ID / CLOUDBASE_API_KEY","status":500}` |
+  | 场景 | HTTP | `kind` | body |
+  |------|------|--------|------|
+  | 缺口令 | 401 | `input` | `{"ok":false,"kind":"input","message":"缺少口令：请带 X-Write-Token 请求头（或 ?token= 查询参数）","status":401}` |
+  | 口令错 | 401 | `input` | `{"ok":false,"kind":"input","message":"口令不正确…请核对 X-Write-Token 的值是否与云函数环境变量 WRITE_TOKEN 一致","status":401}` |
+  | 方法不支持（如 GET） | 405 | `input` | `{"ok":false,"kind":"input","message":"不支持的方法：GET（写接口只接受 POST / PUT / DELETE）","status":405}` |
+  | 表不在白名单 / 字段超白名单 / 缺必填 / body 非 JSON 对象 | 400 | `input` | `{"ok":false,"kind":"input","message":"…","status":400}` |
+  | id 不存在 | 404 | `input` | `{"ok":false,"kind":"input","message":"没有找到这条记录：todos / todo_不存在的id（可能已经被删过了）","status":404}` |
+  | 函数环境变量缺失 | 500 | `server` | `{"ok":false,"kind":"server","message":"环境变量未配置：TCB_ENV_ID / CLOUDBASE_API_KEY（在云函数的环境变量里补上，别写进代码）","status":500}` |
 
 - **实现位置**：`cloudfunctions/write/index.js`（接口层：口令 / 方法 / body / 列白名单 / 错误码）+ `cloudfunctions/write/db.js`（数据访问层：PostgREST 读写）。与 `list` 同规矩——接口层不出现 URL、headers、`process.env`。
+
+---
+
+## 6b. 三类错误与 `kind` 字段（Day 23）
+
+**为什么要分类**：改动前 `list` 的失败响应只有 `{ ok:false, message }`——**没有状态码**，前端拿到一串中文也分不清「你填错了，改一下再试」和「服务端炸了，重试也没用」。写接口虽然一直有 `status`，但网络层会把 Node 抛的英文原文（`fetch failed` / `ECONNREFUSED` / `ETIMEDOUT`）直接冒给使用者看。
+
+**分类口径**——按「人拿到之后该做什么」分，不是按异常类型分：
+
+| `kind` | 中文标签 | 含义 | 使用者该做什么 | HTTP |
+|--------|----------|------|----------------|------|
+| `input` | 输入有误 | 调用方自己填错了（参数 / 表名 / 列名 / 口令 / body 格式） | **自己改**，文案会告诉他改成什么、有哪些选项 | 400 / 401 / 404 / 405 |
+| `network` | 网络不通 | 请求**没送到**对方（超时 / DNS 解析不了 / 拒连 / 被断开 / 证书没过） | 这不是填错了，**可以稍后重试** | 502 |
+| `server` | 服务端出错 | 请求送到了，但对方回错误码或非 JSON（含环境变量没配） | **多半不是你的问题，重试通常没用**；原文保留便于排查 | 上游码 / 500 |
+
+- **响应体统一形状**：`{ ok:false, kind, message, status }`。`list` 与 `write` 现在口径一致（`list` 是 Day 23 才补上 `kind`/`status` 的）。
+- **`kind` 的取值定义与文案生成只有一处**：`cloudfunctions/write/errors.js`。因为 CloudBase 按 `cloudfunctions/<函数名>/` **整目录**打包、两个函数之间不能互相 `require`，所以 `cloudfunctions/list/errors.js` 是它的**逐字节副本**（测试用 SHA256 校对两份必须一致，改一份忘另一份会立刻报错）。
+- **绝不把英文原文漏出去**：`networkReason()` 用包含匹配认 12 种网络错（`abort`/`timeout`/`enotfound`/`eai_again`/`econnrefused`/`econnreset`/`econnaborted`/`ehostunreach`/`enetunreach`/`certificate`/`fetch failed`/`socket`/`network`）→ 换成中文；**都不匹配也兜底成中文**。上游原文只在「服务端错」里以 `原文：…` 附上，并截断到 300 字符（非 JSON 是 200 字符）。
+- **兜底不用 `String(err)`**：老代码对非 Error 对象会得到 `[object Object]`。现在按类型分支（string 直接用 / number、boolean 转字符串 / 其它给「未知错误（没有拿到可读的原因）」）。
+- **fail-closed**：`WRITE_TOKEN` 没配时**一律拒绝所有写入**（`kind=server`/500），不会因为「没配口令」而放行。
+- **只报变量名不报值**：`环境变量未配置：CLOUDBASE_API_KEY` —— 这样日志和响应都不会把密钥抄出去。
+- **老文案全部保留**：`course / event / routine`、`1~500`、`检查 CLOUDBASE_API_KEY`、`检查 TCB_ENV_ID`、`请求失败`、`没有找到这条记录` 逐字没动，既有脚本（Day 17 `list-fn-selftest.js`、Day 22 `day22-db-diff.mjs`）复跑仍全绿。
+
+**验证方法（可照着重跑）**
+
+| 验什么 | 怎么验 | 期望 |
+|--------|--------|------|
+| 三类错误都带 `kind` | `node .workbuddy/tmp/day23-online-check.mjs`（真实公网 HTTP） | 16 过 / 0 挂 |
+| 单元与集成（含假密钥红线） | `node .workbuddy/tmp/day23-errors-selftest.js` | 57 过 / 0 挂 |
+| 旧断言没被改坏 | `node .workbuddy/tmp/list-fn-selftest.js`（Day 17 脚本） | 31 过 / 0 挂 |
+| 两份 `errors.js` 一致 | 上面自测的 B 段按 SHA256 比对 | 哈希相同 |
+| 输入错不联网 | 自测 C1–C4 断言 `called === 0` | 校验先于请求 |
+
+> 上面三个脚本都在 `.workbuddy/tmp/`（本地工具临时区、被 `.gitignore` 忽略，不入库）。要重跑请照本节表格的手敲命令自建。
+
+**请求日志（Day 23 余力加练）**：`list` 与 `write` 入口各有一行 `console.log`，格式为
+`[list] 2026-10-07T14:01:12.903Z | GET /api/list | 参数=type | FAIL [input 400] type 只能是 course / event / routine 之一，收到：bogus`
+（写接口是 `[write] … | POST /api/create | 动作=create 表=todos id=- | OK 201`）。
+**只记表名与 id，不记请求体**（请求体里可能有整行数据，也可能有人把口令塞进 body）；`list` 只记参数**名**不记值（万一有人把口令写进 URL，打印等于抄进日志）。
 
 ---
 

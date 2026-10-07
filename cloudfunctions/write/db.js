@@ -14,7 +14,12 @@
 //
 // 值一律走 JSON body / URLSearchParams，全程不拼 SQL 字符串 —— 注入防护与
 // 参数化方案同级，契约（docs/api-contract.md）要求不破。
+//
+// Day 23 补：错误一律经 ./errors.js 收口。本层只管「这是网络错还是服务端错」，
+// 翻成中文交给 errors.js —— 别在这里直接 new Error 往上抛英文原文。
 'use strict'
+
+const { network, fromUpstream, fromNonJson, missingEnv } = require('./errors')
 
 /* 两个环境变量（与 list 一致，同一把钥匙）：
    TCB_ENV_ID        环境 ID（云函数运行时自带 TCB_ENV，有的话可以不配）
@@ -27,7 +32,7 @@ function readConfig() {
   if (!apiKey) missing.push('CLOUDBASE_API_KEY')
   if (missing.length) {
     // 只报变量名，不报值 —— 报错信息本身不能变成泄密口
-    throw new Error('环境变量未配置：' + missing.join(' / '))
+    throw missingEnv(missing)
   }
   return { envId, apiKey }
 }
@@ -52,27 +57,21 @@ async function restWrite(method, url, apiKey, label, body) {
       signal: ctrl.signal,
     })
   } catch (e) {
-    const reason = e && e.name === 'AbortError' ? '超时(10s)' : (e && e.message ? e.message : String(e))
-    throw new Error(label + ' 请求失败：' + reason)
+    // fetch 自己抛的（超时/DNS/拒连）统一当网络错 —— 不把英文原文漏给使用者
+    throw network(label, e)
   } finally {
     clearTimeout(timer)
   }
   const text = await res.text().catch(() => '')
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
-      throw new Error(label + ' 鉴权失败（HTTP ' + res.status + '）：检查 CLOUDBASE_API_KEY 是否填对、是否已启用')
-    }
-    if (res.status === 404) {
-      throw new Error(label + ' 返回 404：表不存在或环境 ID 不对（检查 TCB_ENV_ID）')
-    }
-    // PostgREST 的参数错误（缺列、类型不符）都是 400，原文对排错最有用
-    throw new Error(label + ' 返回 HTTP ' + res.status + '：' + text.slice(0, 300))
+    // 请求到了、对方回了错误码 → 服务端错（401/403/404 的中文文案在 errors.js 里统一）
+    throw fromUpstream(label, res.status, text)
   }
   if (!text) return []
   try {
     return JSON.parse(text)
   } catch (e) {
-    throw new Error(label + ' 返回了非 JSON：' + text.slice(0, 200))
+    throw fromNonJson(label, res.status, text)
   }
 }
 
