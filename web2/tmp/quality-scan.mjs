@@ -129,12 +129,30 @@ const AUDIT = (args) => {
 
   /* E3 触控目标过小
      判据按 WCAG 2.5.8(AA)：目标尺寸下限 24×24，小于 24 才算问题；
-     24–32 只是「未达 Material/Apple 建议的 44/48」，列为提示不计数。 */
+     24–32 只是「未达 Material/Apple 建议的 44/48」，列为提示不计数。
+
+     两个必须一起看的口径（都是实际误报/漏报踩出来的）：
+     ① 视觉小、触区大：本项目大量用 `after:absolute after:-inset-[Npx]` 把小按钮的真实命中区
+        撑到 44px（RowItem、课表页录音钮等）。只量元素盒会把它们全判成过小——所以量 `::after`
+        的盒，取「元素盒 ∪ 伪元素盒」的最小边。
+     ② ::after 若是 `content: ''` 且无实际尺寸，getComputedStyle 给 `width:auto`，
+        此时不能用它，仍以元素盒为准。 */
+  const hitBox = (el) => {
+    const b = el.getBoundingClientRect()
+    const ba = getComputedStyle(el, '::after')
+    if (!ba || !ba.content || ba.content === 'none') return b
+    const w = parseFloat(ba.width), h = parseFloat(ba.height)
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return b
+    const l = parseFloat(ba.left), r = parseFloat(ba.right), t = parseFloat(ba.top), bo = parseFloat(ba.bottom)
+    const L = Number.isFinite(l) ? b.left + l : (Number.isFinite(r) ? b.right + r - w : b.left)
+    const T = Number.isFinite(t) ? b.top + t : (Number.isFinite(bo) ? b.bottom + bo - h : b.top)
+    return { width: Math.max(b.width, w), height: Math.max(b.height, h), left: L, top: T, right: L + w, bottom: T + h }
+  }
   const seenTiny = new Set()
   for (const el of nodes) {
     if (!el.matches || !el.matches('button,[role="switch"],a[href],select,input[type=checkbox],input[type=radio]')) continue
     if (!vis(el) || el.closest('[disabled]') || el.getAttribute('aria-disabled') === 'true') continue
-    const b = el.getBoundingClientRect()
+    const b = hitBox(el)
     if (Math.min(b.width, b.height) >= 32) continue
     const k = `${Math.round(b.width)}x${Math.round(b.height)}|${txt(el)}|${el.getAttribute('class') || ''}`
     if (seenTiny.has(k)) continue

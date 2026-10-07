@@ -35,6 +35,7 @@ import {
   markListenDone as frameMarkListenDone,
   unmarkListenDone as frameUnmarkListenDone,
   buildFrameSnapshot,
+  LEDGER_FROM,
   pushFrame,
   setFrameEnabled,
   frameRunning,
@@ -903,6 +904,7 @@ function frameTodayItems() {
     id: c.id,
     name: entryName(c),
     place: c.place || '',
+    teacher: c.teacher || '',
     start: c.start,
     end: c.end,
   }))
@@ -935,6 +937,10 @@ async function pushFrameNow() {
     tomorrowFirst: frameTomorrowFirst(),
     listen: listenDue.value.map((c) => ({ id: c.id, name: c.name })),
     marks: loadFrameMarksNow(),
+    /* P5「甲」：按钮按场景换的策略只由网页侧决定（原生照着画）。
+       nowTime 是 App 的「当前时间」（测试可用 ?t= 固定住），与 heroMode 用同一个口径。 */
+    nowMin: nowTime.value,
+    ledgerFrom: LEDGER_FROM,
   })
   const r = await pushFrame(snap)
   if (!r.ok && r.error) setFrameMsg('状态框同步失败：' + r.error, true)
@@ -979,6 +985,12 @@ function applyFrameActions(list) {
       setFrameMsg(`已记下「我去听了」：今天不再提醒${c ? '「' + c.name + '」' : ''}`)
       showFrameToast(`已记下「我去听了」${c ? '：' + c.name : ''} · 今天不再提醒它`)
       touched = true
+    }
+    /* P5「甲」：晚上点通知本体 → 直接开「日精进」，省掉「进 App → 我的 → 日精进」两步。
+       这是「打开某处」的动作，不改任何数据，所以不置 touched、不需要 pushFrameNow。 */
+    if (type === 'openLedger') {
+      openReview('ask')
+      continue
     }
   }
   if (touched) pushFrameNow()

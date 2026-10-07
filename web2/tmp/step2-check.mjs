@@ -146,8 +146,13 @@ if (!hasToday) {
   const inClass = /还剩 \d+ 分/.test(nextTxt)
   t(inClass ? 'B1. 进行中时报「还剩 N 分」而不是倒计时' : 'B1. 没有课在进行中时，「接下来」那条报倒计时',
     inClass ? !/分钟后/.test(nextTxt) : /分钟后/.test(nextTxt), nextTxt)
-  t('B2. 头部状态条同步显示「进行中 · 」',
-    (await p2.locator('[data-header-status]').innerText()).includes('进行中 · '))
+  /* B2 必须和 B1 走同一个分支：10:30 有没有课在进行中取决于今天星期几
+     （mock 的周三 10:00 没课）——写成「无条件出现进行中」在周三就是假红。 */
+  t(inClass ? 'B2. 头部状态条同步显示「进行中 · 」' : 'B2. 没有课在进行中时，头部状态条显示「下一节 · 」',
+    inClass
+      ? (await p2.locator('[data-header-status]').innerText()).includes('进行中 · ')
+      : (await p2.locator('[data-header-status]').innerText()).includes('下一节 · '),
+    await p2.locator('[data-header-status]').innerText())
 }
 await p2.close()
 

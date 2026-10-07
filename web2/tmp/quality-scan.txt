@@ -3,7 +3,7 @@
 ## 360x640 / light
 ========================================================================
   [today] 0 处问题 
-      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）5 处：328×26 已过1 件 · 08:00–09:30展开 ▾ / 328×26 全部共 1 件 · 展开全部▾ / 24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 …
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
   [week] 无问题
   [week-list] 无问题
   [me] 无问题
@@ -15,7 +15,7 @@
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）2 处：48×24 关闭 / 65×26 ＋ 添加
   [sheet-review] 0 处问题 
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：64×25 临时有事 / 53×25 太累了 / 53×25 不想做 / 42×29 记下
-  [sheet-detail] 无问题
+  [sheet-detail] 打不开（入口没命中），跳过
   [add-pick] 无问题
   [sheet-add] 无问题
 
@@ -23,7 +23,7 @@
 ## 360x640 / dark
 ========================================================================
   [today] 0 处问题 
-      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）5 处：328×26 已过1 件 · 08:00–09:30展开 ▾ / 328×26 全部共 1 件 · 展开全部▾ / 24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 …
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
   [week] 无问题
   [week-list] 无问题
   [me] 无问题
@@ -35,7 +35,7 @@
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）2 处：48×24 关闭 / 65×26 ＋ 添加
   [sheet-review] 0 处问题 
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：64×25 临时有事 / 53×25 太累了 / 53×25 不想做 / 42×29 记下
-  [sheet-detail] 无问题
+  [sheet-detail] 打不开（入口没命中），跳过
   [add-pick] 无问题
   [sheet-add] 无问题
 
@@ -43,7 +43,7 @@
 ## 390x844 / light
 ========================================================================
   [today] 0 处问题 
-      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）5 处：358×26 已过1 件 · 08:00–09:30展开 ▾ / 358×26 全部共 1 件 · 展开全部▾ / 24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 …
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
   [week] 无问题
   [week-list] 无问题
   [me] 无问题
@@ -64,7 +64,7 @@
 ## 390x844 / dark
 ========================================================================
   [today] 0 处问题 
-      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）5 处：358×26 已过1 件 · 08:00–09:30展开 ▾ / 358×26 全部共 1 件 · 展开全部▾ / 24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 …
+      · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
   [week] 无问题
   [week-list] 无问题
   [me] 无问题
@@ -82,4 +82,4 @@
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：46×28 40分 / 46×28 45分 / 45×28 60分 / 45×28 90分
 
 ========================================================================
-合计：0 处问题；截图 14 张（tmp/qa-today-light-360x640.png, tmp/qa-week-light-360x640.png, tmp/qa-week-list-light-360x640.png, tmp/qa-me-light-360x640.png, tmp/qa-me-open-light-360x640.png, tmp/qa-sheet-evt-light-360x640.png, tmp/qa-sheet-todo-light-360x640.png, tmp/qa-habit-sheet-light-360x640.png, tmp/qa-sheet-review-light-360x640.png, tmp/qa-sheet-detail-light-360x640.png, tmp/qa-add-pick-light-360x640.png, tmp/qa-sheet-add-light-360x640.png, tmp/qa-today-dark-360x640.png, tmp/qa-week-dark-360x640.png）
+合计：0 处问题；截图 14 张（tmp/qa-today-light-360x640.png, tmp/qa-week-light-360x640.png, tmp/qa-week-list-light-360x640.png, tmp/qa-me-light-360x640.png, tmp/qa-me-open-light-360x640.png, tmp/qa-sheet-evt-light-360x640.png, tmp/qa-sheet-todo-light-360x640.png, tmp/qa-habit-sheet-light-360x640.png, tmp/qa-sheet-review-light-360x640.png, tmp/qa-add-pick-light-360x640.png, tmp/qa-sheet-add-light-360x640.png, tmp/qa-today-dark-360x640.png, tmp/qa-week-dark-360x640.png, tmp/qa-week-list-dark-360x640.png）

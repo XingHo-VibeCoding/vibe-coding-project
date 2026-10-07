@@ -49,6 +49,9 @@ if (rowCountAt === 0) {
 
 t('A. 起点是 D 视图（有折叠行）', (await foldCount()) === 1, `rows=${rowCountAt}`)
 const hBefore = await section.boundingBox()
+const rowKeys = () => page.evaluate(() =>
+  [...document.querySelectorAll('[data-today-item]')].map((el) => el.innerText.replace(/\s+/g, ' ').slice(0, 12)))
+const keysBefore = await rowKeys()
 await section.screenshot({ path: `${OUT}/density-fade-before.png` })
 
 await page.locator('[data-today-expand]').click()
@@ -71,9 +74,10 @@ t('C. 淡出是单调下降（0.2s 内一路走到 0）',
   minOps.map((o) => o.toFixed(2)).join(' → '))
 
 await page.waitForTimeout(600)
-t('D. 终态是 F 视图（全天 3 行、折叠行消失、不透明度回到 1）',
-  (await rowCount()) === 3 && (await page.locator('[data-today-past-fold]').count()) === 0
-  && (await fadingBlocks()).every((o) => o === 1))
+t('D. 终态是 F 视图（折叠行消失、行铺全、不透明度回到 1）',
+  (await rowCount()) > keysBefore.length && (await page.locator('[data-today-past-fold]').count()) === 0
+  && (await fadingBlocks()).every((o) => o === 1),
+  `rows=${await rowCount()}（收起时 ${keysBefore.length}）`)
 t('E. 滚动位置没动', (await scrollY()) === 0, String(await scrollY()))
 const hAfter = await section.boundingBox()
 /* 不变量是「26px 的行高本身两种密度一样」，不是「段落总高一样」——
@@ -83,8 +87,13 @@ const rowH = await page.evaluate(() => {
   return rows.map((el) => Math.round(el.getBoundingClientRect().height))
 })
 t('F. 两种密度行高都是 26px（切换不跳行高）', rowH.length > 0 && rowH.every((h) => h === 26), JSON.stringify(rowH))
-t('F2. 段落变高只是因为把折叠的行铺回来了', hAfter.height > hBefore.height - 0.5,
-  `${hBefore.height.toFixed(1)} → ${hAfter.height.toFixed(1)}（多出 ${(hAfter.height - hBefore.height).toFixed(1)}px）`)
+/* 不断言「段落总高变大」：折叠行是**替掉**那一条已过行，两条路径的行数与 space-y 间隙数不同，
+   周几不同时符号都可能反过来（周三 12:30 实测 F 反而矮 2px）。真正的不变量是「一条都不丢」。 */
+const keysAfter = await rowKeys()
+t('F2. 展开后不丢行：收起时看得见的每一条，展开后都还在（只是把折叠的那些铺回来）',
+  keysBefore.length > 0 && keysBefore.every((k) => keysAfter.includes(k)),
+  `收起 ${keysBefore.length} 条 → 展开 ${keysAfter.length} 条`
+  + `（${hBefore.height.toFixed(1)} → ${hAfter.height.toFixed(1)}px）`)
 await section.screenshot({ path: `${OUT}/density-fade-after.png` })
 
 /* 收起：同样交叉淡入，且不叠加两套行 */
@@ -97,7 +106,12 @@ const mid = await page.evaluate(() => ({
 }))
 t('G. 收起瞬间不出现两套重复行（mode="out-in" 生效）', mid.dupe === false)
 await page.waitForTimeout(600)
-t('H. 收回到 D 视图', (await rowCount()) === 1 && (await page.locator('[data-today-past-fold]').count()) === 1)
+/* 收起后不一定只剩 1 行：只有已经过 1 条时折叠行才替掉 1 行；过了 2 条也是 1 条折叠行。
+   稳定的事实是「有折叠行、且它写着件数、且行数少于展开时」。 */
+const foldText = (await page.locator('[data-today-past-fold]').innerText().catch(() => '')) || ''
+t('H. 收回到 D 视图（有折叠行、写着件数、行数比 F 少）',
+  (await foldCount()) === 1 && /件/.test(foldText) && (await rowCount()) < keysAfter.length,
+  `rows=${await rowCount()} fold="${foldText.replace(/\s+/g, ' ')}"`)
 t('I. 全程无 pageerror', errors.length === 0, JSON.stringify(errors.slice(0, 2)))
 
 await browser.close()

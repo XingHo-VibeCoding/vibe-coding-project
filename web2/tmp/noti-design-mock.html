@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>通知栏重新设计 · 五个方向</title>
+<style>
+  :root{
+    --ink:#1c2430; --dim:#5d6675; --faint:#8e97a6; --line:#e6e9ef; --bg:#eef1f6; --card:#fff;
+    --brand:#2f6feb; --brand-soft:#e8f0fe;
+    --amber:#d98a1f; --mint:#1f9d75; --lav:#7c5ce0;
+    --wall1:#6f8098; --wall2:#3b475c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg); padding:26px 30px 34px;
+    font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,-apple-system,sans-serif; color:var(--ink);
+  }
+  h1{font-size:20px; font-weight:800; letter-spacing:.2px;}
+  .sub{color:var(--dim); font-size:12.5px; margin-top:7px; line-height:1.7; max-width:1180px;}
+  .sub b{color:var(--ink);}
+  h2{font-size:15px; font-weight:800; margin:30px 0 0;}
+  h2 span{font-weight:500; color:var(--dim); font-size:12px;}
+
+  .grid{display:grid; grid-template-columns:repeat(5, 296px); gap:18px; margin-top:18px; align-items:start;}
+  .col .name{font-size:13.5px; font-weight:800;}
+  .col .name em{font-style:normal; color:var(--brand);}
+  .col .tag{display:inline-block; margin-top:5px; font-size:10px; font-weight:700; border-radius:999px; padding:3px 9px; background:#e7ebf2; color:var(--dim);}
+  .col .tag.low{background:#e3f6ee; color:var(--mint);}
+  .col .tag.mid{background:#fdf1de; color:var(--amber);}
+  .col .tag.high{background:#fde7e7; color:#c0392b;}
+  .col .notes{font-size:11px; color:var(--dim); line-height:1.62; margin-top:8px;}
+  .col .notes b{color:var(--ink);}
+  .col .notes li{margin-left:13px; margin-top:2px;}
+
+  /* ---------- 手机壳 ---------- */
+  .ph{width:296px; height:508px; border-radius:30px; margin-top:9px; position:relative; overflow:hidden;
+      background:linear-gradient(158deg, var(--wall1) 0%, var(--wall2) 78%);
+      box-shadow:0 8px 26px rgba(20,30,50,.20), inset 0 0 0 1px rgba(255,255,255,.14);}
+  .ph::after{content:""; position:absolute; left:50%; bottom:7px; transform:translateX(-50%);
+      width:96px; height:4px; border-radius:99px; background:rgba(255,255,255,.55);}
+  .wpglow{position:absolute; inset:0; background:
+      radial-gradient(420px 240px at 78% 6%, rgba(255,255,255,.22), transparent 62%),
+      radial-gradient(360px 300px at 8% 92%, rgba(255,255,255,.10), transparent 60%);}
+
+  /* 状态栏 */
+  .sb{position:relative; z-index:2; display:flex; align-items:center; justify-content:space-between; padding:9px 12px 0; color:#fff;}
+  .sb .time{font-size:11.5px; font-weight:700;}
+  .sb .ic{display:flex; gap:5px; align-items:center; opacity:.92;}
+  .sb .ic i{display:block; width:11px; height:8px; border-radius:2px; background:rgba(255,255,255,.85);}
+  .sb .ic i.b{width:7px; border-radius:1px;}
+  .sb .ic i.w{width:12px; height:9px; border-radius:2px; background:transparent; border:1.5px solid rgba(255,255,255,.85); position:relative;}
+  .sb .ic i.w::after{content:""; position:absolute; left:1.5px; top:2px; right:4px; bottom:2px; background:rgba(255,255,255,.85);}
+
+  /* 状态栏胶囊（Android 16 promoted ongoing） */
+  .chip{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px;
+        background:rgba(255,255,255,.24); border:1px solid rgba(255,255,255,.40); color:#fff; font-size:10px; font-weight:700;}
+  .chip .cdot{width:5px; height:5px; border-radius:99px; background:#5ee0a8;}
+  .chip.plain{background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.26);}
+
+  /* 通知卡 */
+  .noti{position:relative; z-index:2; margin:9px 9px 0; border-radius:24px; padding:11px 13px 9px;
+        background:rgba(255,255,255,.93); box-shadow:0 3px 14px rgba(8,16,32,.20);}
+  .nh{display:flex; align-items:center; gap:6px; font-size:10px; color:#5d6675;}
+  .ni{width:17px; height:17px; border-radius:5px; background:linear-gradient(150deg,#5b93f8,#2f6feb); position:relative; flex:none;}
+  .ni::after{content:""; position:absolute; left:4px; top:5px; right:4px; height:8px; border-radius:2px;
+              border:1.4px solid #fff; border-top-width:3.4px; border-top-color:#fff;}
+  .ni.sys{background:linear-gradient(150deg,#cfd6e2,#aab4c4);}
+  .ni.sys::after{border-color:#fff;}
+  .nh .ago{margin-left:auto; color:#8e97a6;}
+
+  .nt{font-size:15.5px; font-weight:800; margin-top:7px; letter-spacing:.1px;}
+  .nt.sm{font-size:14px;}
+  .ns{font-size:11.5px; color:#5d6675; margin-top:3px; line-height:1.5;}
+  .nbig{font-size:12.5px; font-weight:700; color:#2f6feb; margin-top:4px;}
+  .nbig .mono{font-variant-numeric:tabular-nums;}
+
+  /* 时间轴（ProgressStyle） */
+  .track{margin-top:10px; height:8px; border-radius:5px; background:#e6eaf2; display:flex; overflow:hidden; position:relative;}
+  .seg{height:100%;}
+  .seg.past{background:#c9d2e0;}
+  .seg.now{background:#2f6feb;}
+  .seg.next{background:#a9c4f6;}
+  .dot{position:absolute; top:-4px; width:3px; height:16px; border-radius:2px; background:#12203a; box-shadow:0 0 0 2px rgba(255,255,255,.85);}
+  .taxis{display:flex; justify-content:space-between; font-size:9px; color:#98a2b2; margin-top:4px;}
+
+  /* 清单 */
+  .list{margin-top:9px; border-top:1px solid #eef0f4; padding-top:7px;}
+  .item{display:flex; align-items:center; gap:7px; font-size:11.5px; padding:3.5px 0; color:#1c2430;}
+  .item .cb{width:13px; height:13px; border-radius:4px; border:1.6px solid #b9c2d0; flex:none;}
+  .item .cb.on{background:#2f6feb; border-color:#2f6feb; position:relative;}
+  .item .cb.on::after{content:""; position:absolute; left:3.4px; top:1px; width:4px; height:7px;
+      border:solid #fff; border-width:0 2px 2px 0; transform:rotate(43deg);}
+  .item .due{margin-left:auto; font-size:9.5px; color:#c0392b; font-weight:700;}
+  .item.dim{color:#8e97a6;}
+  .item.dim .due{color:#8e97a6; font-weight:500;}
+
+  /* 按钮排 */
+  .acts{display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;}
+  .pill{background:#eef1f6; border-radius:999px; padding:6px 13px; font-size:11.5px; font-weight:700; color:#2f6feb; white-space:nowrap;}
+  .pill.gray{color:#5d6675;}
+  .pill.key{background:#2f6feb; color:#fff;}
+  .pill.sm{padding:5px 9px; font-size:10.5px;}
+
+  .cap{font-size:9.5px; color:rgba(255,255,255,.82); padding:6px 13px 0; position:relative; z-index:2;}
+
+  /* chip 特写 */
+  .chiprow{display:grid; grid-template-columns:repeat(3, 380px); gap:18px; margin-top:14px;}
+  .bar{height:150px; border-radius:22px; position:relative; overflow:hidden;
+       background:linear-gradient(158deg, var(--wall1) 0%, var(--wall2) 82%);
+       box-shadow:0 8px 22px rgba(20,30,50,.18), inset 0 0 0 1px rgba(255,255,255,.13);}
+  .bar .lbl{position:absolute; left:14px; bottom:11px; color:rgba(255,255,255,.80); font-size:10.5px; line-height:1.5;}
+  .bar .lbl b{color:#fff;}
+  .keyline{margin-top:16px; background:#fff; border:1px solid var(--line); border-radius:14px; padding:13px 16px; font-size:12px; color:var(--dim); line-height:1.75; max-width:1180px;}
+  .keyline b{color:var(--ink);}
+  .keyline code{background:#f1f3f7; border-radius:5px; padding:1px 5px; font-size:11px; color:#334; font-family:ui-monospace,Consolas,monospace;}
+</style>
+</head>
+<body>
+
+<h1>通知栏重新设计 · 五个方向</h1>
+<p class="sub">
+  同一个时刻画五遍：<b>2026-10-05 周一 16:24</b>，正在上「结构力学I」（还剩 11 分钟），今天课已上完，还有 <b>3 项待办没做</b>（今天共 4 项，做了 1 项）。<br>
+  左一是<b>现在真机上的样子</b>（下拉通知栏实拍重现）。右边四套是可选做法，按成本从低到高排。<b>灰色胶囊</b>表示 Android 16 的「状态栏常驻胶囊」（promoted ongoing notification），只有右边的方案有。
+</p>
+
+<div class="grid">
+
+  <!-- ============ 现状 ============ -->
+  <div class="col">
+    <div class="name">现状（真机实拍）</div>
+    <span class="tag">已上线 v1.42</span>
+    <div class="ph">
+      <div class="wpglow"></div>
+      <div class="sb">
+        <div class="time">16:24</div>
+        <div class="ic"><i class="b"></i><i class="w"></i><i></i></div>
+      </div>
+      <div class="noti">
+        <div class="nh"><span class="ni sys"></span><span>大学生日程助手</span><span class="ago">刚刚</span></div>
+        <div class="nt">现在 · 结构力学I</div>
+        <div class="ns">还剩 11 分钟 · 紫金港北4-317 · 沈国辉 · 待办 3</div>
+        <div class="acts">
+          <span class="pill gray">开始录音</span>
+          <span class="pill gray">上完了</span>
+          <span class="pill gray">我去听了</span>
+        </div>
+      </div>
+      <div class="cap">状态栏上什么都没有</div>
+    </div>
+    <div class="notes">
+      <b>问题</b>（都是看得见的）：
+      <ul>
+        <li>用的是<b>系统自带日历图标</b>，不是 App 自己的图标</li>
+        <li>正文一整行挤满，四个信息（时间/地点/老师/待办）平铺，没有主次</li>
+        <li><b>下拉才看得见</b>——上课时你不会下拉通知栏</li>
+        <li>「还剩 11 分钟」靠原生每 30 秒重画一次，数字是跳的，不是走的</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ 甲 ============ -->
+  <div class="col">
+    <div class="name"><em>甲</em>｜精修</div>
+    <span class="tag low">1 天 · 低风险</span>
+    <div class="ph">
+      <div class="wpglow"></div>
+      <div class="sb">
+        <span class="chip"><span class="cdot"></span>结构力学I · 还剩 11 分</span>
+        <div class="ic"><i class="b"></i><i class="w"></i><i></i></div>
+      </div>
+      <div class="noti">
+        <div class="nh"><span class="ni"></span><span>大学生日程助手</span><span class="ago">刚刚</span></div>
+        <div class="nt">结构力学I</div>
+        <div class="ns">紫金港北4-317 · 沈国辉</div>
+        <div class="nbig"><span class="mono">15:35 – 16:35</span>　·　还剩 <span class="mono">11</span> 分</div>
+        <div class="acts">
+          <span class="pill">开始录音</span>
+          <span class="pill">上完了</span>
+          <span class="pill gray">我去听了</span>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      结构不动，只把细节做对：
+      <ul>
+        <li>换成<b>自己的图标</b></li>
+        <li>标题只留课名（现在前面那个「现在 ·」是废话）</li>
+        <li>倒计时交给系统的 <code>chronometer</code>——<b>自己走秒</b>，不再靠 30 秒重画</li>
+        <li>加状态栏胶囊，<b>不下拉也看得见「还剩 11 分」</b></li>
+      </ul>
+      改的都是 <code>StatusFrameService.kt</code> 里 <code>build()</code> 那十几行。
+    </div>
+  </div>
+
+  <!-- ============ 乙 ============ -->
+  <div class="col">
+    <div class="name"><em>乙</em>｜一天的时间轴</div>
+    <span class="tag mid">2–3 天 · 中</span>
+    <div class="ph">
+      <div class="wpglow"></div>
+      <div class="sb">
+        <span class="chip"><span class="cdot"></span>还剩 11 分 · 紫金港北4-317</span>
+        <div class="ic"><i class="b"></i><i class="w"></i><i></i></div>
+      </div>
+      <div class="noti">
+        <div class="nh"><span class="ni"></span><span>大学生日程助手</span><span class="ago">刚刚</span></div>
+        <div class="nt sm">结构力学I · 还剩 11 分</div>
+        <div class="ns">紫金港北4-317 · 沈国辉</div>
+        <div class="track">
+          <div class="seg past" style="width:26%"></div>
+          <div class="seg now" style="width:12%"></div>
+          <div class="seg next" style="width:56%"></div>
+          <div class="dot" style="left:31%"></div>
+        </div>
+        <div class="taxis"><span>08:00</span><span>今天 2 节课 · 3 项待办</span><span>21:00</span></div>
+        <div class="acts">
+          <span class="pill">开始录音</span>
+          <span class="pill">上完了</span>
+          <span class="pill gray">我去听了</span>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      用 <code>Notification.ProgressStyle</code>（Android 16）把<b>一整天画成一条彩条</b>：
+      <ul>
+        <li>灰 = 已上完，蓝 = 正在上，浅蓝 = 还没上</li>
+        <li>黑点 = 现在的位置</li>
+        <li>一眼回答「今天还剩多少」，不用点开</li>
+      </ul>
+      需要网页侧多推一份「今天所有课 + 各自时长」，原生按比例画。课表一变、快照一推，条就重画。
+    </div>
+  </div>
+
+  <!-- ============ 丙 ============ -->
+  <div class="col">
+    <div class="name"><em>丙</em>｜账单版</div>
+    <span class="tag mid">2 天 · 中低</span>
+    <div class="ph">
+      <div class="wpglow"></div>
+      <div class="sb">
+        <span class="chip"><span class="cdot"></span>今天还有 3 项没做</span>
+        <div class="ic"><i class="b"></i><i class="w"></i><i></i></div>
+      </div>
+      <div class="noti">
+        <div class="nh"><span class="ni"></span><span>大学生日程助手</span><span class="ago">刚刚</span></div>
+        <div class="nt sm">今天最后 1 节 · 还剩 11 分</div>
+        <div class="ns">结构力学I · 紫金港北4-317</div>
+        <div class="list">
+          <div class="item"><span class="cb"></span>高数作业 第三章习题<span class="due">今天</span></div>
+          <div class="item"><span class="cb"></span>结构实验报告<span class="due">今天</span></div>
+          <div class="item"><span class="cb"></span>复习结构力学（明早小测）<span class="due">明早</span></div>
+          <div class="item dim"><span class="cb on"></span>体育锻炼打卡<span class="due">已做</span></div>
+        </div>
+        <div class="acts">
+          <span class="pill">开始录音</span>
+          <span class="pill">上完了</span>
+          <span class="pill key">结账</span>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      通知的主角从「课」换成「事」：
+      <ul>
+        <li>标题说<b>今天还剩什么</b>，课程退成副标题</li>
+        <li>三行待办直接列在通知里（点通知直达对应的那一页）</li>
+        <li>「结账」顶掉「我去听了」——<b>上课时那枚按钮本来就没用</b>（这就是施工单里说的「让位」，但按场景换，不是按是否到期换）</li>
+      </ul>
+      点「结账」拉起 App 的日精进账卡。文案与「今天的账」那套人格对齐。
+    </div>
+  </div>
+
+  <!-- ============ 丁 ============ -->
+  <div class="col">
+    <div class="name"><em>丁</em>｜自绘清算台</div>
+    <span class="tag high">1 周 · 高风险</span>
+    <div class="ph">
+      <div class="wpglow"></div>
+      <div class="sb">
+        <div class="time">16:24</div>
+        <div class="ic"><i class="b"></i><i class="w"></i><i></i></div>
+      </div>
+      <div class="noti">
+        <div class="nh"><span class="ni"></span><span>大学生日程助手</span><span class="ago">刚刚</span></div>
+        <div class="nt sm">还剩 11 分 · 结构力学I</div>
+        <div class="ns">紫金港北4-317 · 沈国辉</div>
+        <div class="list">
+          <div class="item"><span class="cb"></span>高数作业 第三章习题<span class="due">今天</span></div>
+          <div class="item"><span class="cb"></span>结构实验报告<span class="due">今天</span></div>
+          <div class="item"><span class="cb on"></span>体育锻炼打卡<span class="due">已做</span></div>
+        </div>
+        <div class="acts">
+          <span class="pill sm">开始录音</span>
+          <span class="pill sm">上完了</span>
+          <span class="pill sm">我去听了</span>
+          <span class="pill key sm">结账</span>
+        </div>
+      </div>
+      <div class="cap">没有状态栏胶囊</div>
+    </div>
+    <div class="notes">
+      <code>setCustomContentView(RemoteViews)</code> 自绘整个布局：
+      <ul>
+        <li>可以放 <b>4 枚以上按钮</b>（自绘的不算 <code>Notification.Action</code>，不受「最多 3 枚」限制）</li>
+        <li>待办可以在通知里<b>直接打勾</b></li>
+      </ul>
+      <b>代价</b>：一旦自绘，<code>hasPromotableCharacteristics()</code> 里的 <code>containsCustomViews()</code> 会让状态栏胶囊<b>永久失效</b>（已在本机 SDK 源码里确认）；另外每个 ROM 渲染不一样、每 30 秒重建一次布局、还会踩上真机那个「命中区整体偏移」的老坑。
+      <br><b>结论：先不做</b>，等甲/乙/丙的数据说话。
+    </div>
+  </div>
+
+</div>
+
+<h2>附加项：状态栏胶囊 <span>（Android 16 · 可叠加在甲/乙/丙任意一套上 · 半天）</span></h2>
+<div class="chiprow">
+  <div class="bar">
+    <div class="wpglow"></div>
+    <div class="sb">
+      <span class="chip"><span class="cdot"></span>结构力学I · 还剩 11 分</span>
+      <div class="ic"><i class="b"></i><i class="w"></i><i></i></div>
+    </div>
+    <div class="lbl"><b>上课中</b><br>标题 + 倒计时</div>
+  </div>
+  <div class="bar">
+    <div class="wpglow"></div>
+    <div class="sb">
+      <span class="chip plain"><span class="cdot"></span>下一节 16:45 弹性力学</span>
+      <div class="ic"><i class="b"></i><i class="w"></i><i></i></div>
+    </div>
+    <div class="lbl"><b>课间</b><br>下一节几点、上什么</div>
+  </div>
+  <div class="bar">
+    <div class="wpglow"></div>
+    <div class="sb">
+      <span class="chip plain"><span class="cdot"></span>今天还有 3 项没做</span>
+      <div class="ic"><i class="b"></i><i class="w"></i><i></i></div>
+    </div>
+    <div class="lbl"><b>课后</b><br>该收尾了</div>
+  </div>
+</div>
+
+<div class="keyline">
+  <b>它是什么</b>：Android 16 的 <code>setRequestPromotedOngoing(true)</code> + <code>setShortCriticalText()</code>，让这条常驻通知在<b>状态栏上留一个胶囊</b>，文案由 <code>setShortCriticalText</code> 决定。用户不拉通知栏就能看到最重要的一句。<br>
+  <b>为什么值</b>：现在的通知只在「下拉」时存在，而上课时没人下拉。<b>状态栏胶囊把这个 App 从「要我去看」变成「一直在那儿」。</b><br>
+  <b>额度诚实</b>：能不能被系统真的提升为胶囊由系统决定（还要看用户有没有关掉这个功能），App 只能「申请」。真机是 Android 16，这条路能走；低版本系统上自动退化成现在这样，不需要分叉代码。<br>
+  <b>硬约束</b>：一旦用第四条路（自绘），这条永久失效。前三条路都满足条件（现在的 <code>BigTextStyle</code> 也满足）。
+</div>
+
+</body>
+</html>

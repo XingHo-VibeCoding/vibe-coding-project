@@ -114,13 +114,19 @@ const lineSrc = async (page) => {
   try { return await page.locator('[data-pattern-line]').first().getAttribute('data-pattern-src') } catch { return null }
 }
 
+/* 规则原句的「准」在哪：missed 必须正好 3（种了三个空周三）。
+   「共 N 个周三」的 N 是**活的**——打开账卡会 snapshotToday() 把今天也记进 daily，
+   今天若正好是周三，N 就变 4。所以只锁「断了 3 次」，N 允许任意数字，
+   否则这个断言每逢周三就假红（2026-10-07 实测）。 */
+const RULE_LINE = /周三断了 3 次（共 \d+ 个周三）。/
+
 /* B1–B3：没配 Key —— 照旧摆规则原句 */
 {
   const { page, errs } = await newCase('', null)
   await openCard(page)
   const txt = await lineText(page)
   t('B1. 没配 Key 也把规则原句摆到台面上（界面不空白）',
-    (await page.locator('[data-pattern-note]').count()) === 1 && /周三断了 3 次（共 3 个周三）。/.test(txt || ''), txt || '—')
+    (await page.locator('[data-pattern-note]').count()) === 1 && RULE_LINE.test(txt || ''), txt || '—')
   t('B2. 没配 Key → 来源 = rule', (await lineSrc(page)) === 'rule')
   t('B3. 零 pageerror', errs.length === 0, JSON.stringify(errs.slice(0, 2)))
   await page.locator('[data-pattern-note]').scrollIntoViewIfNeeded().catch(() => {})
@@ -153,7 +159,7 @@ const lineSrc = async (page) => {
   const { page } = await newCase('sk-test', async (route) => { await route.fulfill(okBody('你最近 6 个周三都没动过事')) })
   await openCard(page)
   const txt = await lineText(page)
-  t('B9. AI 改了数字 → 退回规则原句', /周三断了 3 次（共 3 个周三）。/.test(txt || ''), txt || '—')
+  t('B9. AI 改了数字 → 退回规则原句', RULE_LINE.test(txt || ''), txt || '—')
   t('B10. 退回时来源 = rule', (await lineSrc(page)) === 'rule')
   await page.close()
 }

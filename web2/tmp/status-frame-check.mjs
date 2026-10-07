@@ -107,6 +107,22 @@ const SF = await import('../src/data/statusFrame.js')
   SF.saveFrameSettings({ enabled: true })
 }
 
+/* A17–A21：P5「甲」新增的三件事 —— 老师字段、canLedger 场景门、新图标之外的文案输入。
+   场景门只在网页侧算（LEDGER_FROM = 18:00），原生只读 canLedger，所以这几条断言就是策略的全部。 */
+{
+  t('A17. 场景门常量是 18:00（改口径只改这一处）', SF.LEDGER_FROM === 1080, String(SF.LEDGER_FROM))
+  const mk = (nowMin) => SF.buildFrameSnapshot({ nowMin, ledgerFrom: SF.LEDGER_FROM, today: [] })
+  t('A18. 17:59 不给「结账」', mk(17 * 60 + 59).canLedger === false)
+  t('A19. 18:00 整开始给「结账」', mk(18 * 60).canLedger === true)
+  t('A20. 拿不到当前时间就不给「结账」（宁可少一枚按钮，也别在白天顶上来）', SF.buildFrameSnapshot({ ledgerFrom: SF.LEDGER_FROM }).canLedger === false && SF.buildFrameSnapshot({ nowMin: 20 * 60 }).canLedger === false)
+  const withT = SF.buildFrameSnapshot({
+    today: [{ kind: 'c', id: 'c9', name: '结构力学', place: '4-317', teacher: '沈国辉', start: '14:00', end: '15:40' }],
+  })
+  t('A21. 今天的条目带上老师（通知正文「地点 · 老师 · 节次时间」要用）', withT.today[0].teacher === '沈国辉', JSON.stringify(withT.today[0]))
+  const noT = SF.buildFrameSnapshot({ today: [{ kind: 'c', id: 'c9', name: '结构力学', start: '14:00', end: '15:40' }] })
+  t('A22. 没写老师时给空串（原生拼正文时跳过，不会出现「· ·」）', noT.today[0].teacher === '')
+}
+
 /* ===== B. 网页 ↔ 原生插件的契约（假桥） ===== */
 const { chromium } = await import('file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs')
 const BASE = process.env.TW_URL || 'http://127.0.0.1:4177/'
@@ -309,6 +325,19 @@ t('C5. 「这节上完了」有可见回执', (await page.locator('[data-frame-t
 await page.evaluate(() => window.__frame.fire({ type: 'listenDone', id: 'lis_x' }))
 await page.waitForTimeout(300)
 t('C6. 「我去听了」有可见回执', (await page.locator('[data-frame-toast]').innerText().catch(() => '')).includes('我去听了'), await page.locator('[data-frame-toast]').innerText().catch(() => '(无)'))
+
+/* C8：P5「甲」—— 晚上点通知本体（原生把 openLedger 记成待领动作）必须直接落到「日精进」浮层，
+   省掉「进 App → 我的 → 日精进」两步。它不改数据，所以不落任何 mark。 */
+await page.evaluate(() => {
+  localStorage.removeItem('web2.frame.marks')
+  window.__frame.fire({ type: 'openLedger' })
+})
+await page.waitForTimeout(600)
+t('C8. 点通知本体（openLedger）直接开「日精进」浮层', (await page.locator('[data-sheet-review]').count()) === 1, await page.evaluate(() => document.body.innerText.slice(0, 80).replace(/\n/g, ' ')))
+t('C9. openLedger 不改数据（不写任何记号）', (await page.evaluate(() => localStorage.getItem('web2.frame.marks'))) === null, String(await page.evaluate(() => localStorage.getItem('web2.frame.marks'))))
+/* 关掉浮层（点遮罩），别影响 C7 的轮询断言 */
+await page.locator('[data-sheet-mask]').last().click({ force: true }).catch(() => {})
+await page.waitForTimeout(400)
 
 /* C7：真机第二个 bug 的回归 —— 一个事件都不派，光靠前台兜底轮询也得领走 */
 await page.evaluate(() => { window.__frame.queue.push({ type: 'listenDone', id: 'lis_auto' }) })

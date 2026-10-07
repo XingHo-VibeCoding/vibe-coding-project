@@ -102,6 +102,22 @@ function dndMin(v) {
   return m >= 0 ? m : null
 }
 
+/* P5「甲」场景门：通知栏那三个按钮槽位与「点通知本体去哪儿」都要跟着场景换，
+   但**策略只写在这一处**，原生只照着画（与 classDone / listen 的口径一致）。
+   - canLedger：18:00 前不放「结账」。上课中与课间课后都按同一条时间线算。
+   - tapLedger：上课中点通知 = 回今日页；晚上/课后点通知 = 直接开日精进。
+   两条都从同一个 nowMin 推出来，测试跑一次就能锁住。 */
+export const LEDGER_FROM = 18 * 60
+
+/* 场景门要吃两个数：当前时刻与门槛。二者都可能以「分钟数」直接给（网页侧 nowTime 就是数字），
+   也可能以 'HH:mm' 给。listen.js 的 minOf 只认字符串（传 1080 会当非法回 -1 —— 真踩过：
+   于是 canLedger 永远 false、「结账」按钮白天晚上都不出现），所以这里先认数字再回落字符串。
+   拿不到一律 -1，调用方以此为准「不给结论」。 */
+function minAny(v) {
+  if (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1440) return Math.round(v)
+  return minOf(v)
+}
+
 export function buildFrameSnapshot(input) {
   const s = input && typeof input === 'object' ? input : {}
   const marks = sanitizeMarks(s.marks || null)
@@ -112,6 +128,7 @@ export function buildFrameSnapshot(input) {
         id: String(x.id == null ? '' : x.id),
         name: String(x.name == null ? '' : x.name),
         place: String(x.place == null ? '' : x.place),
+        teacher: String(x.teacher == null ? '' : x.teacher),
         start: minOf(x.start),
         end: minOf(x.end),
       }))
@@ -123,6 +140,8 @@ export function buildFrameSnapshot(input) {
   const tf = s.tomorrowFirst
   const dndStart = dndMin(s.dndStart)
   const dndEnd = dndMin(s.dndEnd)
+  const nowMin = minAny(s.nowMin)
+  const ledgerFrom = minAny(s.ledgerFrom)
   const snap = {
     enabled: s.enabled === undefined ? true : !!s.enabled,
     updatedAt: Date.now(),
@@ -134,6 +153,9 @@ export function buildFrameSnapshot(input) {
     today: day(s.today),
     tomorrowFirst: tf && tf.name ? { name: String(tf.name), start: minOf(tf.start) } : null,
     recTitle: typeof s.recTitle === 'string' ? s.recTitle : '',
+    /* 18:00 前不放「结账」。nowMin 拿不到时**不给结论**（false），
+       宁可少一个按钮，也不要在白天把「结账」顶上来。 */
+    canLedger: nowMin >= 0 && ledgerFrom >= 0 && nowMin >= ledgerFrom,
   }
   /* 拿不到就整个删掉这个键，让原生用它的默认值（别留 undefined —— 序列化后是 null，原生一样读不到） */
   if (snap.dndStart === null) delete snap.dndStart
