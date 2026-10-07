@@ -58,3 +58,11 @@
 1. **文档同步**：改动数据模型或项目范围时，必须同步更新三份文档（设计方案 / PRD.md / TECH_DESIGN.md），保持互相一致；只改代码不改文档视为未完成。
 2. **数据兼容**：涉及 `store.js` 数据字段或 `schema_version` 的改动，必须同时写旧数据升级方案（给老数据补默认值），并在浏览器里实测「改动前存的数据改动后还能正常读出」才算完成。
 3. **推送前预检**：git 推送前先做一次代理连通性预检；预检不过就停下来告诉我「代理没开」，不盲目重试推送命令。
+4. **出包只走一条命令**（Day 27 起，施工单 P9）：在壳仓 `D:\Document\Project\vibe-coding-project-app` 里跑
+
+   ```powershell
+   npm run ship            # debug 包（本地冒烟）
+   npm run ship:release    # 正式签名包（要交付 / 要能长期升级的用这个）
+   ```
+
+   它一次做完「构建 web2 → sync → patch-android → gradle 打包 → 归档 dist-apk → `verify-apk.py` 三级一致性校验」，**任一步失败立即非 0 退出**（不再出现「gradle 失败但归档照跑」那种交假包的事故）。**不要**再手工照 `docs/交接说明.md` §4.2 的五步跑——那份清单留作原理说明。参数与环境变量见 `scripts/ship.js` 顶部注释（`--help` 可打印）。

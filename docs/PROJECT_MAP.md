@@ -19,6 +19,8 @@
 
 *2026-10-06（P13 小学期）：用户发现「标秋/冬的课在整学期里都显示」——因为 App 之前**没有小学期这一层**（课程上的 `term`（秋/冬/秋冬）存了却完全没参与周次判断）。按用户拍板落地：**秋 = 第 1–8 周、冬 = 第 9–16 周（对半分）**，存进 `semester.sub_terms`（跟节次表 `periods` 同一处 —— 都是校历参数、跟着主项目 JSON 导出走），**学期设置里可编辑**（名字也能改成 春/夏，所以春夏学期同一套用），另给一个「按总周数对半分」按钮；周课表标题顺带显示「· 秋学期 / · 冬学期」方便一眼核对。`matchWeek(c, weekNo, subTerms)` 加了**可选**第三参：不传就与 P13 之前**逐字一致**（老调用点不会静默变行为），全部 10 个调用点都已显式传上（含 `ics.js` 与 `nextCourseDate`）。口径：`秋冬` = 两个小学期名都命中 → **并集 = 整学期**；**没写学期的手动课/老课整学期都在（行为不变）**；`短`（暑假）**暂不参与**（用户拍板先不管）—— 但会在预览「需要注意」里如实说明，不静默丢。老数据没有 `sub_terms` → **按总周数对半分兜底、不做迁移**（`subTermsOf()` 同时认 snake `sub_terms` 与 camel `subTerms`）。自检 `web2/tmp/subterm-check.mjs`（**22/0**：纯逻辑 12 条 + 浏览器 9 条，含"与显式 weeks/单双周叠加""换一套表判断跟着变""老数据兜底"）。**质量门抓到一处真问题并已修**：新加的「· 秋学期」标签一开始用 `text-primary-500`，暗色卡片上只有 3.69:1（需 4.5）→ 改 `text-ink-dim`（元信息本来就该用次要文字色）。
 
+*2026-10-07（Day 27 · P9 出包收成一条命令）：新增壳仓 `scripts/ship.js`（约 480 行）+ `package.json` 两条 script `ship` / `ship:release`，把原来 5 步手工出包（`web2` 构建 → `sync` + `patch-android` → `gradlew` → 拷 `dist-apk/` 并命名 → `verify-apk.py`）收成一条，**任一步失败立即非 0 退出**。它做的事：① 前置体检（主项目 / `android/` / JDK21 都在；`--release` 缺 `android/key.properties` 直接退出、**不静默退回 debug 签名**）；② `npm run build` + 校验 `dist/index.html` 新鲜；③ `npm run sync` + `patch-android` + 校验 `www/index.html`；④ **先删上一轮 apk** → `gradlew --stop` → `gradlew assemble<type>`（JDK21 由脚本显式注入、不依赖系统 `JAVA_HOME`）→ 产物不存在即报错 → `aapt2` 核 versionCode/Name → `--release` 时 `apksigner` 核签名、**DN 含 `Android Debug` 直接判「假 release 包」**；⑤ 自动命名归档 + 大小比对 + sha256；⑥ `verify-apk.py` 三级校验（自动注入 `PYTHONIOENCODING=utf-8`）。实测（2026-10-07）：debug 全链 **20.0s** → `dist-apk/schedule-v1.42.2-20261007-debug.apk`（37,484,194 B）；release 全链 **31.8s** → `dist-apk/schedule-v1.42.2-20261007-release.apk`（36,419,684 B，签名 `CN=Schedule Assistant`，证书 SHA-256 `1420dda8…` 与 `.keys/schedule-release.jks` 一致）；两个失败用例（主项目路径 / JDK21 路径不存在）都正确非 0 退出。**踩到的坑**：`findPython()` 最初用 `execSync` 拼字符串探测，`-c import sys` 的参数被 shell 拆开导致误报「找不到 python」→ 改 `spawnSync` 数组传参（`shell:false`），顺带也解决了路径带空格的问题。规矩落点：`AGENTS.md` **八.4**、`docs/交接说明.md` §4.2（原手工 5 步折叠进 `<details>` 留作原理说明）、本文件 §五第 4 条铁律。*
+
 ## 一、这是什么项目
 
 **大学生日程助手**——用户（大学生本人）的自用工具，也是他的 vibe coding 训练营作品：他发「今日任务清单」，AI 按清单干活，他在过程中学习。分五期开发。
@@ -109,6 +111,7 @@ web2 导出 JSON ──→ 主项目 js/store.js 校验（硬闸门）──→ 
 1. **加新数据类型必须同步改主项目 `js/store.js`**：未知 type 会被 `validateSchedule()` 报错、`importAll()` 整份拒收；数据形状由 web2 侧写死（如 `fullRoutine()`）。只改 web2 不改主项目＝用户导出的数据直接报废。
 2. **外壳给状态栏让位必须用 fixed 遮罩，绝不能用流内 padding**：padding 属文档流，一滚就滚出视口。
 3. **APK 打包链里 `npx cap sync android` 会被批量删除守卫拦截**（删重建插件目录超过阈值）→ 只用 `npx cap copy android`；真要 sync 让用户自己开终端跑。
+4. **出包只跑一条命令**（Day 27 起，施工单 P9）：壳仓 `cd D:\Document\Project\vibe-coding-project-app` → `npm run ship`（debug 冒烟）/ `npm run ship:release`（交付包）。`scripts/ship.js` 一次做完「web2 构建 → sync → patch-android → gradle(JDK21) 打包 → 归档 `dist-apk/` → `verify-apk.py` 三校」，**任一步失败立即非 0 退出**。之所以必须收成一条：原来第 ④ 步 `Copy-Item` 是独立命令，gradle 失败时它照跑，会把**上一轮的旧包**改名归档成新版本（2026-10-03 真踩过）——现在跑前先删旧产物、gradle 退出 0 但产物不存在即报错、release 包签名若是 `CN=Android Debug` 直接判「假 release」。参数见 `node scripts/ship.js --help`，原理对照见 `docs/交接说明.md` §4.2。
 
 ## 六、工作规矩速查（全文见 AGENTS.md，这里只列最容易踩的）
 
