@@ -1,8 +1,9 @@
 <script setup>
 /* P12b：登录浙大教务网抓课表（统一身份认证 + 方正 zdbk 接口）。
-   口径（用户 2026-10-06 拍板）：
-     · 「①乙」密码存本机 → 下次自动填好、不用重输；存的位置是 **App 私有目录**
-       （别的 App 读不到），但**不是**系统密钥库级别的加密 —— 界面上如实说明，别让人误以为已加密。
+   口径（用户 2026-10-06 拍板，2026-10-08 升级）：
+     · 「①乙」密码存本机 → 下次自动填好、不用重输。**2026-10-08 起密码不再写进 localStorage**，
+       改走 Android 系统密钥库（`data/secureStore.js` + 原生 `SecureStorePlugin`）：
+       AES-GCM 密文落盘、私钥永不出系统。浏览器里没有密钥库，如实退回老办法并在界面上说明。
      · 「②甲」网络走 CapacitorHttp（原生），所以**只有装到手机上才能用**；
        网页里如实报「这个环境不行」，不做假成功。
    ⚠️ 抓取**只在你点按钮时发生**：不轮询、不定时后台抓，出错也不自动重试
@@ -15,9 +16,9 @@
    两张截图字节完全相同才暴露）。所以照已验过的 `DeleteLectureSheet.vue` 那套写：
    遮罩 z-40 / 面板 z-50（同一个二级页里开浮层的既有先例）。 */
 import { useApp } from '../composables/app-ctx.js'
-/* eduHttpAvailable 是 data/eduLogin.js 的模块函数（不是 App 的顶层绑定，进不了 APP_CTX），
-   模板里要用就自己引一次 —— 同 HabitSheet 引 streakOf/totalDoneOf 的做法。 */
-import { eduHttpAvailable } from '../data/eduLogin.js'
+/* eduHttpAvailable / eduSecretBackend 是 data/eduLogin.js 的模块函数（不是 App 的顶层绑定，
+   进不了 APP_CTX），模板里要用就自己引一次 —— 同 HabitSheet 引 streakOf/totalDoneOf 的做法。 */
+import { eduHttpAvailable, eduSecretBackend } from '../data/eduLogin.js'
 
 const app = useApp()
 
@@ -76,7 +77,7 @@ const TERMS = [
           </label>
 
           <label class="block">
-            <span class="block text-[11px] font-medium text-ink-dim">密码</span>
+            <span class="block text-[11px] font-medium text-ink-dim">密码<span v-if="!app.eduSecretReady" class="ml-1 text-ink-dim">· 正在从密钥库读取…</span></span>
             <span class="mt-1 flex items-center gap-2">
               <input
                 v-model="app.eduLoginPw"
@@ -104,7 +105,8 @@ const TERMS = [
           >
             <span class="min-w-0 flex-1">
               <span class="block text-[12px] font-medium">记住账号密码</span>
-              <span class="block text-[11px] text-ink-dim">存本机 App 私有目录（别的 App 读不到，但不等于系统级加密）</span>
+              <span v-if="eduSecretBackend() === 'keystore'" data-edu-login-keystore class="block text-[11px] text-ink-dim">密码存进手机的系统密钥库（Android Keystore，加密存放）</span>
+              <span v-else class="block text-[11px] text-ink-dim">当前环境没有系统密钥库，只能存浏览器本地（App 里才是加密的）</span>
             </span>
             <span
               class="relative h-6 w-11 shrink-0 rounded-full transition"

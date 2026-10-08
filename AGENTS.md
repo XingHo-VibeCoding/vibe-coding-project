@@ -72,3 +72,11 @@
    - **审计「有没有泄漏」要按密钥的真实形状扫**（`AKID…` / `-----BEGIN … PRIVATE KEY-----` / `sk-` 长串 / `KEY=` 实值 / JWT / 连接串），**别用裸关键词**（会把 `sk-…` 占位符、CSS 类名 `.sk-card` 全算成命中）。被跟踪文件清单用 `git ls-files -z` 按 NUL 切 + `Test-Path -LiteralPath`，否则中文文件名会被 git 转义成 `"docs/\347…"` 导致路径非法。
    - **一旦真在历史里找到真实密钥**：不只是删代码，必须**立即作废并重新生成、更新环境变量**，然后才提交。
    - **云端错误必须说人话**：失败响应统一 `{ok:false,kind,message,status}`，`kind` = `input`（用户填错，自己改）/ `network`（没送到，可重试）/ `server`（对方坏了，重试没用）；**绝不把 Node 的英文异常原文或 `String(err)` 的 `[object Object]` 漏给使用者**；定义与文案只有一处（`cloudfunctions/write/errors.js`，`list/errors.js` 是逐字节副本，SHA256 必须一致）。完整口径与验证方法见 `docs/api-contract.md` 第 6b 节。
+
+6. **加原生插件要改三处，且必须解压 dex 验证（Day 27 追加）**：壳仓 `android/` 整个被 `.gitignore` 忽略、每次由 `scripts/patch-android.js` 重铺，所以新增 `scripts/native/*.kt` 只写文件是**不生效**的，必须同步改：
+   - `scripts/patch-android.js` 的 kt 文件清单（缺一个就不落地）；
+   - 同一文件里 `MAIN_TPL` 的 `registerPlugin(X.class)`，**必须在 `super.onCreate` 之前**（bridge 在 `super.onCreate` 的 `load()` 里固化插件表，注册晚了会报 unable to find plugin）；
+   - 网页侧的探桥函数按 `window.Capacitor.Plugins.X` 是否存在判定环境（照 `web2/src/data/recorder.js`），这样测试能注入假插件造真机上很难复现的状态（写失败、密文解不开）。
+   - **产物验证别搜 APK 原始字节**：dex 在 zip 里是压缩的，直接搜类名会搜不到，会得出「插件没打进包」这种错误结论——**先解压出 `classes*.dex` 再搜**。
+   - 涉及用户机密时**只有两个选择：系统密钥库 或 如实说没有**；写入失败**绝不退回明文**。
+

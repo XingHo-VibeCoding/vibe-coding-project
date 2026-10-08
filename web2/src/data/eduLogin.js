@@ -17,6 +17,7 @@
 export const EDU_ACCOUNT_KEY = 'web2.eduAccount'
 /* 钟点换算与节次解析都复用 listen.js 的那两个（和 eduImport.js 一个口径，别各写一份） */
 import { hhmm, minOf } from './listen.js'
+import { secureStoreAvailable, secretGet, secretSet, secretRemove } from './secureStore.js'
 
 const CAS_LOGIN = 'https://zjuam.zju.edu.cn/cas/login'
 /* service 就是「登录成功后要回到哪儿」：教务网的 SSO 入口 */
@@ -66,9 +67,19 @@ export function defaultTerm(now = new Date()) {
 
 /* ---------------- 账号存档 ----------------
    用户拍板「①乙」：密码存本机、自动登录。
-   ⚠️ 如实说明：这里存的是 **App 私有目录里的 localStorage** —— 系统层面别的 App 读不到
-   （Android 按应用沙箱隔离），但它**不是**用系统密钥库（Keystore）加密的。
-   要那个级别得再写一个原生模块（EncryptedSharedPreferences）；等需要时再加，别假装现在就有。 */
+   2026-10-08 升级（用户拍板做 P12b 后续）：**密码不再写进 localStorage**，改走系统密钥库。
+     · App（有 SecureStore 插件）→ 密码走 AndroidKeyStore 的 AES-GCM，私钥永不出系统；
+        localStorage 只留「非机密」：学号、记住开关、上次选的学年/学期。
+     · 浏览器（无插件）→ 如实退回老办法（整份存 localStorage），保证开发/测试能用；
+       调用方可以用 `eduSecretBackend()` 知道当前是哪一种，界面上也可以如实说明。
+   老数据（密码还在 localStorage 里）**读的时候自动搬家**：见 loadEduAccountAsync 的迁移段。 */
+export const EDU_SECRET_KEY = 'eduPassword'
+
+/* 当前密码存在哪：'keystore'（系统密钥库）/ 'local'（退回 localStorage） */
+export function eduSecretBackend() {
+  return secureStoreAvailable() ? 'keystore' : 'local'
+}
+
 export function sanitizeAccount(a) {
   const o = a && typeof a === 'object' ? a : {}
   return {
@@ -102,6 +113,76 @@ export function clearEduAccount() {
   } catch {
     /* 忽略 */
   }
+}
+
+/* 只写「非机密」那一份进 localStorage（**不含 password**）。
+   存不下也不抛 —— 与 saveEduAccount 一个口径。 */
+function writePublicPart(clean) {
+  try {
+    localStorage.setItem(EDU_ACCOUNT_KEY, JSON.stringify({
+      username: clean.username,
+      remember: clean.remember,
+      xnm: clean.xnm,
+      xqm: clean.xqm,
+    }))
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/* 异步读：App 里会把密码从密钥库补上，并且**顺手把老数据搬进密钥库**。
+   返回 { username, password, remember, xnm, xqm, secretError? }
+     · secretError 非空 = 密文解不开（换设备/清过数据）→ 界面应提示「请重新输一次密码」，
+       而不是当作「没记住」；password 这时是空串。 */
+export async function loadEduAccountAsync() {
+  const acc = loadEduAccount()
+  if (!secureStoreAvailable()) return acc /* 浏览器：如实走老路 */
+  const r = await secretGet(EDU_SECRET_KEY)
+  if (!r.ok) {
+    return { ...acc, password: '', secretError: r.error || '密码读不出来' }
+  }
+  if (!r.missing && r.value) {
+    /* 密钥库里已经有了。老 localStorage 里若还留着 password（升级前存的），清掉不留副本。 */
+    if (acc.password) writePublicPart(acc)
+    return { ...acc, password: r.value }
+  }
+  /* 密钥库还没有：若老数据里有密码（升级前的存档），搬进去并从 localStorage 抹掉。 */
+  if (acc.password) {
+    const w = await secretSet(EDU_SECRET_KEY, acc.password)
+    if (w.ok) writePublicPart(acc)
+    return acc
+  }
+  return acc
+}
+
+/* 异步写：机密与「非机密」分开落盘。返回 { ok, clean, secretError? }
+   · 存密码失败（密钥库不可用/写入报错）时 **不写 localStorage 的那份**，
+     并把原因回给调用方 —— 绝不静默降级成「明文存下来但界面说存好了」。
+   · password 为空 = 用户没勾「记住」：要把密钥库里旧的那份**删掉**，
+     否则「这次没记」之后还能自动登录，等于「记住」开关失效。 */
+export async function saveEduAccountAsync(a) {
+  const clean = sanitizeAccount(a)
+  if (!secureStoreAvailable()) {
+    saveEduAccount(clean) /* 浏览器：老办法 */
+    return { ok: true, clean }
+  }
+  if (clean.password) {
+    const w = await secretSet(EDU_SECRET_KEY, clean.password)
+    if (!w.ok) return { ok: false, clean, secretError: w.error || '密码没能存进系统密钥库' }
+  } else {
+    const r = await secretRemove(EDU_SECRET_KEY)
+    if (!r.ok) return { ok: false, clean, secretError: r.error || '旧密码没能从系统密钥库删掉' }
+  }
+  writePublicPart(clean)
+  return { ok: true, clean }
+}
+
+/* 清空：两处都要清（只清一处会留下「学号没了但密码还在」这种半截状态）。 */
+export async function clearEduAccountAsync() {
+  clearEduAccount()
+  if (!secureStoreAvailable()) return { ok: true }
+  const r = await secretRemove(EDU_SECRET_KEY)
+  return { ok: r.ok, error: r.error }
 }
 
 /* ---------------- RSA：把密码加密（无填充，照学校网页的做法） ----------------
