@@ -414,6 +414,35 @@ web2 (App.vue watch / visibilitychange)
 - **不产生隐式破坏性操作**：四题里只有第四题（明天最重要的一件事）带「转待办」，转出的是**明天**的待办且**连点不叠加**（同内容不重复建）；第三题「没做完的」**只记进日精进、不动任何待办**。
 - **提醒**：渠道 `review-reminder`（importance 3：响、不弹横幅，符合「轻提醒」口径），批次标记 `web2-review`；`noticeItem({date,at})` 生成 `{key:'r_<date>', title:'今天过得怎么样？', ...}`，`noticeDate()` 对「今天这一刻已经过了」的日子直接跳过（**不补发**）。点通知（`extra.src === 'web2-review'`）打开应用并**直达复盘浮层**。与课前提醒（`web2-m5`）、练耳提醒（`web2-listen`）三批互不干扰。
 
+### 3.8 `web2.dayOverrides` / `web2.holidayCache`（调休与特殊日期，P14 Day 26 定稿）
+
+**`web2.dayOverrides`** —— 覆盖表数组（本机，**不进导出**）。一条一天，按日期升序：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| date | string `YYYY-MM-DD` | 唯一键。**必须真实存在的日期**——`2026-02-30` 这种不能收（`new Date('2026-02-30')` 不返回 NaN、会自己滚到 03-02，只判 `Number.isNaN` 会把错日子悄悄收下） |
+| kind | `'off' \| 'swap' \| 'info'` | **放假** / **补课** / **只提示**；其它值一律丢弃 |
+| useWeekday | number 1–7 或 `null` | 仅 `swap` 用：这天**按周几的课表上**（1=周一）。`swap` 没有合法 1–7 就整条丢弃 |
+| note | string | 人写的说明，界面上显示；空串可以 |
+
+三个 kind 的语义（**这是产品的核心口径，代码里只有一处实现**）：
+
+| kind | 课怎么上 | `isDayOff` | 界面上 |
+|---|---|---|---|
+| `off` | **课全空**（`effectiveWeekdayOf` 返回 `null`） | `true` | 今日页「接下来」挂「放假」小标 + 原因；周课表那一列头挂「放假」 |
+| `swap` | **按 `useWeekday` 的课表上** | `false` | 挂「补课」小标，文案「按周X的课表上」；周课表那列显示那天的课 |
+| `info` | **照常上课，什么都不改** | `false` | 只挂「提示」小标 + 说明（校运会、考试周、临时调课通知这类**只想知道、不想改课表**的日子） |
+
+- **唯一入口**：`dayOverrideOf(dateStr, overrides)`（查一条）/ `effectiveWeekdayOf(dateStr, overrides, naturalWd)`（这天实际按周几上；`off`→`null`、`swap`→`useWeekday`、`info`/无覆盖→`naturalWd`）/ `isDayOff(dateStr, overrides)`（只有 `off` 算放假）。**所有消费方都必须走这三个函数**，不允许自己 `find()` 覆盖表。
+- **`info` 绝不藏课**：早期实现里 `info` 也返回 `null`，与它自己的注释「只提示、不动课程」矛盾——一个挂提示的标记会静默把用户的课藏起来。要某天没课就用 `off`，**藏课必须是显式的**。
+- **老数据零变化**：键不存在 ⇒ 三个函数都返回「无覆盖」，`matchWeek` / 周视图 / 提醒 / ics 全部与加这层之前逐字一致；**不做数据迁移**。所有消费方的 `overrides` 参数都**可选**，不传就是旧行为。
+- **抓取（第 4 步）**：`holidays.js` 抓 `https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/<年>.json`（国务院口径）。**服务端能取 ≠ 浏览器能取**——同一份数据走 `raw.githubusercontent` 浏览器取不到（无 CORS 头），走 jsDelivr 可以。`mergeNationalOffs()` **只补空缺、绝不覆盖**用户手标的条目；抓回来的只写 `kind:'off'`。**打开 App 时静默拉一次**（`syncHolidaysOnBoot`，防重入 + 全异常吞掉 + 不挡启动），失败就用缓存或什么都不做。
+- **为什么不自动填补课日**：政府公告只说「哪天放假 / 哪天上班」，**不说「补哪天的课」**——那是学校自己的安排（浙大校历才写「10 月 17 日补 10 月 2 日的课」）。猜「上班日 = 补周一」会把一整天的课排到错的日子，比不填更糟。所以补课日的星期**必须用户自己选**。
+- **学校层没有可抓的结构化源**：一校一策，只有 PDF/图片（浙大 2026-2027 校历的 PDF 是**纯矢量、无文字层**，`pdftotext` 出 2 个字符）。**抓不到就不调休**（用户拍板），绝不猜。
+- **独立日程不受影响**：`swap`/`off` 只换**课表**（`type==='course'` 与 `routine`），用户自己排的独立日程（`type==='event'`）在 `ics.js` / `notify.js` / 周视图 / 今日页四处都**照常出现**——调休不该动用户自己排的事。
+
+**`web2.holidayCache`** —— `{fetchedAt: number, byYear: {'2026': [{date,name}]}}`；抓成功才写。清数据时**两个键都要删**（`doClearData` 有一条显式提醒：加新数据键必须同时加到那里和 `tmp/clear-data-check.mjs` 的 `DATA_KEYS`——历史上已漏过两次）。
+
 ---
 
 ## 四、API 列表
@@ -481,6 +510,7 @@ web2 (App.vue watch / visibilitychange)
 | **教务课表导入（P12a，2026-10-06）** | **新建 `web2/src/data/eduImport.js`**（纯函数：zip → 表格 → 课程数组；**不碰 DOM / 网络 / localStorage**，node 可直接单测）+ `store.js` 的 `replaceCoursesFromEdu()` / `hasEduSnapshot()` / `eduSnapshotInfo()` / `restoreEduSnapshot()` | 解析**方正 zfsoft** 导出的课表 xlsx：**自己解 zip**（读中央目录 + 浏览器原生 `DecompressionStream('deflate-raw')`，**不引第三方库**）。表头 8 列：课程代码/课程名称/教师姓名/学期/上课时间/上课地点/选课时间/选课志愿；`上课时间` 按 `;` 拆**多时段**、周次认 `{单周}` / `{双周}` / `{1-8周}` / `{1-8,10-16周}`；`上课地点` 与时段**同序号配对**；中文节次经用户自己的 `semester.periods` 换算钟点（缺的节号进 `missing` 如实报出，不猜）。「学期」列是**小学期归属**（秋/冬/秋冬/短），照实存 `term`、**不据此推算周次**。落库口径（用户拍板「只要一套课表」+「A + 要快照」）：**只替换 `web2.data.schedules` 里 `type==='course'` 的条目**（todos / events / routines / semester **原样不动**）、清掉 `web2.added` 里的**课程**条目（非课程保留）、替换前把旧课表原文与当时手动加的课写进 `web2.eduSnapshot` 可一键恢复。界面：设置页「从教务导入课表」→ **先出全屏预览浮层**（逐门列出星期/节次/钟点/周次/地点 + 「没进课表」与「需要注意」清单）→ **二次确认**才写；解析失败**明确报错且不动本机数据**。自检 `web2/tmp/edu-import-check.mjs`（含真文件分支）+ `web2/tmp/edu-ui-check.mjs`（自造最小 xlsx 跑完整界面链路） |
 | **教务直连抓课表（P12b，2026-10-06）** | **新建 `web2/src/data/eduLogin.js`**（纯逻辑 + 网络；**不碰 DOM**）+ `web2/src/sheets/EduLoginSheet.vue`（登录浮层）；壳仓 `capacitor.config.json` 打开 **`plugins.CapacitorHttp.enabled`** | 浙大**统一身份认证（zjuam CAS）**登录三步：`GET /cas/login?service=…` 取隐藏字段 `execution` → `GET /cas/v2/getPubKey` 取 `modulus/exponent` → `POST /cas/login`（`username` / `password`=**无填充 RSA 加密后的十六进制** / `authcode` 空 / `execution` / `_eventId=submit`），随后 `GET …/xtgl/login_ssologin.html` 换教务网会话。取课表：`POST https://zdbk.zju.edu.cn/jwglxt/kbcx/xskbcx_cxXsKb.html?gnmkdm=N253508&su=<学号>`，体 `{xnm: 学年, xqm: 学期码}`（3=秋冬 12=春夏 16=短）。**关键实测（否则必踩）**：① 密码是**教科书式无填充 RSA**，浏览器原生 `crypto.subtle` 只支持 OAEP ⇒ 用 `BigInt` 手写模幂（无第三方库），并用 Python 参考实现做了逐位对照；② 请求里的 `xqm` **服务器完全不认**（3/1/2/12 各问一次返回一模一样），且返回**混着好几个学期**（实测 56 行 = 2026-2027-1 的 14 + 2025-2026-1 的 18 + 2025-2026-2 的 24）⇒ 必须本地筛，判据是 **`xkkh` 前缀 `(学年-学年-学期序号)`**（序号 1=秋冬 2=春夏 3=短），**不能**用 `xxq` 小学期文本（去年秋冬与今年秋冬都写「秋冬」）；③ 没有验证码，但**输错多次锁号** ⇒ 不做自动重试；④ 只手动触发，不轮询。账号存 `web2.eduAccount`（键只留 username/password/remember/xnm/xqm；**App 私有目录、非密钥库级**，代码与界面都如实标注）。翻译层输出与 P12a **同形**，落库复用 `replaceCoursesFromEdu()` |
 | **每日复盘（五期 Day 20）** | **新建 `web2/src/data/review.js`**（纯逻辑，**不 import 任何模块**，`notify.js` 反向 import 它） | 键 `web2.review`（存档数组）/ `web2.review.set`（`{enabled,at}`）；本机数据、不进导出。纯逻辑导出：`newRecord` / `summarize`（日精进模板，先数据后四题）/ `moodOf` / `sanitizeRecord` / `sanitizeStats` / `upsertReview`（同日覆盖）/ `findReview` / `loadReviews` / `saveReviews` / `sanitizeSettings` / `loadSettings` / `saveSettings` / `noticeItem` / `noticeDate`；渠道常量 `REVIEW_CHANNEL='review-reminder'`、批次标记 `REVIEW_TAG='web2-review'`。字段定义见 §3.7 |
+| **调休 / 特殊日期（P14，2026-10-08）** | `web2/src/data/store.js` 新增 dayOverrides 一节 + **新建 `web2/src/data/holidays.js`**（纯数据层，无第三方依赖，只 `fetch` jsDelivr）；界面在 `web2/src/pages/sub/SettingsPanel.vue` 的一栏 | 键 `web2.dayOverrides`（覆盖表数组）/ `web2.holidayCache`（抓来的原始结果 `{fetchedAt, byYear:{}}`）；本机数据、**不进导出**（跟着学期走，换学期该重来）。口径与三个 kind 见 §3.8；为什么抓不到就不调休见 §3.8 末 |
 
 **约定**：本机数据（练耳/录音/打卡/通知/LLM 配置/复盘）一律**独立键 + 不进导出**——这类数据是「这台设备上的生命记录」，跟着备份走会在换设备导入时被意外覆盖（口径同 §3.6 的 `ui`）。
 

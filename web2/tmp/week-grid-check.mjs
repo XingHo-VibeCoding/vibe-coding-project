@@ -65,6 +65,8 @@ const browser = await chromium.launch({
 
 async function openWeek(schedules) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+/* P14 测试隔离：掐掉节假日 CDN（headless Chrome 有真网，开机会真抓到国庆放假，把夹具里本周的课藏掉）。用宽 pattern + 域判断——窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
   const page = await ctx.newPage()
   page.on('pageerror', (e) => console.log('PAGEERROR:', e.message))
   await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(seedDoc(schedules))})`)

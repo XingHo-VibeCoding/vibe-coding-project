@@ -21,7 +21,7 @@
 
    设置存 web2.notify（本机，不进导出——通知能力是设备相关的，口径同 web2.llm）。 */
 
-import { currentWeekNo, minOf } from './store.js'
+import { currentWeekNo, minOf, effectiveWeekdayOf } from './store.js'
 /* 复盘提醒的渠道 id 用 review.js 里那一份（那边同时供 App.vue 排程用），避免同一个字符串写两处 */
 import { REVIEW_CHANNEL } from './review.js'
 
@@ -161,23 +161,32 @@ function hashId(key) {
      定义就是「跨学期常驻」（口径同 todayCourses / ics.js 的 routine 展开），
      放假期间也在。无学期信息时 odd/even 同样无法判断，跳过。
    - 独立日程：date 精确匹配
-   - 已过去的时刻不排；提前量把时刻推到当天 0 点前的整条跳过（罕见，避免排到昨天） */
-export function buildScheduleItems({ courses = [], events = [], routines = [], semester = null, settings, now = new Date(), horizonDays = HORIZON_DAYS }) {
+   - 已过去的时刻不排；提前量把时刻推到当天 0 点前的整条跳过（罕见，避免排到昨天）
+
+   调休（2026-10-08，第 5 个可选参 overrides，不传 = 行为与加调休之前逐字一致）：
+   每天的「算星期几」改由 effectiveWeekdayOf 决定——放假/考试日返回 null（整天不排），
+   补课日返回被换过来的那个星期。判定放在**这一层**，因为提醒必须和 App 里看到的课表
+   完全一致，而课表也是按同一个函数算的。 */
+export function buildScheduleItems({ courses = [], events = [], routines = [], semester = null, settings, now = new Date(), horizonDays = HORIZON_DAYS, overrides = null }) {
   const lead = Math.max(0, Math.floor(Number(settings.minutesBefore) || 0))
   const leadLabel = lead > 0 ? lead + ' 分钟后开始' : '现在开始'
   const out = []
   const hasTerm = !!(semester && semester.firstMonday && Number(semester.totalWeeks) >= 1)
+  const ovList = Array.isArray(overrides) ? overrides : null
 
   for (let d = 0; d <= horizonDays; d++) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d)
     const dKey = dateKeyOf(day)
-    const weekday = ((day.getDay() + 6) % 7) + 1 // 周一=1 … 周日=7
+    const natural = ((day.getDay() + 6) % 7) + 1 // 周一=1 … 周日=7
+    /* 调休：这天「算星期几」。kind=off/info → null（不上课，整天的课/循环日程都不排）；
+       补课日 → 被换过来的星期（周六按周三的课表排提醒）。不传 overrides 时 == natural。 */
+    const weekday = ovList ? effectiveWeekdayOf(dKey, ovList, natural) : natural
     // 当天在学期里的周次（无 firstMonday 时为 null）
     const weekNo = hasTerm ? currentWeekNo(semester.firstMonday, day) : null
 
     for (const c of courses) {
       if (!c || c.type !== 'course') continue
-      if (Number(c.weekday) !== weekday) continue
+      if (weekday === null || Number(c.weekday) !== weekday) continue
       if (weekNo === null) {
         if ((c.week_rule || 'every') !== 'every') continue // 无法判断单双周 → 不排
       } else {
@@ -193,7 +202,7 @@ export function buildScheduleItems({ courses = [], events = [], routines = [], s
        与 routine 的 uuid 可能撞号），key 必须能分开。 */
     for (const r of routines) {
       if (!r || r.type !== 'routine') continue
-      if (Number(r.weekday) !== weekday) continue
+      if (weekday === null || Number(r.weekday) !== weekday) continue
       if (weekNo === null) {
         if ((r.week_rule || 'every') !== 'every') continue // 无法判断单双周 → 不排
       } else if (!matchWeekRule(r.week_rule, weekNo)) {
@@ -203,6 +212,8 @@ export function buildScheduleItems({ courses = [], events = [], routines = [], s
       if (item) out.push(item)
     }
 
+    /* 独立日程：用户自己加的「班会/聚餐」——放假也照排。
+       调休只换课表（课程的星期），不动用户自己排的事。 */
     for (const e of events) {
       if (!e || e.type !== 'event') continue
       if (String(e.date) !== dKey) continue

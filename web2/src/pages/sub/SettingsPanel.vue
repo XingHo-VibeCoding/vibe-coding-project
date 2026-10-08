@@ -67,6 +67,15 @@ const {
   setAutoTheme,
   onExportBack,
   onExportIcs,
+  dayOverrides,
+  WEEKDAY_CN,
+  KIND_OPTIONS,
+  addDayOverride,
+  patchDayOverride,
+  removeDayOverride,
+  holidayBusy,
+  holidayMsg,
+  refreshHolidaysNow,
 } = toRefs(app)
 </script>
 
@@ -187,6 +196,103 @@ const {
           </span>
         </button>
 
+      </section>
+
+      <!-- ===== 特殊日期（调休，2026-10-08）=====
+           放假 / 补课 / 只提示。这一栏**独立落盘、改完立即生效**（不跟学期设置的「保存」绑一起）：
+           用户是边看课表边改的，要求「改完马上能在今日页看到对不对」。
+           数据来源两条：打开 App 自动拉国家法定节假日（只填「放假」）＋ 这里手动增删。
+           补课日为什么必须手选周几：政府公告只说「这天要上班」，不说补哪天的课——
+           猜错会把一整天的课排到错日子，比不填更糟（用户 2026-10-08 拍板，m23594）。 -->
+      <section data-dayover-section class="order-3 rounded-2xl border border-line bg-card shadow-sm">
+        <div class="flex items-start gap-3.5 border-b border-line p-4">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+            <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3h9A1.5 1.5 0 0114 4.5v7a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z" /><path d="M2 6.5h12M5.5 3v2M10.5 3v2M5.5 9.5l1.5 1.5 3-3" /></svg>
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium">特殊日期<span class="text-xs font-normal text-ink-dim"> · 放假 / 补课 / 只提示</span></span>
+            <span class="block text-[11px] text-ink-dim">
+              放假 = 这天没课；补课 = 这天按你选的星期上课；只提示 = 挂个说明，课照上。
+            </span>
+          </span>
+          <button
+            type="button"
+            data-dayover-add
+            class="shrink-0 rounded-full bg-soft px-3 py-2 text-xs font-medium text-ink-dim transition active:scale-95"
+            @click="addDayOverride"
+          >＋ 添加</button>
+        </div>
+
+        <div class="border-b border-line p-4">
+          <button
+            type="button"
+            data-dayover-refresh
+            class="w-full rounded-xl border border-line py-2.5 text-xs font-medium text-ink-dim transition active:scale-[0.99] disabled:opacity-50"
+            :disabled="holidayBusy"
+            @click="refreshHolidaysNow"
+          >{{ holidayBusy ? '正在更新…' : '从网上更新法定节假日' }}</button>
+          <p class="mt-2 text-[11px] leading-relaxed text-ink-dim">
+            只自动填「放假」。政府公告只说哪天放假、不说补哪天的课，所以
+            <span class="font-medium text-ink">补课日的星期要你自己选</span>（打开 App 时会自动更新一次，不打扰你）。
+          </p>
+          <p v-if="holidayMsg" data-dayover-refresh-msg class="mt-2 text-[11px] text-primary-600">{{ holidayMsg }}</p>
+        </div>
+
+        <p v-if="!dayOverrides.length" data-dayover-empty class="p-4 text-center text-xs text-ink-dim">
+          还没有特殊日期。放假/补课的日子在这里加，或者直接点上面的「从网上更新」。
+        </p>
+
+        <div v-else class="divide-y divide-line">
+          <div v-for="ov in dayOverrides" :key="ov.date" :data-dayover-row="ov.date" class="p-4">
+            <div class="flex items-center gap-2">
+              <input
+                type="date"
+                :value="ov.date"
+                :data-dayover-date="ov.date"
+                class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-2.5 py-2 text-sm tabular-nums outline-none focus:border-primary-400"
+                @change="(e) => patchDayOverride(ov.date, { date: e.target.value })"
+              />
+              <button
+                type="button"
+                :data-dayover-del="ov.date"
+                class="shrink-0 rounded-full bg-soft px-3 py-2 text-xs font-medium text-red-600 transition active:scale-95 dark:text-red-400"
+                @click="removeDayOverride(ov.date)"
+              >删除</button>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <button
+                v-for="k in KIND_OPTIONS"
+                :key="k.key"
+                type="button"
+                :data-dayover-kind="ov.date + ':' + k.key"
+                class="rounded-full px-3 py-1.5 text-xs transition active:scale-95"
+                :class="ov.kind === k.key ? 'bg-primary-500 font-semibold text-white' : 'bg-soft text-ink-dim'"
+                @click="patchDayOverride(ov.date, { kind: k.key })"
+              >{{ k.label }}</button>
+            </div>
+            <!-- 补课：选「按星期几的课表上」。这是整件事里唯一需要人判断的地方（见上面说明） -->
+            <div v-if="ov.kind === 'swap'" class="mt-2 flex flex-wrap items-center gap-1.5">
+              <span class="text-[11px] text-ink-dim">按</span>
+              <button
+                v-for="(cn, i) in WEEKDAY_CN"
+                :key="i"
+                type="button"
+                :data-dayover-wd="ov.date + ':' + (i + 1)"
+                class="h-7 w-7 rounded-full text-xs transition active:scale-95"
+                :class="Number(ov.useWeekday) === i + 1 ? 'bg-primary-500 font-semibold text-white' : 'bg-soft text-ink-dim'"
+                @click="patchDayOverride(ov.date, { useWeekday: i + 1 })"
+              >{{ cn }}</button>
+              <span class="text-[11px] text-ink-dim">的课表上</span>
+            </div>
+            <input
+              :value="ov.note"
+              :data-dayover-note="ov.date"
+              placeholder="说明（可不填）：国庆放假 / 补周五"
+              class="mt-2 w-full rounded-xl border border-line bg-canvas px-2.5 py-2 text-[13px] outline-none focus:border-primary-400"
+              @change="(e) => patchDayOverride(ov.date, { note: e.target.value })"
+            />
+          </div>
+        </div>
       </section>
 
       <!-- ===== 设置（折叠）：一次配好、装完就不碰的东西全收在这里 =====

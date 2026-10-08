@@ -41,6 +41,8 @@ const seedDoc = JSON.stringify({
 
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } })
+/* P14 测试隔离：掐掉节假日 CDN（headless Chrome 有真网，开机会真抓到国庆放假，把夹具里本周的课藏掉）。用宽 pattern + 域判断——窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
 const page = await ctx.newPage()
 page.on('pageerror', (e) => console.log('PAGEERROR:', e.message))
 await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(seedDoc)})`)
@@ -141,6 +143,8 @@ t('E1 单节次卡片内容不溢出卡片框', cards.single && cards.single.car
 /* ---- F 大屏自适应：行变高后，单节次卡片也应该能显示两行名字 ---- */
 {
   const ctxT = await browser.newContext({ viewport: { width: 430, height: 1000 } })
+/* P14 测试隔离：掐掉节假日 CDN（headless Chrome 有真网，开机会真抓到国庆放假，把夹具里本周的课藏掉）。用宽 pattern + 域判断——窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await ctxT.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
   const pT = await ctxT.newPage()
   pT.on('pageerror', (e) => console.log('PAGEERROR:', e.message))
   await pT.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(seedDoc)})`)
@@ -173,6 +177,8 @@ t('E1 单节次卡片内容不溢出卡片框', cards.single && cards.single.car
    外壳异步量到高度后广播 'wb-sat'，这里同步模拟同一个事件链。 */
 {
   const ctxA = await browser.newContext({ viewport: { width: 390, height: 844 } })
+/* P14 测试隔离：掐掉节假日 CDN（headless Chrome 有真网，开机会真抓到国庆放假，把夹具里本周的课藏掉）。用宽 pattern + 域判断——窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await ctxA.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
   const pA = await ctxA.newPage()
   pA.on('pageerror', (e) => console.log('PAGEERROR:', e.message))
   await pA.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(seedDoc)})`)

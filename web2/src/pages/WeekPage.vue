@@ -10,6 +10,7 @@ const {
   gridStyleOf,
   isAligned,
   weekSubTerm,
+  weekDayMarks,
   weekSub,
   setWeekSub,
   weekMenuOpen,
@@ -176,6 +177,17 @@ const {
             <p class="mt-0.5 text-[12px] leading-tight font-semibold" :class="d.isToday ? 'text-primary-600' : 'text-ink'">
               {{ d.date }}
             </p>
+            <!-- 调休标记：放假 / 补课 / 提示。放在日期下面一小枚，用户一眼看出「周六怎么有课」
+                 是补课、而不是课表错了。 -->
+            <span
+              v-if="weekDayMarks[d.wd - 1]"
+              :data-day-mark="weekDayMarks[d.wd - 1].kind"
+              :title="weekDayMarks[d.wd - 1].title"
+              class="mt-0.5 inline-block rounded px-1 py-[0.5px] text-[9px] font-semibold leading-tight"
+              :class="weekDayMarks[d.wd - 1].kind === 'swap'
+                ? 'bg-primary-500/15 text-primary-600'
+                : 'bg-soft-2 text-ink'"
+            >{{ weekDayMarks[d.wd - 1].label }}</span>
           </div>
         </div>
 

@@ -59,6 +59,8 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
 /* ---------- 场景 A：启动 → 环境 + 首次排程 ---------- */
 {
   const ctx = await browser.newContext({ viewport: { width: 412, height: 900 } })
+/* P14 测试隔离：掐掉节假日 CDN（headless Chrome 有真网，开机会真抓到国庆放假，把夹具里本周的课藏掉）。用宽 pattern + 域判断——窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
   await ctx.addInitScript(SEED)
   await ctx.addInitScript(FAKE_APP)
   const page = await ctx.newPage()
@@ -137,6 +139,8 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
 /* ---------- 场景 G：通知权限被拒 → 明确提示 ---------- */
 {
   const ctx = await browser.newContext({ viewport: { width: 412, height: 900 } })
+/* P14 测试隔离：掐掉节假日 CDN（headless Chrome 有真网，开机会真抓到国庆放假，把夹具里本周的课藏掉）。用宽 pattern + 域判断——窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
   await ctx.addInitScript(SEED)
   await ctx.addInitScript(FAKE_APP)
   const page = await ctx.newPage()
@@ -163,6 +167,8 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
 /* ---------- 场景 H：浏览器无桥 → 置灰降级 ---------- */
 {
   const ctx = await browser.newContext({ viewport: { width: 412, height: 900 } })
+/* P14 测试隔离：掐掉节假日 CDN（headless Chrome 有真网，开机会真抓到国庆放假，把夹具里本周的课藏掉）。用宽 pattern + 域判断——窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
   await ctx.addInitScript(SEED)
   const page = await ctx.newPage()
   const errs = []
@@ -187,6 +193,8 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
    造的日期取「今天 + 0/1 天」，保证落在 7 天窗口内且时刻在未来。 */
 {
   const ctx = await browser.newContext({ viewport: { width: 412, height: 900 } })
+/* P14 测试隔离：掐掉节假日 CDN（headless Chrome 有真网，开机会真抓到国庆放假，把夹具里本周的课藏掉）。用宽 pattern + 域判断——窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
   await ctx.addInitScript(SEED)
   await ctx.addInitScript(FAKE_APP)
   /* 周五（本地 today）固定一条 23:50 的循环日程：每天都有，必落在窗口内且晚于当前时刻 */

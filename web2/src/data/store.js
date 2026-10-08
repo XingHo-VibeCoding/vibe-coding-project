@@ -85,6 +85,17 @@ function pad(n) {
 function dateStr(d) {
   return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
 }
+/* "YYYY-MM-DD" 是不是一个真实存在的日子。
+   ⚠ 不能只判 `Number.isNaN(new Date(s).getTime())`：JS 对「格式合法但日子不存在」的输入
+   **不报 NaN，而是自己往前滚**（2026-02-30 → 03-02、2026-04-31 → 05-01）。
+   所以要拿解析结果反过来拼一遍、和原字符串逐字比对，对不上就是不存在。 */
+export function sameLocalDate(s) {
+  const str = String(s == null ? '' : s).trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return false
+  const d = new Date(str + 'T00:00:00')
+  if (Number.isNaN(d.getTime())) return false
+  return dateStr(d) === str
+}
 /* "HH:mm" → 当天第几分钟。
    也接受 "YYYY-MM-DDTHH:mm"（完整日期时间）——只取时间部分；
    ?t= 后门开着时页面里的「今天」仍然是真实今天，所以带日期不会把日期也一起冻结。
@@ -133,20 +144,40 @@ export function courseCovering(courses, minutes) {
 /* M5 作业转待办用：算「这门课下次上课」的日期（YYYY-MM-DD）。
    courses：整周课表；semester：{ week, firstMonday, totalWeeks }；wdNow：今天 weekday（1–7，周一=1）。
    本周今天之后还排着这节课（且本周符合周次规则）→ 用本周的；否则下周同一槽位；
-   学期周数之外 / 找不到槽位 / 缺 firstMonday → null（调用方回落「明天」）。 */
-export function nextCourseDate(courses, semester, wdNow, courseName) {
+   学期周数之外 / 找不到槽位 / 缺 firstMonday → null（调用方回落「明天」）。
+
+   调休（第 5 个可选参 overrides，不传 = 与加调休之前逐字一致）：
+   · 落在放假/考试日的候选日期不算上过课，往后找也找不到就 null；
+   · 补课日（周六上周三的课）算出来的日期本来就在那天，日期本身不用改，
+     真正要改的是「今天算星期几」——那由调用方传进来的 wdNow 决定（调用方用 effectiveWeekdayOf）。 */
+export function nextCourseDate(courses, semester, wdNow, courseName, overrides) {
   if (!semester || !semester.firstMonday) return null
   const slots = courses.filter((c) => c.name === courseName)
   const wk = Number(semester.week) || 1
-  const thisWeek = slots.filter((c) => c.weekday > wdNow && matchWeek(c, wk, semester.subTerms)).sort((a, b) => a.weekday - b.weekday)[0]
-  const nextWeek = slots.filter((c) => matchWeek(c, wk + 1, semester.subTerms)).sort((a, b) => a.weekday - b.weekday)[0]
-  const pick = thisWeek || nextWeek
-  if (!pick) return null
-  const targetWk = thisWeek ? wk : wk + 1
-  if (targetWk > semester.totalWeeks) return null
-  const d = new Date(semester.firstMonday + 'T00:00:00')
-  d.setDate(d.getDate() + (targetWk - 1) * 7 + (pick.weekday - 1))
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const mkDate = (targetWk, weekday) => {
+    const d = new Date(semester.firstMonday + 'T00:00:00')
+    d.setDate(d.getDate() + (targetWk - 1) * 7 + (weekday - 1))
+    return d
+  }
+  /* 候选 = 本周剩下的槽位，再补上后续几周（调休把某周整段放空时还能往后找到下一节） */
+  const cands = []
+  const first = wk
+  const last = Math.min(Number(semester.totalWeeks) || wk, wk + 4)
+  for (let w = first; w <= last; w++) {
+    for (const c of slots) {
+      if (!matchWeek(c, w, semester.subTerms)) continue
+      if (w === wk && !(c.weekday > wdNow)) continue
+      cands.push({ w, weekday: c.weekday })
+    }
+  }
+  cands.sort((a, b) => (a.w - b.w) || (a.weekday - b.weekday))
+  for (const c of cands) {
+    const d = mkDate(c.w, c.weekday)
+    if (isDayOff(dateStr(d), overrides)) continue
+    return dateStr(d)
+  }
+  /* 候选全被放假吃掉（或压根没有槽位）→ null，调用方回落「明天」 */
+  return null
 }
 function fmtMin(min) {
   return pad(Math.floor(min / 60)) + ':' + pad(min % 60)
@@ -231,6 +262,94 @@ export function matchWeek(c, weekNo, subTerms) {
   if (r === 'odd') return weekNo % 2 === 1
   if (r === 'even') return weekNo % 2 === 0
   return false
+}
+
+/* ---------- 调休 / 特殊日期（2026-10-08 用户拍板） ----------
+   为什么需要：周课表是「星期维度」（周三有什么课），调休是「日期维度」
+   （10-10 周六上 10-07 的课），两者错位。补课日（周六）在星期网格里连列都没有。
+   所以引入一层「日期 → 有效星期」的覆盖表，**全仓只有这一处定义**（同 P13 小学期、
+   Day 23 错误分类的纪律），今日页 / 课前提醒 / .ics 导出 / 交作业日期全部问它。
+
+   形状：`[{ date:'2026-10-10', kind:'swap', useWeekday:3, note:'补周三课' },
+          { date:'2026-10-01', kind:'off', note:'国庆' },
+          { date:'2026-11-07', kind:'info', note:'秋学期考试' }]`
+   · kind='off'  放假：这天课全空（effectiveWeekday = null，isDayOff = true）
+   · kind='swap' 补课：这天按 useWeekday（1–7）的课表上
+   · kind='info' 只提示：界面挂一条提示，**课照上**（校运会、临时调课通知这类）。
+     要让某天没课请用 off —— 「提示」永远不该悄悄把课藏起来，藏课必须是显式的。
+   老数据没有这个键 ⇒ 所有函数都返回「无覆盖」，行为与加这层之前逐字一致。 */
+export const DAY_OVERRIDES_KEY = 'web2.dayOverrides'
+
+/** 清洗覆盖表：丢弃认不出的条目，kind 只认 off/swap/info，swap 必须有 1–7 的 useWeekday。 */
+export function normalizeDayOverrides(raw) {
+  const list = Array.isArray(raw) ? raw : []
+  const out = []
+  const seen = new Set()
+  for (const x of list) {
+    if (!x) continue
+    const date = String(x.date == null ? '' : x.date).trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    /* 格式对 ≠ 日期真实存在：`new Date('2026-02-30')` **不返回 NaN**，它自己滚到 03-02。
+       只判 NaN 会把 2 月 30 日、4 月 31 日这种日子悄悄收下（然后课就排到别的日子上）。
+       所以必须回头核对「解析出来的年月日」和原字符串是否逐字一样。 */
+    if (!sameLocalDate(date)) continue
+    if (seen.has(date)) continue
+    const kind = ['off', 'swap', 'info'].indexOf(x.kind) >= 0 ? x.kind : null
+    if (!kind) continue
+    let useWeekday = null
+    if (kind === 'swap') {
+      const w = Math.floor(Number(x.useWeekday))
+      if (!(w >= 1 && w <= 7)) continue
+      useWeekday = w
+    }
+    seen.add(date)
+    out.push({ date, kind, useWeekday, note: String(x.note == null ? '' : x.note).trim() })
+  }
+  out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  return out
+}
+
+export function loadDayOverrides() {
+  try {
+    return normalizeDayOverrides(JSON.parse(localStorage.getItem(DAY_OVERRIDES_KEY) || '[]'))
+  } catch {
+    return []
+  }
+}
+
+export function saveDayOverrides(list) {
+  const clean = normalizeDayOverrides(list)
+  localStorage.setItem(DAY_OVERRIDES_KEY, JSON.stringify(clean))
+  return clean
+}
+
+/** 唯一入口：这个日期有没有特殊覆盖？没有（含老数据）→ null。 */
+export function dayOverrideOf(dateStr, overrides) {
+  const list = Array.isArray(overrides) ? overrides : []
+  const key = String(dateStr || '')
+  for (const x of list) {
+    if (x && x.date === key) return x
+  }
+  return null
+}
+
+/** 唯一入口：这个日期「算星期几」。
+    返回 1–7；返回 null 表示「这天不上课」（只有 off 放假才这样）。
+    naturalWd 是真实星期几（1=周一…7=周日），没有覆盖时原样返回。
+    补课日 → 返回 useWeekday（周六按周三的课表上）；
+    info（只提示）→ **返回 naturalWd**，课照上，提示只挂在界面上。 */
+export function effectiveWeekdayOf(dateStr, overrides, naturalWd) {
+  const ov = dayOverrideOf(dateStr, overrides)
+  if (!ov) return naturalWd == null ? null : Number(naturalWd)
+  if (ov.kind === 'swap') return ov.useWeekday
+  if (ov.kind === 'off') return null
+  return naturalWd == null ? null : Number(naturalWd) // info：不动课程
+}
+
+/** 这天是不是放假（课全空）。只有 off 算放假；info 是「只提示」，课照上。 */
+export function isDayOff(dateStr, overrides) {
+  const ov = dayOverrideOf(dateStr, overrides)
+  return !!(ov && ov.kind === 'off')
 }
 
 /* 当前周次（移植自主项目 Rules.currentWeekNo） */

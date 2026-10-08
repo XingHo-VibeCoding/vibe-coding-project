@@ -40,6 +40,7 @@ const {
   openEventAdd,
   today,
   todayCourses,
+  todayMark,
   state,
   nextTodayId,
   rowMeta,
@@ -66,7 +67,18 @@ const {
            nextTodayId 命中那条（正在进行、否则最近的一节）打 data-today-next，供检查脚本定位。
            课堂录音卡下沉到页面末尾（它的使用时机是"课已开始"，不该占第一屏）。 -->
       <section>
-        <h2 class="mb-2 px-1 text-sm font-semibold text-ink">接下来</h2>
+        <h2 class="mb-2 flex items-center gap-2 px-1 text-sm font-semibold text-ink">
+          <span>接下来</span>
+          <!-- 调休：今天放假/补课/有提示时挂一枚小标，回答「今天为什么没课」「周六为什么有课」。
+               没有特殊日期就什么都不加（老数据零变化）。 -->
+          <span
+            v-if="todayMark"
+            :data-today-mark="todayMark.kind"
+            class="rounded px-1.5 py-[1px] text-[10px] font-semibold leading-tight"
+            :class="todayMark.kind === 'swap' ? 'bg-primary-500/15 text-primary-600' : 'bg-soft-2 text-ink'"
+          >{{ todayMark.label }}</span>
+          <span v-if="todayMark" data-today-mark-note class="text-[11px] font-normal text-ink-dim">{{ todayMark.note }}</span>
+        </h2>
         <div v-if="todayCourses.length" class="space-y-0.5">
           <!-- Stage 4：已过压成一行（点开就地展开成 26px 行，内容一条不丢） -->
           <button

@@ -14,7 +14,7 @@ function t(name, cond, detail) {
 
 const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 
-const DATA_KEYS = ['web2.data', 'web2.added', 'web2.todos', 'web2.events', 'web2.courseOv', 'web2.lectures', 'web2.habits', 'web2.onboarded']
+const DATA_KEYS = ['web2.data', 'web2.added', 'web2.todos', 'web2.events', 'web2.courseOv', 'web2.lectures', 'web2.habits', 'web2.onboarded', 'web2.dayOverrides', 'web2.holidayCache']
 const KEEP_KEYS = ['web2.theme', 'web2.accent', 'web2.llm', 'web2.notify']
 
 /* 预置数据：8 个数据键给一点真实形状，4 个设置键给可识别的值。
@@ -31,6 +31,10 @@ localStorage.setItem('web2.courseOv', JSON.stringify({ '旧课-高数': '置顶'
 localStorage.setItem('web2.lectures', JSON.stringify([{ id: 'l1', title: '旧录音' }]));
 localStorage.setItem('web2.habits', JSON.stringify([{ id: 'h1', name: '旧打卡' }]));
 localStorage.setItem('web2.onboarded', '1');
+/* P14：调休/特殊日期与抓来的节假日缓存——也是「跟着学期走的数据」，清数据必须一起清。
+   种一条放假，让 A5 对 web2.dayOverrides 的断言不是空跑（键不存在也算「已清」，那样测不出漏删）。 */
+localStorage.setItem('web2.dayOverrides', JSON.stringify([{ date: '2026-10-01', kind: 'off', useWeekday: null, note: '旧放假' }]));
+localStorage.setItem('web2.holidayCache', JSON.stringify({ fetchedAt: 1, byYear: { '2026': [] } }));
 localStorage.setItem('web2.theme', 'dark');
 localStorage.setItem('web2.accent', 'rose');
 localStorage.setItem('web2.llm', JSON.stringify({ provider: 'deepseek', key: 'sk-keepme', model: 'deepseek-flash' }));
@@ -40,6 +44,15 @@ localStorage.setItem('web2.notify', JSON.stringify({ enabled: true }));
 
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const page = await browser.newPage()
+/* P14 起 App 开机会后台抓国家法定节假日（syncHolidaysOnBoot）——真网会让「清数据」后的
+   web2.dayOverrides / web2.holidayCache 又被写回来，A5 就变成随机红。测试只关心本地逻辑，
+   把非本地请求一律掐掉（dayover-check.mjs 用的是同一套写法）。
+   ⚠ 用宽 pattern + 起始 URL 判断：窄的 '**cdn.jsdelivr.net**' 不命中带路径的 URL。 */
+await page.route('**/*', (route) => {
+  const u = route.request().url()
+  if (u.startsWith('http://127.0.0.1:4177') || u.startsWith('data:') || u.startsWith('blob:')) return route.continue()
+  return route.abort()
+})
 await page.addInitScript(SEED)
 await page.goto(URL, { waitUntil: 'networkidle' })
 await page.waitForTimeout(500)
