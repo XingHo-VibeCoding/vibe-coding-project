@@ -192,6 +192,30 @@
         })
     }
 
+    /* 拉取失败时统一的收尾（Day 24 修）。
+       为什么单独抽一个函数：原来的 catch 里写的是
+         document.getElementById('list-msg').textContent = ...
+        —— 而 #list-msg 是 #rows 里的**初始加载提示**，成功那一次
+         `#rows.innerHTML = html` 会把它整块换掉。于是「先成功、后失败」时
+         这一句就对着 null 设 textContent，抛
+           TypeError: Cannot set properties of null (setting 'textContent')
+       它发生在 catch 内部，所以后面的行根本执行不到 —— 结果就是：
+         ① 控制台出现这条裸报错（本次要修的正是它）；
+         ② 失败根本不显示，**上一次的旧数据原样留在屏幕上冒充新数据**
+            （连「本次拉取」的时间也停在旧值，用户完全看不出来）。
+       修法：不再假设任何节点一定在，能改哪块改哪块；并且失败时**把旧数字藏掉**，
+       免得「上一次的结果」被看成「这一次的结果」。 */
+    function showListError(text) {
+      var rows = document.getElementById('rows')
+      if (rows) rows.innerHTML = '<p class="err">' + text + '</p>'
+      var counts = document.getElementById('counts')
+      if (counts) counts.style.display = 'none'
+      var lu = document.getElementById('last-updated')
+      if (lu) lu.textContent = '–'
+      var fa = document.getElementById('fetched-at')
+      if (fa) fa.textContent = '拉取失败 · ' + nowText()
+    }
+
     function loadList() {
       return fetch(LIST_URL)
         .then(function (r) { return r.json() })
@@ -234,9 +258,7 @@
           document.getElementById('fetched-at').textContent = nowText()
         })
         .catch(function (e) {
-          document.getElementById('list-msg').textContent = '加载失败：' + (e && e.message ? e.message : '未知错误')
-          document.getElementById('rows').innerHTML = '<p class="err">加载失败：' + (e && e.message ? e.message : '未知错误') + '</p>'
-          document.getElementById('last-updated').textContent = '–'
+          showListError('加载失败：' + (e && e.message ? e.message : '未知错误'))
         })
     }
 

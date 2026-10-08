@@ -99,8 +99,23 @@ t('B3. 显示时长 0:45', seedText.includes('0:45'), seedText)
 t('B4. 拖期提示', seedText.includes('拖了'), seedText)
 t('B5. 手工「已听」按钮已去掉（改为放满遍数自动记账）', (await seedRow.locator('button', { hasText: '已听' }).count()) === 0)
 const slotsText = await ME.locator('[data-listen-slots]').first().innerText()
-t('B6. 显示今日空闲槽建议（L2）', slotsText.includes('今天可听'), slotsText)
-t('B7. 建议含时段与段数', /\d{2}:\d{2}–\d{2}:\d{2} · \d+ 分钟 · .+ → 放 \d+ 段/.test(slotsText), slotsText)
+/* 期望由当前时刻算出来，不能写死「今天可听」：
+   `listen.js:freeSlots` 的可听窗口默认是 07:00–23:00（awakeWindow 取勿扰 23:00–07:00 的补集），
+   而 `App.vue:listenSuggestions` 会把**已经过去的**空档滤掉。所以 23:00 之后再跑，
+   今天已经没有空档了，界面本来就该显示「自己找时间听」这一句 —— 那是产品的正确行为。
+   两种都是对的状态，这里只断言「必须给出其中一种、不能是空的」。 */
+const nowH = new Date().getHours()
+const pastWindow = nowH >= 23 // 默认勿扰 23:00–07:00 ⇒ 可听窗口到 23:00 结束
+t(`B6. 空闲槽结论按当前时刻自洽（${pastWindow ? '23:00 后' : '窗口内'}）`,
+  pastWindow
+    ? slotsText.includes('今天待复习') && slotsText.includes('自己找时间听')
+    : slotsText.includes('今天可听'),
+  slotsText)
+t('B7. 窗口内建议含时段与段数；窗口外给出待复习段数',
+  pastWindow
+    ? /今天待复习\s*\d+\s*段/.test(slotsText)
+    : /\d{2}:\d{2}–\d{2}:\d{2} · \d+ 分钟 · .+ → 放 \d+ 段/.test(slotsText),
+  slotsText)
 
 /* ===== C. 自动记账：没有手工入口时，记录一动不动 ===== */
 const stored0 = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.listen') || '[]')[0])

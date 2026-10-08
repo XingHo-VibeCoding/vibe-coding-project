@@ -14,7 +14,7 @@
 | HTTP 网关（后端接口） | `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.ap-shanghai.app.tcloudbase.com` |
 | 静态托管（前端页面） | `https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com` |
 | 已上线接口 | `GET /api/health`、`GET /api/list`、`POST /api/create`、`PUT /api/update`、`DELETE /api/delete` |
-| 静态托管当前页面 | 「大学生日程助手 · 数据检查台」（Day 22 版；删除按钮已是**两段式二次确认**。首次访问会先落 CloudBase 测试域名的「风险提醒」页，点一次「确定访问」才进页面） |
+| 静态托管当前页面 | 「大学生日程助手 · 数据检查台」（Day 24 版；删除按钮是**两段式二次确认**、失败提示已修（第 9 节）。首次访问会先落 CloudBase 测试域名的「风险提醒」页，点一次「确定访问」才进页面） |
 | 写接口实现 | 云函数 `write`（Nodejs20.19、Event 型，网关路径 `/api/create`、`/api/update`、`/api/delete`）；`WRITE_TOKEN` 与数据库凭据只在函数环境变量里 |
 | 部署清单 | 本地 `cloudbaserc.json`（含 `WRITE_TOKEN` 与服务端 API Key，已在 `.gitignore` 里**绝不提交**）；模板见仓库根 `cloudbaserc.example.json`。部署两步：`tcb fn deploy write -e <envId> --force`，再 `tcb deploy --only gateway`（按 `gateway.routes` 幂等收敛网关路由，不动的路由会 Skip） |
 
@@ -285,6 +285,36 @@
 
 ---
 
+## 9. 检查台的失败提示（Day 24 修的真实 Bug）
+
+**现象**：检查台**先成功过一次、再点「刷新数据」且这次失败**时，失败提示永远不显示 —— 上一次的旧数据原样留在屏幕上冒充新数据，「本次拉取」也停在旧时间。控制台原文：
+
+```
+Uncaught (in promise) TypeError: Cannot set properties of null (setting 'textContent')
+    at loadList (index.html:237:53)
+```
+
+**根因**：失败分支写的是 `document.getElementById('list-msg').textContent = …`，而 `#list-msg` 是 `#rows` 里的**初始加载提示** `<p class="err" id="list-msg">正在加载 /api/list …</p>`；成功分支 `document.getElementById('rows').innerHTML = html` 会把它整块换掉。于是「先成功、后失败」时这一句对着 `null` 设属性，当场抛异常 —— 而它抛在 **catch 内部**，后面「写 `#rows`」「重置 `#last-updated`」两行再也执行不到。
+
+**修法**（`mock-frontend/index.html`，新增 `showListError(text)`，catch 只留一行调用）：
+1. 不再假设任何节点一定在 —— `#rows` / `#counts` / `#last-updated` / `#fetched-at` 逐个判 `null`；
+2. 失败时把数字区 `#counts` 设 `display:none` —— **让「上一次的结果」不可能被看成「这一次的结果」**（这条比修异常本身更重要）；
+3. `#fetched-at` 写成「拉取失败 · 时间」，不再停在旧值。
+
+**教训**：「成功分支会换掉整块 DOM」时，失败分支**不能引用那块里的节点**。这类 bug 只在「先成功、后失败」的两段式路径上暴露，第一次就失败的场景反而测不出来。
+
+**验证（可重跑）**：
+- 本地 `web2/tmp/day24-check.mjs`：**12 通过 / 0 失败**。三场景 A 打开就失败 / B 先成功再失败（B3 专门断言「旧数据不再冒充新数据」）/ C 连续点 3 次刷新。
+- 线上：真实浏览器打公网静态托管、**不关 CORS**，先过「风险提醒」页再验，**10 通过 / 0 失败**，全程零 pageerror（脚本在 `.workbuddy/tmp/day24-online-check.mjs`，本地工具区不入库）。
+
+**部署命令（本地实测可用）**：`tcb hosting deploy index.html index.html -e <envId> --safe --verify`。
+> 坑：`tcb hosting deploy . /` 会报 `一致性发布失败，已自动回滚` + `missing=/index.html`，**目录形式在本环境校验不过，必须按 filePath + cloudPath 传单文件**。`--prune` 永远不要用。
+> 线上核对更新是否生效：`Invoke-WebRequest` 取 `RawContentStream.ToArray()` 再 `[System.Text.Encoding]::UTF8.GetString()`（`.Content` 会乱码），搜函数名。
+
+**测试自己的坑**：对页面做 `page.route` 网络拦截前，**必须先等首访请求落定**（等 `#rows` 不再是「正在加载 …」）——否则首访请求会被拦掉，后续断言全部错位（本轮首跑 6/4 就是这么来的）。
+
+---
+
 ## 通用约定
 
 1. **返回格式**：接口统一返回 JSON。成功时 `ok: true`，失败时 `ok: false` 并携带 `message`。
@@ -294,5 +324,6 @@
 
 ---
 
-*最后更新：2026-10-05（Day 22，写闭环上线：`write` 云函数 + `/api/create`、`/api/update`、`/api/delete` 三条网关路由已公网验收；`/api/favorite` 因业务上不存在而移除；本次不涉及类型白名单与表结构变化，函数白名单与 `db/schema.sql` 无需同步）*
+*最后更新：2026-10-08（Day 24，修检查台失败提示 Bug：见第 9 节；页面已重新部署到静态托管）*
+*2026-10-05（Day 22，写闭环上线：`write` 云函数 + `/api/create`、`/api/update`、`/api/delete` 三条网关路由已公网验收；`/api/favorite` 因业务上不存在而移除；本次不涉及类型白名单与表结构变化，函数白名单与 `db/schema.sql` 无需同步）*
 *同日复核补充：① `PUT`/`DELETE` 的「id 不存在 → 中文 404」文案按实现写准（第 4、5、6 节）；② `table` 白名单此前漏写了 `semesters`，已补（第 3 节，与 `cloudfunctions/write/index.js` 的 `TABLES` 一致）；③ 新增第 7 节「前端删除的二次确认」（检查台已实测）与第 8 节「数据库 select 前后对比验证法」（附脚本与实测数字）。*

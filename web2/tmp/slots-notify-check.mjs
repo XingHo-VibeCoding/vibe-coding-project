@@ -195,7 +195,15 @@ function bridgeScript() {
   await page.waitForTimeout(1000)
 
   const rv = await page.evaluate(() => window.__n.pending.filter((n) => n.extra && n.extra.src === 'web2-review'))
-  t('C1. 复盘提醒排了未来 7 天（每天一条）', rv.length === 7, String(rv.length))
+  /* 期望条数**由当前时刻算出来**，不能写死 7：
+     `review.js:noticeDate()` 的口径是「当天那一刻已过就返回 null，不补发」，
+     所以 22:00 之后再跑，今天那条本来就不该出现（7 → 6）。
+     这是产品的正确行为，写死 7 会在晚上跑时假红。 */
+  const nowH = new Date().getHours()
+  const nowM = new Date().getMinutes()
+  const passed22 = nowH >= 22 // noticeDate 用 `<= now` 判，22:00 整点也算已过
+  const EXP_RV = passed22 ? 6 : 7
+  t(`C1. 复盘提醒排了未来 ${EXP_RV} 天（当天 22:00 已过就不排今天，不补发）`, rv.length === EXP_RV, `实际 ${rv.length}（当前 ${nowH}:${String(nowM).padStart(2, '0')}）`)
   t('C2. 渠道是 review-reminder、标记是 web2-review', rv.length > 0 && rv.every((n) => n.channelId === 'review-reminder' && n.extra.src === 'web2-review'))
   t('C3. 复盘提醒**不带按钮**（点通知就进浮层，不是「开始录音」）', rv.every((n) => n.actionTypeId === undefined), JSON.stringify(rv[0] && rv[0].actionTypeId))
   t('C4. 时间落在设定的 22:00 上', rv.every((n) => new Date(n.schedule.at).getHours() === 22), rv.map((n) => new Date(n.schedule.at).getHours()).join(','))
@@ -224,7 +232,7 @@ function bridgeScript() {
     rvHours: window.__n.pending.filter((n) => n.extra && n.extra.src === 'web2-review').map((n) => new Date(n.schedule.at).getHours()),
     runs: window.__n.runs,
   }))
-  t('C6. 重排不叠加（改时间后仍是 7 条，历史 pending 被自己清掉）', after.rv === 7 && after.runs >= 2, JSON.stringify(after))
+  t('C6. 重排不叠加（改时间后仍是同样条数，历史 pending 被自己清掉）', after.rv === EXP_RV && after.runs >= 2, JSON.stringify(after) + `（期望 ${EXP_RV}）`)
   t('C7. 重排没误清别的批次（课前提醒条数不变）', after.m5 === before.m5, before.m5 + ' → ' + after.m5)
   t('C8. 改档后时间跟着走（全部落在 22:00）', after.rvHours.every((h) => h === 22), after.rvHours.join(','))
 
