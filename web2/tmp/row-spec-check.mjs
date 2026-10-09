@@ -1,10 +1,11 @@
-/* Stage 3 验收：26px 时间行规格（docs/结构动效前置约定.md §一「新增规格」）
+/* 时间行规格（docs/结构动效前置约定.md §一「一条日程 = 一张卡片」）
    跑法：先起 4177 静态服务，再 node tmp/row-spec-check.mjs
-   验的规格：
-     · 行高锁 26px（py-[3px] + leading-[20px]）——20 件也不会撑成一屏半
+   验的规格（2026-10-09 W 方案：卡片化）：
+     · 卡高锁 50px（leading-20 + leading-16 + py-1.5×2 + 上下边框）—— 5 张也放得下
+     · 卡高本身 ≥44px，不再靠 after 伪元素补触区（旧 26px 紧凑行已随卡片化退休）
      · 时间列固定 40px、右对齐、tabular-nums
      · 已完成 / 已过 = 整行**实色**灰（#626b7d），不许 alpha 档（A4 可读性扫描结论）
-     · 行只占 26px，但触区靠 after 伪元素外扩到 ≥44px（绝对定位不参与布局） */
+     · 进行中 = 浅蓝底 + 主色标题；其余 = 卡片底色 */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
 const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
@@ -42,9 +43,10 @@ const errs = []
 page.on('pageerror', (e) => errs.push(e.message))
 await page.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(seedDoc)})`)
 await page.addInitScript(() => localStorage.setItem('web2.onboarded', '1'))
+await page.addInitScript(() => localStorage.setItem('web2.theme', 'light'))
 await page.goto(URL + '?t=11:00', { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(900)
-/* Stage 4 起「接下来」默认把已过压成一行；这里要先展开全部，才量得到那条已过的行 */
+/* 「接下来」默认把已过压成一行；这里要先展开全部，才量得到那条已过的卡 */
 if (await page.locator('[data-today-expand]').count()) {
   await page.click('[data-today-expand]')
   await page.waitForTimeout(300)
@@ -58,52 +60,36 @@ const rows = await page.evaluate(() => {
     const r = box(row)
     const cs = getComputedStyle(row)
     const ts = timeEl ? getComputedStyle(timeEl) : null
-    /* 触区探测：行的上下各 18px 处 elementFromPoint 还应该落在这行（after 伪元素外扩） */
-    const cx = Math.round(r.x + r.w / 2)
-    const hitAbove = document.elementFromPoint(cx, r.y - 18)
-    const hitBelow = document.elementFromPoint(cx, r.y + r.h + 18)
-    const inRow = (el) => !!el && (el === row || row.contains(el))
     return {
       state: row.dataset.rowState,
       text: row.innerText.replace(/\s+/g, ' ').trim(),
       h: r.h,
+      bg: cs.backgroundColor,
       timeW: timeEl ? Math.round(timeEl.getBoundingClientRect().width) : -1,
       timeAlign: ts ? ts.textAlign : '',
       timeVariant: ts ? ts.fontVariantNumeric : '',
       rowColor: cs.color,
       titleColor: titleEl ? getComputedStyle(titleEl).color : '',
-      hitAbove: inRow(hitAbove),
-      hitBelow: inRow(hitBelow),
     }
   })
 })
 
 t('R1 今天页出现 4 条时间行', rows.length === 4, JSON.stringify(rows.map((r) => r.state)))
-t('R2 每一条行高都是 26px', rows.every((r) => r.h === 26), rows.map((r) => r.h).join('/'))
+t('R2 每一条卡高都是 50px（leading-20 + leading-16 + py-1.5×2 + 上下边框）', rows.every((r) => r.h === 50), rows.map((r) => r.h).join('/'))
 t('R3 时间列固定 40px', rows.every((r) => r.timeW === 40), rows.map((r) => r.timeW).join('/'))
 t('R4 时间列右对齐 + tabular-nums', rows.every((r) => r.timeAlign === 'right' && r.timeVariant === 'tabular-nums'), rows[0] && `${rows[0].timeAlign}/${rows[0].timeVariant}`)
-/* 触区：行只占 26px，靠 after 伪元素上下各外扩 9px 到 44px。
-   相邻行外扩区会重叠（重叠处上面的行赢），所以「每一行上下 18px 都命中自己」不可能成立——
-   这里改成两条可判定的：① ::after 的 computed style 确实在上下各 -9px；② 第一行上方 18px 仍落在某条行里。 */
-const hit = await page.evaluate(() => {
-  const row = document.querySelector('[data-today-item]')
-  const cs = getComputedStyle(row, '::after')
-  const b = row.getBoundingClientRect()
-  const el = document.elementFromPoint(Math.round(b.x + b.width / 2), Math.round(b.y - 8))
-  const el2 = document.elementFromPoint(Math.round(b.x + b.width / 2), Math.round(b.y + b.height + 8))
-  const hitRow = (e) => !!(e && e.closest && e.closest('[data-row]'))
-  return { pos: cs.position, content: cs.content, top: cs.top, bottom: cs.bottom, height: cs.height, aboveHitsRow: hitRow(el), belowHitsRow: hitRow(el2) }
-})
-t('R8 触区：after 外扩上下各 9px（26+9+9=44px），行外 ±8px 实测仍命中行',
-  hit.pos === 'absolute' && hit.content !== 'none' && hit.top === '-9px' && hit.bottom === '-9px' && hit.height === '44px' && hit.aboveHitsRow && hit.belowHitsRow, JSON.stringify(hit))
+/* 触区：卡片本身就是 50px ≥ 44px（WCAG 2.5.8 AA），不再靠 after 外扩。
+   旧规格是 26px 行 + after:-inset-y-[9px] 补到 44px；卡片化之后那条路退休了。 */
+t('R8 卡高 50px ≥ 44px（触区达标，无需 after 外扩）', rows.every((r) => r.h >= 44), rows.map((r) => r.h).join('/'))
 const past = rows.find((r) => r.state === 'done')
 t('R5 已过的行有一条（state=done）', !!past, past && past.text)
 t('R6 已过 = 整行实色灰（rgb(98, 107, 125)，不是 alpha 档）', !!past && past.rowColor === 'rgb(98, 107, 125)' && past.titleColor === 'rgb(98, 107, 125)', past && `${past.rowColor} / ${past.titleColor}`)
 const nowRow = rows.find((r) => r.state === 'now')
-t('R7 进行中的行标 state=now 且右侧给剩余分钟', !!nowRow && /还剩 \d+ 分/.test(nowRow.text), nowRow && nowRow.text)
+t('R7 进行中的卡标 state=now 且右侧给剩余分钟', !!nowRow && /还剩 \d+ 分/.test(nowRow.text), nowRow && nowRow.text)
+t('R11 进行中的卡用浅蓝底（区别于其余卡片底色）', !!nowRow && nowRow.bg === 'rgb(238, 244, 254)', nowRow && nowRow.bg)
 t('R9 未来条目右侧留空、不倒计时刷屏（只有 next 那条报分钟）', rows.filter((r) => r.state === 'plain').length >= 1, JSON.stringify(rows.filter((r) => r.state === 'plain').map((r) => r.text)))
 t('R10 全程无 pageerror', errs.length === 0, errs.join(' | '))
 
 await browser.close()
-console.log(`\n=== 26px 时间行规格：${pass}/${pass + fail} 项通过 ===`)
+console.log(`\n=== 今天页时间卡规格：${pass}/${pass + fail} 项通过 ===`)
 process.exit(fail ? 1 : 0)

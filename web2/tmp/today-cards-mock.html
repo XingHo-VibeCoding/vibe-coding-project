@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>今日页「接下来」卡片化 · 五个方向</title>
+<style>
+  :root{
+    --canvas:#f5f7fa; --card:#fff; --line:rgba(0,0,0,.06); --soft:#eef0f4; --soft2:#e3e6ec;
+    --ink:#1c2333; --dim:#626b7d; --p50:#eef4fe; --p100:#d9e6fd; --p200:#b3cdfa;
+    --p500:#2f6feb; --p600:#1f57cc; --amber:#b45309; --ok:#0f8a5f;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:#e9ecf1;color:var(--ink);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .page{max-width:1680px;margin:0 auto;padding:36px 32px 64px}
+  h1{font-size:26px;margin:0 0 6px}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 26px}
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:20px;align-items:start}
+  .col h2{font-size:14.5px;margin:0 0 3px}
+  .col .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--dim);margin-bottom:9px}
+  .col .tag.a{background:#e6f6ed;color:#0f8a5f}
+  .col .tag.b{background:#fdf1e0;color:#b45309}
+  .phone{background:var(--canvas);border:1px solid #d8dce4;border-radius:26px;padding:14px 12px 18px;
+    min-height:560px;box-shadow:0 8px 26px rgba(20,30,60,.07)}
+  .sec-head{display:flex;align-items:center;gap:7px;margin:2px 2px 9px;font-size:13px;font-weight:700}
+  .pill{font-size:10px;font-weight:600;padding:1px 6px;border-radius:5px}
+  .pill.swap{background:rgba(47,111,235,.14);color:var(--p600)}
+  .muted{color:var(--dim);font-weight:400;font-size:11px}
+
+  /* ── 现状：纯文字行（对照组） ── */
+  .row{display:flex;align-items:baseline;gap:8px;padding:3px 2px;font-size:11px;line-height:20px}
+  .row .t{width:34px;flex:none;text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
+  .row .ti{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .s{color:var(--dim);font-size:10.5px;flex:none;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .m{color:var(--dim);font-variant-numeric:tabular-nums;flex:none}
+  .row.now .ti{color:var(--p600);font-weight:600}
+  .row.done{color:var(--dim)}
+  .row.done .ti{color:var(--dim)}
+
+  /* ── 甲：时间轴卡 ── */
+  .k-tl{display:flex;gap:10px;padding:9px 10px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:7px;align-items:flex-start}
+  .k-tl .hour{flex:none;width:40px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:12.5px}
+  .k-tl .bar{flex:none;width:2px;border-radius:2px;background:var(--soft2);align-self:stretch;min-height:30px}
+  .k-tl.now .bar{background:var(--p500)}
+  .k-tl .body{flex:1;min-width:0}
+  .k-tl .ttl{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .k-tl .meta{font-size:10.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  .k-tl.done{background:transparent;border-style:dashed}
+  .k-tl.done .ttl{color:var(--dim);font-weight:500}
+  .k-tl.now{border-color:var(--p200);background:var(--p50);box-shadow:0 0 0 1px var(--p200) inset}
+
+  /* ── 乙：紧凑卡（一行半高，左彩色条） ── */
+  .k-c{display:flex;align-items:center;gap:9px;padding:8px 10px;background:var(--card);border:1px solid var(--line);
+    border-radius:11px;margin-bottom:6px;position:relative;overflow:hidden}
+  .k-c::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--soft2)}
+  .k-c.c1::before{background:#7c5ce0}.k-c.c2::before{background:#0f8a5f}.k-c.c3::before{background:#d97706}
+  .k-c .ttl{font-size:12.5px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .k-c .mt{font-size:10.5px;color:var(--dim);flex:none;font-variant-numeric:tabular-nums}
+  .k-c .two{flex:1;min-width:0}
+  .k-c .two .l2{font-size:10.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .k-c.now{background:var(--p50);border-color:var(--p200)}
+  .k-c.now .mt{color:var(--p600);font-weight:600}
+  .k-c.done{opacity:.72}
+
+  /* ── 丙：状态卡（现在做的事占满，其余压缩） ── */
+  .k-hero{background:linear-gradient(180deg,var(--p500),#3d7bee);color:#fff;border-radius:14px;padding:12px 13px;margin-bottom:8px}
+  .k-hero .lab{font-size:10.5px;opacity:.85;letter-spacing:.06em}
+  .k-hero .ttl{font-size:16px;font-weight:700;margin-top:2px}
+  .k-hero .meta{font-size:11px;opacity:.9;margin-top:3px}
+  .k-hero .pgtrack{height:4px;border-radius:99px;background:rgba(255,255,255,.28);margin-top:10px;overflow:hidden}
+  .k-hero .pgfill{height:100%;background:#fff;border-radius:99px}
+  .k-rest{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;margin-bottom:5px;font-size:11.5px}
+  .k-rest .t{width:36px;flex:none;color:var(--dim);font-variant-numeric:tabular-nums;font-size:10.5px}
+  .k-rest .ti{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .k-rest .m{flex:none;color:var(--dim);font-size:10.5px}
+
+  /* ── 丁：勾选卡（待办风） ── */
+  .k-todo{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;margin-bottom:7px}
+  .k-todo .box{flex:none;width:19px;height:19px;border-radius:6px;border:1.6px solid var(--soft2);margin-top:1px}
+  .k-todo.done .box{background:var(--p500);border-color:var(--p500);position:relative}
+  .k-todo.done .box::after{content:'';position:absolute;left:5.5px;top:2px;width:5px;height:9px;
+    border-right:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(42deg)}
+  .k-todo.now .box{border-color:var(--p500);box-shadow:0 0 0 3px var(--p100)}
+  .k-todo .ttl{font-size:12.5px;font-weight:600}
+  .k-todo.done .ttl{color:var(--dim);font-weight:500;text-decoration:line-through;text-decoration-color:var(--soft2)}
+  .k-todo .meta{font-size:10.5px;color:var(--dim);margin-top:1px}
+
+  /* ── 戊：左右分栏卡（大字时间 + 右侧状态胶囊） ── */
+  .k-sp{display:flex;overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:7px}
+  .k-sp .l{flex:none;width:64px;padding:8px 0;text-align:center;background:var(--soft);border-right:1px solid var(--line)}
+  .k-sp .l .h{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  .k-sp .l .e{font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .k-sp .r{flex:1;min-width:0;padding:7px 9px;display:flex;align-items:center;gap:8px}
+  .k-sp .r .ttl{flex:1;min-width:0;font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .k-sp .cap{flex:none;font-size:10px;font-weight:600;padding:2px 7px;border-radius:99px;background:var(--soft);color:var(--dim)}
+  .k-sp.now .l{background:var(--p500)}.k-sp.now .l .h,.k-sp.now .l .e{color:#fff}
+  .k-sp.now .cap{background:var(--p100);color:var(--p600)}
+  .k-sp.done{opacity:.7}
+  .k-sp .r .col{flex:1;min-width:0}
+  .k-sp .r .sub2{font-size:10.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .note{margin-top:14px;background:#fff;border:1px solid #dfe3ea;border-radius:12px;padding:13px 15px;font-size:12.5px;line-height:1.75}
+  .note b{color:var(--ink)}
+  .note ul{margin:6px 0 0 18px;padding:0}
+  .note li{margin:2px 0}
+  .foot{margin-top:22px;background:#fff;border:1px solid #dfe3ea;border-radius:12px;padding:16px 18px;font-size:13px;line-height:1.85}
+  .foot h3{margin:0 0 8px;font-size:15px}
+  .foot table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12.5px}
+  .foot th,.foot td{border:1px solid #e3e6ec;padding:6px 9px;text-align:left;vertical-align:top}
+  .foot th{background:#f4f6f9;font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>今日页「接下来」· 卡片化五个方向</h1>
+  <p class="sub">同一个时刻：2026-10-08 周四 15:20 · 第 5 周 · 今天 5 件（已过 2 件、正在上 1 件、接下来 2 件）· 顺带一枚「补课」小标。</p>
+
+  <div class="grid">
+    <!-- ────────── 现状 ────────── -->
+    <div class="col">
+      <h2>现状（上线中）</h2>
+      <div class="tag">对照组</div>
+      <div class="phone">
+        <div class="sec-head"><span>接下来</span><span class="pill swap">补课</span><span class="muted">按周四的课表上</span></div>
+        <div class="row done"><span class="t">08:00</span><span class="ti">交通工程</span><span class="s">紫金港东1-205</span><span class="m">已上完</span></div>
+        <div class="row done"><span class="t">10:00</span><span class="ti">结构力学Ⅰ</span><span class="s">紫金港北4-317</span><span class="m">已上完</span></div>
+        <div class="row now"><span class="t">14:00</span><span class="ti">环境工程概论</span><span class="s">紫金港西2-301</span><span class="m">还剩 25 分</span></div>
+        <div class="row"><span class="t">16:45</span><span class="ti">弹性力学</span><span class="s">紫金港北4-102</span><span class="m">85 分钟后</span></div>
+        <div class="row"><span class="t">18:30</span><span class="ti">↻ 英语跟读打卡</span><span class="s">循环日程</span><span class="m">今天到期</span></div>
+        <div class="row" style="color:var(--dim)"><span class="t">已过</span><span class="ti">2 件 · 08:00–11:35</span><span style="flex:none">展开 ▾</span></div>
+      </div>
+      <div class="note">
+        <b>问题（你在真机上看到的）：</b>
+        <ul>
+          <li>四类信息平铺，没有主次：时间、课名、地点、状态一样重</li>
+          <li>「现在该干嘛」要靠颜色去猜，一眼扫不出来</li>
+          <li>一行 26px，五件挤在一起像日志，不像「今天要做的事」</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ────────── 甲 ────────── -->
+    <div class="col">
+      <h2>甲｜时间轴卡</h2>
+      <div class="tag a">改动小 · 信息量不变</div>
+      <div class="phone">
+        <div class="sec-head"><span>接下来</span><span class="pill swap">补课</span><span class="muted">按周四的课表上</span></div>
+        <div class="k-tl done"><div class="hour">08:00</div><div class="bar"></div><div class="body"><div class="ttl">交通工程</div><div class="meta">紫金港东1-205 · 已上完</div></div></div>
+        <div class="k-tl done"><div class="hour">10:00</div><div class="bar"></div><div class="body"><div class="ttl">结构力学Ⅰ</div><div class="meta">紫金港北4-317 · 已上完</div></div></div>
+        <div class="k-tl now"><div class="hour">14:00</div><div class="bar"></div><div class="body"><div class="ttl">环境工程概论</div><div class="meta">紫金港西2-301 · 还剩 25 分</div></div></div>
+        <div class="k-tl"><div class="hour">16:45</div><div class="bar"></div><div class="body"><div class="ttl">弹性力学</div><div class="meta">紫金港北4-102 · 85 分钟后</div></div></div>
+        <div class="k-tl"><div class="hour">18:30</div><div class="bar" style="background:#7c5ce0"></div><div class="body"><div class="ttl">↻ 英语跟读打卡</div><div class="meta">循环日程 · 今天到期</div></div></div>
+      </div>
+      <div class="note">
+        <b>做法：</b>一行变一张卡，左侧固定时间列 + 一条竖轴；正在上的那张换成浅蓝底 + 实心轴。
+        <ul>
+          <li>好处：时间轴感最强，「已过 → 现在 → 接下来」顺着往下读</li>
+          <li>越过的卡片改虚线淡出，不抢眼</li>
+          <li>代价：卡片高约 50px，5 张就 250px，比现在长一倍</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ────────── 乙 ────────── -->
+    <div class="col">
+      <h2>乙｜紧凑卡 + 彩色条</h2>
+      <div class="tag a">最省地方</div>
+      <div class="phone">
+        <div class="sec-head"><span>接下来</span><span class="pill swap">补课</span><span class="muted">按周四的课表上</span></div>
+        <div class="k-c c1 done"><div class="two"><div class="ttl">交通工程</div><div class="l2">08:00–09:35 · 紫金港东1-205</div></div><div class="mt">已上完</div></div>
+        <div class="k-c c2 done"><div class="two"><div class="ttl">结构力学Ⅰ</div><div class="l2">10:00–11:35 · 紫金港北4-317</div></div><div class="mt">已上完</div></div>
+        <div class="k-c c3 now"><div class="two"><div class="ttl">环境工程概论</div><div class="l2">14:00–15:45 · 紫金港西2-301</div></div><div class="mt">还剩 25 分</div></div>
+        <div class="k-c now"><div class="two"><div class="ttl">弹性力学</div><div class="l2">16:45–18:25 · 紫金港北4-102</div></div><div class="mt">85 分钟后</div></div>
+        <div class="k-c"><div class="two"><div class="ttl">↻ 英语跟读打卡</div><div class="l2">18:30 · 循环日程</div></div><div class="mt">今天到期</div></div>
+      </div>
+      <div class="note">
+        <b>做法：</b>两行字（课名 + 时间地点）+ 左侧一条科目色，卡高约 48px。
+        <ul>
+          <li>好处：比甲短，科目色能当视觉索引（同一门课颜色一致）</li>
+          <li>正在上的卡加浅蓝底</li>
+          <li>代价：颜色一多，需要给科目自动配色规则（现在是循环日程才有点）</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ────────── 丙 ────────── -->
+    <div class="col">
+      <h2>丙｜现在最大 · 其余压扁</h2>
+      <div class="tag b">信息层级最强</div>
+      <div class="phone">
+        <div class="sec-head"><span>接下来</span><span class="pill swap">补课</span><span class="muted">按周四的课表上</span></div>
+        <div class="k-hero">
+          <div class="lab">正在上</div>
+          <div class="ttl">环境工程概论</div>
+          <div class="meta">14:00–15:45 · 紫金港西2-301 · 还剩 25 分</div>
+          <div class="pgtrack"><div class="pgfill" style="width:72%"></div></div>
+        </div>
+        <div class="k-rest"><span class="t">已过</span><span class="ti">2 件 · 08:00–11:35</span><span class="m">展开 ▾</span></div>
+        <div class="k-rest"><span class="t">16:45</span><span class="ti">弹性力学</span><span class="m">85 分钟后</span></div>
+        <div class="k-rest"><span class="t">18:30</span><span class="ti">↻ 英语跟读打卡</span><span class="m">今天到期</span></div>
+      </div>
+      <div class="note">
+        <b>做法：</b>「此刻」单独一张大卡（带进度条），其余都是小条。
+        <ul>
+          <li>好处：一眼就知道现在在干什么、还剩多久 —— 和顶卡其实是同一件事</li>
+          <li>风险：<b>和顶部那张大卡重复了</b>，等于同样的话说两遍</li>
+          <li>适合：如果你希望「接下来」彻底变成「现在 + 后面」两段</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ────────── 丁 ────────── -->
+    <div class="col">
+      <h2>丁｜勾选卡（待办风）</h2>
+      <div class="tag b">可动手</div>
+      <div class="phone">
+        <div class="sec-head"><span>接下来</span><span class="pill swap">补课</span><span class="muted">按周四的课表上</span></div>
+        <div class="k-todo done"><div class="box"></div><div><div class="ttl">交通工程</div><div class="meta">08:00 · 紫金港东1-205</div></div></div>
+        <div class="k-todo done"><div class="box"></div><div><div class="ttl">结构力学Ⅰ</div><div class="meta">10:00 · 紫金港北4-317</div></div></div>
+        <div class="k-todo now"><div class="box"></div><div><div class="ttl">环境工程概论</div><div class="meta">14:00 · 紫金港西2-301 · 还剩 25 分</div></div></div>
+        <div class="k-todo"><div class="box"></div><div><div class="ttl">弹性力学</div><div class="meta">16:45 · 紫金港北4-102</div></div></div>
+        <div class="k-todo"><div class="box"></div><div><div class="ttl">↻ 英语跟读打卡</div><div class="meta">18:30 · 循环日程 · 今天到期</div></div></div>
+      </div>
+      <div class="note">
+        <b>做法：</b>每张卡前面一个方块，点一下打钩。
+        <ul>
+          <li>好处：和「今天要交」的待办视觉统一，一屏里两个列表长得像一家</li>
+          <li><b>风险：课不是能「勾掉」的东西</b> —— 你上没上这节课 App 并不知道</li>
+          <li>若选它，要明确一件事：勾了等于什么？（只是给自己看，还是记进复盘？）</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────── 戊 单独一行，讲「加一个状态胶囊」 ────────── -->
+  <div class="grid" style="grid-template-columns:repeat(5,1fr);margin-top:26px">
+    <div class="col">
+      <h2>戊｜左右分栏卡</h2>
+      <div class="tag">时间最醒目</div>
+      <div class="phone">
+        <div class="sec-head"><span>接下来</span><span class="pill swap">补课</span><span class="muted">按周四的课表上</span></div>
+        <div class="k-sp done"><div class="l"><div class="h">08:00</div><div class="e">09:35</div></div><div class="r"><div class="ttl">交通工程</div><span class="cap">已上完</span></div></div>
+        <div class="k-sp done"><div class="l"><div class="h">10:00</div><div class="e">11:35</div></div><div class="r"><div class="ttl">结构力学Ⅰ</div><span class="cap">已上完</span></div></div>
+        <div class="k-sp now"><div class="l"><div class="h">14:00</div><div class="e">15:45</div></div><div class="r"><div class="ttl">环境工程概论</div><span class="cap">还剩 25 分</span></div></div>
+        <div class="k-sp"><div class="l"><div class="h">16:45</div><div class="e">18:25</div></div><div class="r"><div class="ttl">弹性力学</div><span class="cap">85 分钟后</span></div></div>
+        <div class="k-sp"><div class="l"><div class="h">18:30</div><div class="e"></div></div><div class="r"><div class="ttl">↻ 英语跟读打卡</div><span class="cap" style="background:#eee0ff;color:#6244c2">今天到期</span></div></div>
+      </div>
+      <div class="note">
+        <b>做法：</b>左边一块灰底放开始/结束时间（正在上的变蓝底白字），右边课名 + 状态胶囊。
+        <ul>
+          <li>好处：时间是这张卡的第一信息，扫视最快；起点终点都写全，不用自己算</li>
+          <li>地点被挤掉了（要放进第二行会变高）</li>
+          <li>和课表页的「节次列」是同一种左右分栏，视觉上更连贯</li>
+        </ul>
+      </div>
+    </div>
+    <div class="col" style="grid-column:span 4">
+      <h2>三种组合建议</h2>
+      <div class="tag">如果只选一个 / 想混搭</div>
+      <div class="phone" style="min-height:auto">
+        <div class="note" style="margin-top:0">
+          <b>① 最稳：甲（时间轴卡）</b> —— 信息一点不丢，只是把「日志行」变成「卡片」，改动最小、风险最低，和你说的「一个个小卡片」最贴。<br>
+          <b>② 最省地方：乙（紧凑卡）</b> —— 如果你担心卡片占屏，它比甲矮 1/4，还能用科目色当索引。<br>
+          <b>③ 混搭：甲 + 丙 的顶条</b> —— 正在上的那张用丙里的大卡（带进度条），其余用甲的普通卡。层级最清楚，但「接下来」和顶卡会有一次信息重叠，需要把顶卡压小才不会重复。<br>
+          <b>我不推荐丁</b>：课不能打钩，硬做会把「上没上」变成一个假状态。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <h3>不管选哪个，这四件事我保持不变（免得改出新问题）</h3>
+    <table>
+      <tr><th>保住什么</th><th>为什么</th></tr>
+      <tr><td>「已过 2 件 · 08:00–11:35 展开 ▾」那一条折叠行</td><td>20 件全展开会把页面撑爆；这是 Stage 4 专门做的 D↔F 两种密度，展开全部仍然要能回到 26px 全表</td></tr>
+      <tr><td>循环日程用 ↻ 标记、颜色跟主题走</td><td>它和课程是两类东西，混在一起会误读</td></tr>
+      <tr><td>点任意一行 → 打开这条的详情</td><td>现有交互，卡片化后整张卡可点</td></tr>
+      <tr><td>「补课 / 放假 / 只提示」那枚小标</td><td>P14 调休刚做完，它回答「今天为什么没课 / 周六为什么有课」</td></tr>
+    </table>
+    <p style="margin:12px 0 0;color:#626b7d;font-size:12.5px">
+      注：本图是按现有 token 与字号渲染的示意稿（浏览器里看图，不是真机截图）。你定了方向我再动代码，动完照规矩给你真机/浏览器截图核对。
+    </p>
+  </div>
+</div>
+</body>
+</html>

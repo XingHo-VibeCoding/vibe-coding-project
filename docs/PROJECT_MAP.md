@@ -78,7 +78,7 @@ vibe-coding-project/
 | 路径 | 是什么 |
 |---|---|
 | `App.vue` | 单一状态持有者 + 外壳（顶卡 / 内容平移层 / 底部 nav / 二级页 Teleport 容器）；Day 21 那次拆分是 **6902 → 4127 行**（历史值），**2026-10-08 实测 4745 行**（后续 P12a/P12b/P13/P14 又加回来了）；页面与浮层全部拆到下面几处，靠文件末尾生成的 `APP_CTX` 区块（**792 个绑定**，以 `node web2/tmp/gen-app-ctx.mjs --check` 的输出为准）provide 给子组件 |
-| `components/` | 通用件：`RowItem.vue`（**26px 时间行的唯一实现处**）、`BottomSheet.vue`、`MonthCalendar.vue`、`TimeWheel.vue` / `NumberWheel.vue` 等 |
+| `components/` | 通用件：`RowItem.vue`（**时间行的唯一实现处**；2026-10-09 起是 **50px 时间轴卡**，旧 26px 文字行规格已退休）、`BottomSheet.vue`、`MonthCalendar.vue`、`TimeWheel.vue` / `NumberWheel.vue` 等 |
 | `pages/` | 页面主体：`TodayPage.vue` / `WeekPage.vue` / `MePage.vue` / `OnboardingPage.vue`；二级页四块在 `pages/sub/`（`LecturesPanel` / `ListenPanel` / `TodosPanel` / `SettingsPanel`） |
 | `sheets/` | 十三个浮层：`PickerSheet` / `ConfirmClearSheet` / `DeleteLectureSheet` / `HabitSheet` / `DetailSheet` / `ReviewGridSheet` / `PressTypeSheet` / `AddSheet` / `TodoSheet` / `ReviewSheet` / `EventSheet` / `SemesterSheet` / `EduLoginSheet`（**P12b 新建**，登录教务网抓课表；**自己手写浮层不用 `BottomSheet`** —— 它从「设置」这个 `z-40` 的二级页里打开，而 `BottomSheet` 是 `z-30`，会被整个盖住：DOM 量得到、断言全过、**截图上什么都看不见**，2026-10-06 真踩过） |
 | `composables/app-ctx.js` | 上下文：`APP_CTX` + `useApp()`；子组件用 `toRefs(app)` **按原名**接绑定，所以搬走的 markup 一个字都不用改。生成器 `web2/tmp/gen-app-ctx.mjs` 产出并校验那个区块（`--check` 同时查「块是否最新」与「有没有漏解构」） |

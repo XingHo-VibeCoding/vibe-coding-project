@@ -79,8 +79,9 @@ const {
           >{{ todayMark.label }}</span>
           <span v-if="todayMark" data-today-mark-note class="text-[11px] font-normal text-ink-dim">{{ todayMark.note }}</span>
         </h2>
-        <div v-if="todayCourses.length" class="space-y-0.5">
-          <!-- Stage 4：已过压成一行（点开就地展开成 26px 行，内容一条不丢） -->
+        <div v-if="todayCourses.length" class="space-y-1">
+          <!-- Stage 4：已过压成一行（点开就地展开成卡片，内容一条不丢）
+               2026-10-09 W：明细行改卡片后，这一行保持 26px 文字行 —— 它是「控制」，不是「要做的事」 -->
           <button
             v-if="!todayExpanded && todayPast.length"
             data-today-past-fold
@@ -96,7 +97,7 @@ const {
                滚动位置不动。key 挂在 Transition 上：换密度时旧列表整体淡出、新列表淡入；
                行高两种密度完全一样，所以淡入淡出期间容器高度不跳。 -->
           <Transition name="density" mode="out-in">
-            <div v-if="todayExpanded" key="dense">
+            <div v-if="todayExpanded" key="dense" class="space-y-1">
               <RowItem
                 v-for="c in todayCourses"
                 :key="c.id"
@@ -114,7 +115,7 @@ const {
                 @click="openDetail(c)"
               />
             </div>
-            <div v-else key="list">
+            <div v-else key="list" class="space-y-1">
               <template v-if="pastOpen">
                 <RowItem
                   v-for="c in todayPast"

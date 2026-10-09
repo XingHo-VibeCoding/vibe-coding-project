@@ -86,7 +86,7 @@ const rowH = await page.evaluate(() => {
   const rows = [...document.querySelectorAll('[data-today-item]')]
   return rows.map((el) => Math.round(el.getBoundingClientRect().height))
 })
-t('F. 两种密度行高都是 26px（切换不跳行高）', rowH.length > 0 && rowH.every((h) => h === 26), JSON.stringify(rowH))
+t('F. 两种密度卡片高都是 50px（切换不跳卡高）', rowH.length > 0 && rowH.every((h) => h === 50), JSON.stringify(rowH))
 /* 不断言「段落总高变大」：折叠行是**替掉**那一条已过行，两条路径的行数与 space-y 间隙数不同，
    周几不同时符号都可能反过来（周三 12:30 实测 F 反而矮 2px）。真正的不变量是「一条都不丢」。 */
 const keysAfter = await rowKeys()

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>今日页「接下来」· 修正版两个方向</title>
+<style>
+  :root{
+    --canvas:#f5f7fa; --card:#fff; --line:rgba(0,0,0,.06); --soft:#eef0f4; --soft2:#e3e6ec;
+    --ink:#1c2333; --dim:#626b7d; --p50:#eef4fe; --p100:#d9e6fd; --p200:#b3cdfa;
+    --p500:#2f6feb; --p600:#1f57cc;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:#e9ecf1;color:var(--ink);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .page{max-width:1180px;margin:0 auto;padding:34px 30px 60px}
+  h1{font-size:25px;margin:0 0 6px}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 24px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;align-items:start}
+  .col h2{font-size:15px;margin:0 0 3px}
+  .col .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--dim);margin-bottom:10px}
+  .col .tag.a{background:#e6f6ed;color:#0f8a5f}
+  .col .tag.b{background:#fdf1e0;color:#b45309}
+  .phone{background:var(--canvas);border:1px solid #d8dce4;border-radius:24px;padding:12px 11px 16px;box-shadow:0 8px 26px rgba(20,30,60,.07)}
+  .sec-head{display:flex;align-items:center;gap:7px;margin:14px 2px 8px;font-size:13px;font-weight:700}
+  .muted{color:var(--dim);font-weight:400;font-size:11px}
+
+  /* 顶卡 —— 正常形态（与线上一致） */
+  .top{background:linear-gradient(180deg,#e4e6fb,#f3f2fb);border-radius:16px;padding:11px 13px}
+  .top .d{font-size:11.5px;color:var(--p600);font-weight:600}
+  .top .hi{font-size:19px;font-weight:800;margin:2px 0 8px}
+  .top .box{background:#fff;border-radius:12px;padding:9px 11px}
+  .top .box .r1{display:flex;align-items:center;gap:9px}
+  .top .box .tt{font-size:13.5px;font-weight:700}
+  .top .box .ss{font-size:11px;color:var(--dim);margin-top:1px}
+  .top .box .btn{margin-left:auto;background:var(--p500);color:#fff;font-size:11.5px;font-weight:600;
+    padding:6px 12px;border-radius:99px;flex:none}
+  .top .box .pg{margin-top:8px;height:4px;border-radius:99px;background:var(--p100);overflow:hidden}
+  .top .box .pg i{display:block;height:100%;width:72%;background:var(--p500);border-radius:99px}
+  /* 顶卡 —— 上课时压成一行 */
+  .top.mini .hi{font-size:15px;margin-bottom:6px}
+  .top.mini .box{padding:6px 10px}
+
+  /* 甲式卡 */
+  .k-tl{display:flex;gap:10px;padding:9px 10px;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:7px;align-items:flex-start}
+  .k-tl .hour{flex:none;width:40px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:12.5px}
+  .k-tl .bar{flex:none;width:2px;border-radius:2px;background:var(--soft2);align-self:stretch;min-height:30px}
+  .k-tl .ttl{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .k-tl .meta{font-size:10.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+  .k-tl.done{background:transparent;border-style:dashed}
+  .k-tl.done .ttl{color:var(--dim);font-weight:500}
+  .k-tl.now{border-color:var(--p200);background:var(--p50);box-shadow:0 0 0 1px var(--p200) inset}
+  .k-tl.now .bar{background:var(--p500)}
+  .k-tl.now .ttl{color:var(--p600)}
+
+  /* 丙式大卡 */
+  .k-hero{background:linear-gradient(180deg,var(--p500),#3d7bee);color:#fff;border-radius:14px;padding:12px 13px;margin-bottom:8px}
+  .k-hero .lab{font-size:10.5px;opacity:.85;letter-spacing:.06em}
+  .k-hero .ttl{font-size:16px;font-weight:700;margin-top:2px}
+  .k-hero .meta{font-size:11px;opacity:.9;margin-top:3px}
+  .k-hero .pgtrack{height:4px;border-radius:99px;background:rgba(255,255,255,.28);margin-top:10px;overflow:hidden}
+  .k-hero .pgfill{height:100%;background:#fff;border-radius:99px}
+
+  .fold{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:6px;font-size:11.5px}
+  .fold .t{width:36px;flex:none;color:var(--dim);font-variant-numeric:tabular-nums;font-size:10.5px}
+  .fold .ti{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fold .m{flex:none;color:var(--dim);font-size:10.5px}
+
+  .note{margin-top:14px;background:#fff;border:1px solid #dfe3ea;border-radius:12px;padding:13px 15px;font-size:12.5px;line-height:1.75}
+  .note ul{margin:6px 0 0 18px;padding:0}
+  .note li{margin:3px 0}
+  .warn{background:#fff6e5;border-color:#f2d9a8}
+  .warn b{color:#b45309}
+  .foot{margin-top:26px;background:#fff;border:1px solid #dfe3ea;border-radius:12px;padding:16px 18px;font-size:13px;line-height:1.85}
+  .foot h3{margin:0 0 8px;font-size:15px}
+  code{background:#f0f2f6;padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>今日页「接下来」· 修正后的两个方向</h1>
+  <p class="sub">同一个时刻：2026-10-08 周四 15:20 · 正在上「环境工程概论」（还剩 25 分）· 后面还有「弹性力学」。<br>
+     ← 上一版 X 图画错了：我以为上课时顶卡在说复盘，实测顶卡说的就是「进行中 · 课名 · 还剩 N 分」，和丙式大卡完全重复，所以 X 作废。</p>
+
+  <div class="grid">
+    <!-- ══════════ W ══════════ -->
+    <div class="col">
+      <h2>W｜全用甲 · 顶卡一个字不动</h2>
+      <div class="tag a">最稳 · 零回归风险</div>
+      <div class="phone">
+        <div class="top">
+          <div class="d">10 月 8 日 周四 · 第 5 周</div>
+          <div class="hi">下午好呀～再坚持一下下</div>
+          <div class="box">
+            <div class="r1">
+              <div>
+                <div class="tt">进行中 · 环境工程概论</div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+              </div>
+              <div class="btn">录音</div>
+            </div>
+            <div class="pg"><i></i></div>
+          </div>
+        </div>
+
+        <div class="sec-head"><span>接下来</span><span class="muted">按周四的课表上</span></div>
+        <div class="k-tl done"><div class="hour">08:00</div><div class="bar"></div><div><div class="ttl">交通工程</div><div class="meta">紫金港东1-205 · 已上完</div></div></div>
+        <div class="k-tl now"><div class="hour">14:00</div><div class="bar"></div><div><div class="ttl">环境工程概论</div><div class="meta">紫金港西2-301 · 还剩 25 分</div></div></div>
+        <div class="k-tl"><div class="hour">16:45</div><div class="bar"></div><div><div class="ttl">弹性力学</div><div class="meta">紫金港北4-102 · 85 分钟后</div></div></div>
+        <div class="k-tl"><div class="hour">18:30</div><div class="bar" style="background:#7c5ce0"></div><div><div class="ttl">↻ 英语跟读打卡</div><div class="meta">循环日程 · 今天到期</div></div></div>
+      </div>
+      <div class="note">
+        <b>做法：</b>整块「接下来」统一用甲式卡，正在上的那张自动变浅蓝底 + 蓝色实心轴 + 蓝字。
+        <ul>
+          <li>正在上的这张卡<b>只是「同一张卡换了个状态」，不是第二种卡</b>，一屏里不会出现两种造型</li>
+          <li>顶卡保持现在的样子（它已经在说「进行中 + 还剩多少 + 进度条 + 录音钮」），责任分工清楚：<b>顶卡 = 此刻，接下来 = 今天其余</b></li>
+          <li>改动只在 <code>TodayPage.vue</code> 一个文件，顶卡、通知栏、状态框全不碰</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ══════════ Y ══════════ -->
+    <div class="col">
+      <h2>Y｜丙大卡 + 顶卡压成一行</h2>
+      <div class="tag b">视觉最强 · 但要动顶卡</div>
+      <div class="phone">
+        <div class="top mini">
+          <div class="d">10 月 8 日 周四 · 第 5 周</div>
+          <div class="hi">下午好呀～再坚持一下下</div>
+          <div class="box">
+            <div class="r1">
+              <div><div class="tt">环境工程概论 · 还剩 25 分</div></div>
+              <div class="btn">录音</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-head"><span>接下来</span><span class="muted">按周四的课表上</span></div>
+        <div class="k-hero">
+          <div class="lab">正在上</div>
+          <div class="ttl">环境工程概论</div>
+          <div class="meta">14:00–15:45 · 紫金港西2-301 · 还剩 25 分</div>
+          <div class="pgtrack"><div class="pgfill" style="width:72%"></div></div>
+        </div>
+        <div class="fold"><span class="t">已过</span><span class="ti">2 件 · 08:00–11:35</span><span class="m">展开 ▾</span></div>
+        <div class="k-tl"><div class="hour">16:45</div><div class="bar"></div><div><div class="ttl">弹性力学</div><div class="meta">紫金港北4-102 · 85 分钟后</div></div></div>
+        <div class="k-tl"><div class="hour">18:30</div><div class="bar" style="background:#7c5ce0"></div><div><div class="ttl">↻ 英语跟读打卡</div><div class="meta">循环日程 · 今天到期</div></div></div>
+      </div>
+      <div class="note warn">
+        <b>为什么必须同时动顶卡：</b>顶上那张卡固定在屏幕上方、滚动时不消失，它此刻说的就是「进行中 + 课名 + 还剩多久 + 进度条」。下面再放一张一模一样的大卡，等于同一句话说两遍。
+        <ul>
+          <li>所以 Y 的前提是：上课时把顶卡压成一行（只留课名 + 录音钮），把「正在上」的完整信息让给下方大卡</li>
+          <li>代价：顶卡是上一轮刚定稿的代码，<b>动它要重跑顶卡相关的全部断言</b>（heroMode / 录音钮 / 进度条 / 通知栏快照都读它）</li>
+          <li>另外「已过」那一条折叠行在有正在上的课时会跟着出现 —— 和 W 一样保留</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <h3>我改成推荐 W，理由三条</h3>
+    <p style="margin:0 0 6px">
+      <b>① 丙的信息已被顶卡占满。</b>顶卡一屏不动地写着「进行中 · 环境工程概论 / 紫金港西2-301 · 还剩 25 分钟」还带进度条，丙式大卡在「接下来」里只能说同样的话。<br>
+      <b>② 甲自身已经能表达「现在」。</b>甲式卡的 <code>.now</code> 状态是浅蓝底 + 蓝色实心轴 + 蓝字课名，和上下文的灰白卡拉开得很清楚，「正在上」这层信息不会丢。<br>
+      <b>③ 只改一个文件、零回归风险。</b>W 只动 <code>TodayPage.vue</code>；Y 还要动 <code>App.vue</code> 的顶卡分支，而那套分支牵着录音钮、进度条、通知栏快照，改它不划算。
+    </p>
+    <p style="margin:10px 0 0">
+      如果你就是想要「一张醒目的大卡」那种感觉，那就选 <b>Y</b> —— 它是能做到的，只是必须连带把顶卡压小，不然重复感会比现在更重。
+    </p>
+    <p style="margin:8px 0 0;color:#626b7d;font-size:12.5px">
+      注：示意稿按现有 token 与字号渲染；顶卡那一栏是照刚跑出来的真实口径画的。你定了我再动代码，动完照规矩出图核对。
+    </p>
+  </div>
+</div>
+</body>
+</html>

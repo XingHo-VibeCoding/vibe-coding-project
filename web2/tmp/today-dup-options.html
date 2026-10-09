@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>顶卡 vs 接下来 · 重复问题与三个修法</title>
+<style>
+  :root{
+    --ink:#1c2333; --dim:#626b7d; --line:#e3e6ec; --card:#fff; --soft:#eef0f4; --soft2:#e3e6ec;
+    --pri:#2f6feb; --pri50:#eef4fe; --pri200:#c7dcfb; --pri600:#1f57cc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:28px 24px 40px;background:#f4f6f9;color:var(--ink);
+    font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+  h1{font-size:23px;margin:0 0 6px}
+  .lead{color:var(--dim);margin:0 0 22px;max-width:1000px}
+  .grid{display:flex;gap:18px;align-items:flex-start;flex-wrap:nowrap}
+  .col{width:322px;flex:none}
+  .cap{font-weight:700;font-size:15px;margin-bottom:2px}
+  .cap .tag{font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:2px}
+  .tag.now{background:#e8eaf0;color:#5b6478}
+  .tag.a{background:#e6f4ea;color:#1d7a44}
+  .tag.b{background:#e8f0fe;color:#1f57cc}
+  .tag.c{background:#fdf0dd;color:#9a6212}
+  .say{font-size:12px;color:var(--dim);min-height:34px;margin:4px 0 9px}
+  .phone{background:#fbfcfe;border:1px solid var(--line);border-radius:16px;padding:10px 9px 12px;box-shadow:0 1px 3px rgba(16,24,40,.05)}
+  .hero{background:#e8f0fe;border-radius:14px;padding:10px;margin-bottom:12px}
+  .hero-t{font-size:11px;color:var(--dim)}
+  .hero-h{font-size:17px;font-weight:800;margin:1px 0 8px}
+  .hcard{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:8px 10px}
+  .row1{display:flex;align-items:flex-start;gap:8px}
+  .row1 .t{font-weight:700;font-size:13px;flex:1}
+  .rec{background:var(--pri);color:#fff;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600;white-space:nowrap}
+  .mini{font-size:11px;color:var(--dim);margin-top:2px}
+  .bar{height:5px;border-radius:999px;background:#d6e4fb;margin-top:7px;overflow:hidden}
+  .bar i{display:block;height:100%;width:52%;background:var(--pri);border-radius:999px}
+  .sec-h{font-size:15px;font-weight:800;margin:0 0 7px}
+  .fold{font-size:12px;color:var(--dim);display:flex;justify-content:space-between;padding:2px 2px 8px}
+  .cd{border:1px solid var(--line);background:var(--card);border-radius:11px;padding:7px 9px;display:flex;gap:9px;align-items:flex-start;margin-bottom:8px}
+  .cd.now{border-color:var(--pri200);background:var(--pri50)}
+  .cd .tm{width:38px;flex:none;text-align:right;font-size:11px;color:var(--dim);padding-top:2px;font-variant-numeric:tabular-nums}
+  .ax{width:2px;flex:none;border-radius:999px;background:var(--soft2);align-self:stretch}
+  .cd.now .ax{background:var(--pri)}
+  .cd .bd{flex:1;min-width:0}
+  .cd .nm{font-size:13px;font-weight:600;line-height:20px}
+  .cd.now .nm{color:var(--pri600);font-weight:700}
+  .cd .sb{font-size:11px;color:var(--dim);line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cd .mt{font-size:11px;color:var(--dim);padding-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .cd.now .mt{color:var(--pri600);font-weight:600}
+  .allline{font-size:12px;color:var(--dim);display:flex;justify-content:space-between;padding:3px 2px}
+  .addline{margin-top:9px;border:1px dashed #cfd6e2;border-radius:11px;padding:11px;text-align:center;color:var(--dim);font-size:13px}
+  .bigcard{background:var(--pri);color:#fff;border-radius:12px;padding:11px 12px;margin-bottom:8px}
+  .bigcard .l1{font-size:11px;opacity:.85}
+  .bigcard .l2{font-size:17px;font-weight:800;margin:2px 0 4px}
+  .bigcard .l3{font-size:11px;opacity:.9}
+  .bigcard .bar{margin-top:8px;background:rgba(255,255,255,.28)}
+  .bigcard .bar i{background:#fff;width:52%}
+  .hero.slim{padding:9px 11px}
+  .slim-row{display:flex;align-items:center;gap:8px}
+  .slim-row .n{font-weight:700;font-size:13px;flex:1}
+  .slim-row .m{font-size:11px;color:var(--dim)}
+  .mark{display:inline-block;background:#fff3cd;border-bottom:1px solid #e0b400;border-radius:2px;padding:0 2px}
+  table{border-collapse:collapse;width:100%;margin-top:26px;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{border-bottom:1px solid var(--line);padding:9px 12px;text-align:left;font-size:13px;vertical-align:top}
+  th{background:#f7f9fc;font-size:12px;color:#4a5364}
+  tr:last-child td{border-bottom:0}
+  .note{margin-top:18px;padding:13px 15px;background:#fff;border:1px solid var(--line);border-left:4px solid var(--pri);border-radius:8px;font-size:13px}
+  .note b{color:var(--pri600)}
+</style></head><body>
+
+<h1>今日页「顶卡」与「接下来」的重复问题 · 三个修法</h1>
+<p class="lead">同一个时刻（14:30，环境工程概论 14:00–15:45 正在上）。四张图里只有顶卡与列表的关系在变，其余元素一模一样。<span class="mark">黄色下划线</span>标出的是「同一件事被说了两遍」的地方。</p>
+
+<div class="grid">
+
+  <!-- ============ 现状 ============ -->
+  <div class="col">
+    <div class="cap">现状<span class="tag now">有重复</span></div>
+    <div class="say">顶卡说一遍「进行中 + 课名 + 地点 + 剩余 + 进度条」，下面那张卡几乎一字不差再说一遍。</div>
+    <div class="phone">
+      <div class="hero">
+        <div class="hero-t">10月9日 周五 · 第1周</div>
+        <div class="hero-h">下午好呀～再坚持一下下</div>
+        <div class="hcard">
+          <div class="row1">
+            <div>
+              <div class="t"><span class="mark">进行中 · 环境工程概论</span></div>
+              <div class="mini"><span class="mark">紫金港西2-301 · 还剩 75 分钟</span></div>
+            </div>
+            <div class="rec">录音</div>
+          </div>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+      <div class="sec-h">接下来</div>
+      <div class="fold"><span>已过 2 件 · 08:00–11:35</span><span>展开 ▾</span></div>
+      <div class="cd now">
+        <div class="tm">14:00</div><div class="ax"></div>
+        <div class="bd"><div class="nm"><span class="mark">环境工程概论</span></div>
+          <div class="sb"><span class="mark">紫金港西2-301</span> · 每周</div></div>
+        <div class="mt"><span class="mark">还剩 75 分</span></div>
+      </div>
+      <div class="cd"><div class="tm">16:45</div><div class="ax"></div>
+        <div class="bd"><div class="nm">弹性力学</div><div class="sb">紫金港北4-102 · 每周</div></div></div>
+      <div class="cd"><div class="tm">18:30</div><div class="ax"></div>
+        <div class="bd"><div class="nm">↻ 英语跟读打卡</div><div class="sb">每周</div></div></div>
+      <div class="allline"><span>全部 共 5 件 · 展开全部</span><span>▾</span></div>
+      <div class="addline">＋ 添加日程（班会、聚餐这类）</div>
+    </div>
+  </div>
+
+  <!-- ============ 甲 ============ -->
+  <div class="col">
+    <div class="cap">甲｜接下来跳过「此刻」<span class="tag a">我最推荐</span></div>
+    <div class="say">正在上课时，那一格不再进列表 —— <b>顶卡就是「现在」那一格</b>。列表中只剩还没开始的。</div>
+    <div class="phone">
+      <div class="hero">
+        <div class="hero-t">10月9日 周五 · 第1周</div>
+        <div class="hero-h">下午好呀～再坚持一下下</div>
+        <div class="hcard">
+          <div class="row1">
+            <div>
+              <div class="t">进行中 · 环境工程概论</div>
+              <div class="mini">紫金港西2-301 · 还剩 75 分钟</div>
+            </div>
+            <div class="rec">录音</div>
+          </div>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+      <div class="sec-h">接下来</div>
+      <div class="fold"><span>已过 2 件 · 08:00–11:35</span><span>展开 ▾</span></div>
+      <div class="cd"><div class="tm">16:45</div><div class="ax"></div>
+        <div class="bd"><div class="nm">弹性力学</div><div class="sb">紫金港北4-102 · 每周</div></div>
+        <div class="mt">85 分钟后</div></div>
+      <div class="cd"><div class="tm">18:30</div><div class="ax"></div>
+        <div class="bd"><div class="nm">↻ 英语跟读打卡</div><div class="sb">每周</div></div></div>
+      <div class="allline"><span>全部 共 5 件 · 展开全部</span><span>▾</span></div>
+      <div class="addline">＋ 添加日程（班会、聚餐这类）</div>
+    </div>
+    <div class="say" style="margin-top:9px">代价：时间轴上看不到 14:00 那格（11:35 之后直接跳 16:45）。不过顶卡就在正上方，视线连得上。</div>
+  </div>
+
+  <!-- ============ 乙 ============ -->
+  <div class="col">
+    <div class="cap">乙｜留一格，但只当刻度<span class="tag b">折中</span></div>
+    <div class="say">那格仍在列表里占位（时间轴不断），但<b>只留时间 + 课名</b>；地点、剩余分钟交给顶卡，不复读。</div>
+    <div class="phone">
+      <div class="hero">
+        <div class="hero-t">10月9日 周五 · 第1周</div>
+        <div class="hero-h">下午好呀～再坚持一下下</div>
+        <div class="hcard">
+          <div class="row1">
+            <div>
+              <div class="t">进行中 · 环境工程概论</div>
+              <div class="mini">紫金港西2-301 · 还剩 75 分钟</div>
+            </div>
+            <div class="rec">录音</div>
+          </div>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+      <div class="sec-h">接下来</div>
+      <div class="fold"><span>已过 2 件 · 08:00–11:35</span><span>展开 ▾</span></div>
+      <div class="cd now"><div class="tm">14:00</div><div class="ax"></div>
+        <div class="bd"><div class="nm">环境工程概论</div></div></div>
+      <div class="cd"><div class="tm">16:45</div><div class="ax"></div>
+        <div class="bd"><div class="nm">弹性力学</div><div class="sb">紫金港北4-102 · 每周</div></div></div>
+      <div class="cd"><div class="tm">18:30</div><div class="ax"></div>
+        <div class="bd"><div class="nm">↻ 英语跟读打卡</div><div class="sb">每周</div></div></div>
+      <div class="allline"><span>全部 共 5 件 · 展开全部</span><span>▾</span></div>
+      <div class="addline">＋ 添加日程（班会、聚餐这类）</div>
+    </div>
+    <div class="say" style="margin-top:9px">代价：那一格比邻居「瘦」一截，看着有点像没加载完（可用底色 + 蓝轴补足存在感）。</div>
+  </div>
+
+  <!-- ============ 丙 ============ -->
+  <div class="col">
+    <div class="cap">丙｜顶卡上课时压成一行<span class="tag c">动顶卡</span></div>
+    <div class="say">把「正在上」的完整信息<b>下移</b>到列表里做大卡，顶卡只留一行（课名 + 剩余 + 录音钮）。</div>
+    <div class="phone">
+      <div class="hero slim">
+        <div class="hero-t" style="margin-bottom:4px">10月9日 周五 · 第1周</div>
+        <div class="slim-row">
+          <span class="n">环境工程概论</span>
+          <span class="m">还剩 75 分</span>
+          <div class="rec">录音</div>
+        </div>
+      </div>
+      <div class="sec-h">接下来</div>
+      <div class="fold"><span>已过 2 件 · 08:00–11:35</span><span>展开 ▾</span></div>
+      <div class="bigcard">
+        <div class="l1">正在上</div>
+        <div class="l2">环境工程概论</div>
+        <div class="l3">14:00–15:45 · 紫金港西2-301 · 还剩 75 分</div>
+        <div class="bar"><i></i></div>
+      </div>
+      <div class="cd"><div class="tm">16:45</div><div class="ax"></div>
+        <div class="bd"><div class="nm">弹性力学</div><div class="sb">紫金港北4-102 · 每周</div></div>
+        <div class="mt">85 分钟后</div></div>
+      <div class="cd"><div class="tm">18:30</div><div class="ax"></div>
+        <div class="bd"><div class="nm">↻ 英语跟读打卡</div><div class="sb">每周</div></div></div>
+      <div class="allline"><span>全部 共 5 件 · 展开全部</span><span>▾</span></div>
+      <div class="addline">＋ 添加日程（班会、聚餐这类）</div>
+    </div>
+    <div class="say" style="margin-top:9px">代价：顶卡是上一轮刚定稿的代码（问候语、录音钮、进度条、通知栏快照都读它），动它有回归风险。</div>
+  </div>
+
+</div>
+
+<table>
+  <tr><th style="width:110px">选项</th><th>改哪里</th><th>好处</th><th>代价</th></tr>
+  <tr>
+    <td><b>甲</b> 跳过此刻</td>
+    <td>只改 <code>TodayPage.vue</code> 的列表（过滤掉「进行中」那条）。<code>RowItem.vue</code> 不动。</td>
+    <td>零重复；一屏少一张卡，更快看到「再接下来」。</td>
+    <td>时间轴上 11:35 之后直接跳 16:45，中间少一格。</td>
+  </tr>
+  <tr>
+    <td><b>乙</b> 只当刻度</td>
+    <td>只改 <code>TodayPage.vue</code> 给那一格少传两个字段。<code>RowItem.vue</code> 不动。</td>
+    <td>时间轴连续、信息零复读；改动最小。</td>
+    <td>那一格比邻居矮/瘦，需要靠底色撑住存在感。</td>
+  </tr>
+  <tr>
+    <td><b>丙</b> 顶卡压一行</td>
+    <td>要动 <code>App.vue</code> 顶卡模板 + <code>heroMode/heroTitle/heroSub</code> 分支。</td>
+    <td>「现在」只有一处、且最大最全，视觉层级最强。</td>
+    <td>顶卡刚定稿，动它要重跑 heroMode / 录音钮 / 进度条 / 通知栏快照的全部断言。</td>
+  </tr>
+</table>
+
+<div class="note">
+  <b>另外还有一处轻微重复（顺带说清）：</b>不在上课时，顶卡会说「下一节 · 弹性力学 16:45」，而列表里那张卡也是「16:45 弹性力学 …」——
+  但那张卡多给了地点和「85 分钟后」，信息量不同，<b>这一处我建议留着</b>（顶卡负责「一眼看到下一个是谁」，列表负责「完整那一行」）。
+  真正值得修的就是<b>上课中那一格</b>。
+</div>
+
+</body></html>
