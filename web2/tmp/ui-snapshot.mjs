@@ -1,6 +1,6 @@
 /* 全 App 版式截图（改版评估用，产物进 tmp/，不入库）
    跑法：先起 dist 静态服务（默认 4177），再 node tmp/ui-snapshot.mjs
-   会走一遍引导选「先用示例数据逛逛」，然后把 5 个底部 tab 各拍一张整页长图。 */
+   会种标记跳过引导（示例态），然后把 5 个底部 tab 各拍一张整页长图。 */
 const { chromium } = await import('file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs')
 const BASE = process.env.TW_URL || 'http://127.0.0.1:4177/'
 
@@ -10,13 +10,11 @@ const page = await ctx.newPage()
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(900)
 
-/* 引导页：选「先用示例数据逛逛」，否则后面看到的都是空态 */
-const demo = page.locator('button', { hasText: '先用示例数据逛逛' })
-if (await demo.count()) {
-  await demo.first().click()
-  await page.waitForTimeout(800)
-  console.log('已进入示例数据')
-}
+/* 引导页：2026-10-09 起「先用示例数据逛逛」已删，改为种标记跳过引导；
+   没有 web2.data 时源就是 mock，后面看到的仍是示例数据 */
+await page.addInitScript(() => { try { localStorage.setItem('web2.onboarded', '1') } catch (e) {} })
+await page.reload({ waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(800)
 
 const tabs = [['今日', 'today'], ['周课表', 'week'], ['日程', 'list'], ['打卡', 'habit'], ['我的', 'me']]
 for (const [label, key] of tabs) {

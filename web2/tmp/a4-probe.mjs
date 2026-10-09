@@ -8,8 +8,10 @@ const ctx = await browser.newContext({ viewport: { width: 360, height: 640 }, de
 const page = await ctx.newPage()
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(900)
-const demo = page.locator('button', { hasText: '先用示例数据逛逛' })
-if (await demo.count()) { await demo.first().click(); await page.waitForTimeout(900); console.log('已进入示例数据') }
+/* 引导页：2026-10-09 起「先用示例数据逛逛」已删，改为种标记跳过引导（无 web2.data ⇒ 示例态） */
+await page.addInitScript(() => { try { localStorage.setItem('web2.onboarded', '1') } catch (e) {} })
+await page.reload({ waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(800)
 
 console.log('localStorage 键: ' + await page.evaluate(() => Object.keys(localStorage).map((k) => k + '=' + String(localStorage.getItem(k)).slice(0, 24)).join(' | ')))
 

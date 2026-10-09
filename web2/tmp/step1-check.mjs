@@ -15,8 +15,11 @@ const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, de
 const page = await ctx.newPage()
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(900)
-const demo = page.locator('button', { hasText: '先用示例数据逛逛' })
-if (await demo.count()) { await demo.first().click(); await page.waitForTimeout(800) }
+/* 引导页：2026-10-09 起「先用示例数据逛逛」已删，改为直接种标记跳过引导，
+   落到与以前同样的示例数据态（无 web2.data ⇒ 源是 mock）。 */
+await page.addInitScript(() => { try { localStorage.setItem('web2.onboarded', '1') } catch (e) {} })
+await page.reload({ waitUntil: 'domcontentloaded' })
+await page.waitForTimeout(800)
 
 console.log('\n[A] 底部导航')
 const labels = await page.locator('nav button').allInnerTexts()

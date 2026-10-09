@@ -51,7 +51,7 @@ try {
   const masks = () => page.evaluate(() => document.querySelectorAll('div.fixed.inset-0.bg-black\\/40').length)
 
   // 1. 今日页、无弹层 → 退出预备提示，2 秒内再按才退出
-  t('0. 引导页未出现（seed 生效）', !(await page.locator('text=先用示例数据逛逛').isVisible().catch(() => false)))
+  t('0. 引导页未出现（seed 生效）', !(await page.locator('[data-ob-step]').isVisible().catch(() => false)))
   await fire()
   t('1a. 今日页无弹层：显示「再按一次返回键退出」', await page.locator('text=再按一次返回键退出').isVisible())
   t('1b. 未立即退出', (await exits()) === 0)

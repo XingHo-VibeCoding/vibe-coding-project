@@ -16,6 +16,7 @@ const {
   llmTest,
   onboardFile,
   onboardImport,
+  onboardEduLogin,
   obImportMsg,
   onOnboardFile,
   obForm,
@@ -121,28 +122,33 @@ const {
                overflow-hidden 把 ±26px 平移关在框内，不撑出横向滚动条。 -->
           <Transition :name="obStepDir">
           <div v-if="onboardStep === 'choice'" key="choice" class="relative overflow-hidden">
+            <!-- 三个入口（2026-10-09 用户重排）：上／中／下分别是「自己填学期」「连教务抓」「导文件」，
+                 按「最省事的放中间」排。原来那个「先用示例数据逛逛」已删掉——示例数据以后只从「我的」页切。 -->
             <button
               class="w-full rounded-2xl border border-line bg-card p-4 text-left shadow-sm transition active:scale-[0.98]"
-              @click="finishOnboarding"
+              data-ob-choice-form
+              @click="goObForm"
             >
-              <p class="text-sm font-semibold">先用示例数据逛逛</p>
-              <p class="mt-1 text-xs text-ink-dim">一套假数据体验全部功能，随时可在「我的」页换成真实课表</p>
+              <p class="text-sm font-semibold">直接填学期信息，自己加课</p>
+              <p class="mt-1 text-xs text-ink-dim">三步走：先填学期与节次表 → 再拍课表截图识别（也可以跳过）→ 核对后入库</p>
             </button>
             <button
               class="mt-3 w-full rounded-2xl border border-primary-200 bg-primary-50/60 p-4 text-left shadow-sm transition active:scale-[0.98]"
+              data-ob-choice-edu
+              @click="onboardEduLogin"
+            >
+              <p class="text-sm font-semibold text-primary-600">登录教务系统，直接抓课表</p>
+              <p class="mt-1 text-xs text-ink-dim">用你的统一身份认证账号登录，抓回来先给你核对再入库；也能顺手从教务导出的 Excel 导入</p>
+            </button>
+            <button
+              class="mt-3 w-full rounded-2xl border border-line bg-card p-4 text-left shadow-sm transition active:scale-[0.98]"
+              data-ob-choice-import
               @click="onboardImport"
             >
-              <p class="text-sm font-semibold text-primary-600">导入主项目数据</p>
-              <p class="mt-1 text-xs text-ink-dim">在主项目「导出/备份」生成 JSON 文件，在这里选中它</p>
+              <p class="text-sm font-semibold">导入数据</p>
+              <p class="mt-1 text-xs text-ink-dim">选主项目导出的 JSON 备份，或教务导出的课表 Excel（.xlsx）</p>
             </button>
-          <button
-            class="mt-3 w-full rounded-2xl border border-line bg-card p-4 text-left shadow-sm transition active:scale-[0.98]"
-            @click="goObForm"
-          >
-            <p class="text-sm font-semibold">直接填学期信息，自己加课</p>
-            <p class="mt-1 text-xs text-ink-dim">三步走：先填学期与节次表 → 再拍课表截图识别（也可以跳过）→ 核对后入库</p>
-          </button>
-          <p v-if="obImportMsg" class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">{{ obImportMsg }}</p>
+            <p v-if="obImportMsg" class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">{{ obImportMsg }}</p>
           </div>
 
           <!-- 第 2 步的引导子页：没配 AI Key 时落这里（第一次用的人都没有 Key）。
@@ -639,7 +645,7 @@ const {
           </Transition>
 
                     <p class="mt-6 text-center text-[11px] text-ink-dim">这个选择只记一次，之后随时可以在「我的」页切换示例或导入</p>
-          <input ref="onboardFile" type="file" accept=".json,application/json" class="hidden" @change="onOnboardFile" />
+          <input ref="onboardFile" data-ob-file type="file" accept=".json,application/json,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" @change="onOnboardFile" />
           <input ref="obRecFile" type="file" accept="image/*" class="hidden" @change="onObRecFile" />
         </div>
       </div>

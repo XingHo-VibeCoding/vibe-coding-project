@@ -19,12 +19,12 @@ try {
   await page.goto('http://127.0.0.1:4177/', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(700)
 
-  // 前置：干净环境应出现引导页
-  const ob = page.locator('text=先用示例数据逛逛')
+  // 前置：干净环境应出现引导页（2026-10-09 起「先用示例数据逛逛」已删，改用引导页根锚点认）
+  const ob = page.locator('[data-ob-step]')
   t('0. 干净环境出现引导页', await ob.isVisible())
 
-  const onboarding = page.locator('text=先用示例数据逛逛')
-  const obInput = page.locator('input[accept=".json,application/json"]') // 引导层的 file input（此刻设置二级页未打开，无同名输入）
+  const onboarding = page.locator('[data-ob-step]')
+  const obInput = page.locator('[data-ob-file]') // 引导层的 file input（此刻设置二级页未打开，无同名输入）
 
   // 1. 上传坏文件 → 引导页不关 + 就地红字报错
   await obInput.setInputFiles('D:/Document/Project/vibe-coding-project/web2/tmp/bad-import.txt')
