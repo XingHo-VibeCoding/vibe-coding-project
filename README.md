@@ -83,6 +83,23 @@ js/views.js       渲染层：把数据画成界面
 js/app.js         入口层：绑定事件，串起取数→校验→存数→重渲染
 ```
 
+## 自检 Skill（交付前跑一遍）
+
+`skills/` 下是可复用的检查清单，每条规则都来自项目**真实踩过的坑**。
+
+**发布前检查 `verify-project`** — 推代码 / 出 APK / 发演示链接**之前**跑一遍，把「可能悄悄坏掉」的环节全查一次（密钥卫生、两份 `errors.js` 是否逐字节一致、`APP_CTX` 漏解构、安全区、构建、质量门、测试基线、APK 三方一致、版本号、推前连通性、文档同步），逐项给 `PASS/FAIL/SKIP` + 一行证据：
+
+```bash
+node skills/verify-project/verify.mjs          # 全量（含构建 / 质量扫描 / 基线 / 验包，几分钟）
+node skills/verify-project/verify.mjs --fast   # 快档：跳过构建与出包链，改前端小逻辑时用
+```
+
+退出码即结论：**任一 FAIL → 1；全 PASS（SKIP 不算 FAIL）→ 0**。明细同时写进 `skills/verify-project/last-run.txt`。说明见 [SKILL.md](./skills/verify-project/SKILL.md)。
+
+> 规矩：**新增检查项必须先自证会报红**（故意造个坏样例确认真 FAIL 再恢复）——静默假通过的检查器比没有更危险。
+
+另有 `skills/frontend-guidelines` — 前端改动检查清单。
+
 ## 文档
 
 - [设计方案](./大学生日程助手-设计方案.md) — 产品定位与五期路线

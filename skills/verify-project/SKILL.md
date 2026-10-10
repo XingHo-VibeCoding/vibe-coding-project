@@ -80,3 +80,5 @@ node skills/verify-project/verify.mjs --fast   # 快档：跳过 D2/D3/D4/E1（�
 > 每次真实调用本清单，在这里追加一行：日期 ｜ 用在哪个改动 ｜ 结论（几条 PASS/FAIL/SKIP、有无新增规则）。
 
 - 2026-10-09 ｜ Day 25 制作本 Skill（板块③实跑验证）｜ 首轮跑出误报并修正；随后故意改坏 `cloudfunctions/list/errors.js` 一个字节，确认 B1 真的报 FAIL，`git checkout` 恢复后复跑全绿。
+- 2026-10-10 凌晨 ｜ Day 25 全量实跑 ｜ 16 PASS / 1 FAIL（D4）/ 1 SKIP（E1）。D4 的 5 个红（`grid-status-check` / `listen-ui-check` / `numberwheel-touch-check` / `wheel-touch-gesture-check` / `rec-assoc-check`）经 A/B 实测（`git checkout HEAD -- web2/src/App.vue` 后逐条结果完全一致）确认是**既有问题、与当时未提交的改动无关**；这些脚本都用 `new Date()` 造相对当前时刻的 fixture，跨零点跑会自洽性崩掉（HEAD 基线是当天 12:21 记的，本次跑在 00:15–00:40）。白天复跑是否全绿**尚未验证**。当日新增/修正 4 处检查器自身 bug：E3 版本号误报、D4 解析（读产物而非 grep 控制台）、B1 行尾陷阱文档、E2 经 `cmd /c` 调 apksigner。
+- 2026-10-10 ｜ Day 25 二次自证 ｜ 再次故意给 `cloudfunctions/list/errors.js` 追加一行（8992 → 9061 B）→ B1 报 FAIL（blob `91b3460308b4…` ≠ `b9ebce728f76…`）→ `git -c core.autocrlf=false checkout --` 还原 → 快档复跑 13 PASS / 0 FAIL / 5 SKIP，exit 0。
