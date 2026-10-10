@@ -46,7 +46,7 @@ node skills/verify-project/verify.mjs --fast   # 快档：跳过 D2/D3/D4/E1（�
 | D1 | 本地静态服务可访问 | `127.0.0.1:4177` 探通；**没起就自己 detached 拉起**再探 | 全档 |
 | D2 | 生产构建通过 | `vite build` exit 0 且 `web2/dist/index.html` 存在 | 全量 |
 | D3 | 全页质量扫描 0 处问题 | `node tmp/quality-scan.mjs` 输出「合计：0 处问题」 | 全量 |
-| D4 | 测试基线无非 0 退出 | `node tmp/day19-baseline.mjs` 产物 `tmp/day19-baseline.txt` 里 `[exit N]` 行的非 0 数 = 0（⚠ 该脚本控制台**不打印汇总句**，末行只是失败脚本名，所以必须读产物文件而不是 grep 控制台） | 全量 |
+| D4 | 测试基线无非 0 退出 | `node tmp/day19-baseline.mjs` 产物 `tmp/day19-baseline.txt` 里 `[exit N]` 行的非 0 数 = 0（⚠ 该脚本控制台**不打印汇总句**，末行只是失败脚本名，所以必须读产物文件而不是 grep 控制台。⚠ **凌晨跨零点跑会假红**：`grid-status-check` / `rec-assoc-check` / `listen-ui-check` / `wheel-touch-gesture-check` / `numberwheel-touch-check` 拿 `new Date()` 造相对当前时刻的 fixture，跨零点自洽性崩掉，白天同样代码全绿；遇红先用 A/B 区分真回归还是既有问题） | 全量 |
 
 ### E 组｜出包链
 | # | 检查 | 通过标准 | 备注 |
@@ -82,3 +82,4 @@ node skills/verify-project/verify.mjs --fast   # 快档：跳过 D2/D3/D4/E1（�
 - 2026-10-09 ｜ Day 25 制作本 Skill（板块③实跑验证）｜ 首轮跑出误报并修正；随后故意改坏 `cloudfunctions/list/errors.js` 一个字节，确认 B1 真的报 FAIL，`git checkout` 恢复后复跑全绿。
 - 2026-10-10 凌晨 ｜ Day 25 全量实跑 ｜ 16 PASS / 1 FAIL（D4）/ 1 SKIP（E1）。D4 的 5 个红（`grid-status-check` / `listen-ui-check` / `numberwheel-touch-check` / `wheel-touch-gesture-check` / `rec-assoc-check`）经 A/B 实测（`git checkout HEAD -- web2/src/App.vue` 后逐条结果完全一致）确认是**既有问题、与当时未提交的改动无关**；这些脚本都用 `new Date()` 造相对当前时刻的 fixture，跨零点跑会自洽性崩掉（HEAD 基线是当天 12:21 记的，本次跑在 00:15–00:40）。白天复跑是否全绿**尚未验证**。当日新增/修正 4 处检查器自身 bug：E3 版本号误报、D4 解析（读产物而非 grep 控制台）、B1 行尾陷阱文档、E2 经 `cmd /c` 调 apksigner。
 - 2026-10-10 ｜ Day 25 二次自证 ｜ 再次故意给 `cloudfunctions/list/errors.js` 追加一行（8992 → 9061 B）→ B1 报 FAIL（blob `91b3460308b4…` ≠ `b9ebce728f76…`）→ `git -c core.autocrlf=false checkout --` 还原 → 快档复跑 13 PASS / 0 FAIL / 5 SKIP，exit 0。
+- 2026-10-10 08:58 白天全量复跑 ｜ **17 PASS / 0 FAIL / 1 SKIP（E1）**，exit 0 —— **D4 全绿：97 个脚本，非 0 退出 0 个**。⚠ 教训：D4 的红有**两种**来源，别慌也别甩锅——① 真回归（改代码改坏了）；② **凌晨跑**：几个脚本（`grid-status-check` / `rec-assoc-check` / `listen-ui-check` / `wheel-touch-gesture-check` / `numberwheel-touch-check`）拿 `new Date()` 造相对当前时刻的 fixture，**跨零点**时「当天剩余时间 / 学期剩余周数」自洽性崩掉，白天同样代码全绿。遇到 D4 红先看**跑的时刻**，再用 A/B（`git checkout HEAD -- <改动文件>`）区分是「真回归」还是「本来就红」。
