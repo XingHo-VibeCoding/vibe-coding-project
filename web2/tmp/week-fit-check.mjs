@@ -74,14 +74,14 @@ console.log('B 明细:', JSON.stringify(B))
 t('B1 网格底边在底部导航之上（≥6px 间隙）', B.gap >= 6, `间隙 ${B.gap}px`)
 t('B2 网格填满剩余空间（间隙 ≤14px，不留大空档）', B.gap <= 14, `间隙 ${B.gap}px`)
 
-/* ---- H 锁死 + 课表页问候卡收起（Stage 8 起：课表页不要那张与今日页重复的问候卡，
-        整张头部在课表页收成 0 高，网格拿回整屏；今日页头部照旧） ---- */
+/* ---- H 锁死 + 课表页问候卡离场（Stage 8 起：课表页不要那张与今日页重复的问候卡，
+        2026-10-12 用户 m03248 起改为「头卡只属今日页、跟着横向平移滑出视口」，
+        不再靠竖向 0fr 裁切；今日页头部照旧） ---- */
 const H = await page.evaluate(() => {
   const hdr = document.querySelector('header')
   const wrap = hdr && hdr.parentElement
   const main = document.querySelector('main[data-page="week"]')
-  /* 问候语「可见」= 真的能被点到：header 被 0fr + overflow:hidden 裁掉后，
-     h1 自己的 rect 仍是布局原值（height>0、top 在视口里），只能问命中测试。 */
+  /* 问候语「可见」= 真的能被点到。 */
   let greetingVisible = false
   const h1 = document.querySelector('header h1')
   if (h1) {
@@ -93,9 +93,12 @@ const H = await page.evaluate(() => {
       greetingVisible = !!(hit && hdr.contains(hit))
     }
   }
+  const wr = wrap ? wrap.getBoundingClientRect() : null
   return {
     headerVisibleH: wrap ? +wrap.getBoundingClientRect().height.toFixed(1) : -1,
     headerNaturalH: +hdr.getBoundingClientRect().height.toFixed(1),
+    /* 新口径：浮层横向已离开视口（right ≤ 1）才算「课表页看不到问候卡」 */
+    wrapRight: wr ? +wr.right.toFixed(1) : -9999,
     mainTop: main ? +main.getBoundingClientRect().top.toFixed(1) : -1,
     greetingVisible,
     locked: document.body.style.overflow === 'hidden',
@@ -104,7 +107,7 @@ const H = await page.evaluate(() => {
 })
 console.log('H 明细:', JSON.stringify(H))
 t('H1 周课表页锁死文档滚动（body overflow hidden）', H.locked, `scrollable=${H.scrollable}px`)
-t('H2 课表页问候卡收起（可见高度 ≤2px，卡片本体仍在 DOM 里只是被裁掉）', H.headerVisibleH <= 2, `可见 ${H.headerVisibleH}px / 自然高 ${H.headerNaturalH}px`)
+t('H2 课表页问候卡已滑出视口（浮层右边缘 ≤1px）', H.wrapRight <= 1, `右边缘 ${H.wrapRight}px / 自然高 ${H.headerNaturalH}px`)
 t('H3 课表页没有可见的问候语（今日页那句不在这里重复）', H.greetingVisible === false, `greetingVisible=${H.greetingVisible}`)
 t('H4 课表页从页面顶端开始（收起的头部不留空白）', H.mainTop <= 2, `mainTop=${H.mainTop}px`)
 

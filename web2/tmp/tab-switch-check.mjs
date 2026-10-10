@@ -1,14 +1,17 @@
-/* tab-switch-check：切页时头部高度不许「一帧硬跳」。
-   背景（2026-10-12，用户 m02386 报「现在可以修复页面切换动画了」）：
-     今日 ↔ 周课表 切换时 header 高首帧一次性跳 ±44px，之后才恢复缓动。
-     真凶是学期进度带 `data-term-ribbon`（带高 32.5 + mt-3 12 = 44.5px）
-     原先挂在 header 的 1fr/0fr 塌缩格之外、且带 `tab === 'today'` 条件，
-     切页时 v-if 一插入/一移除就瞬时增减，不参与 280ms 过渡。
-     修法：搬进塌缩格 + 去掉 tab 条件（只留 v-if="termInfo"）。
-   本脚本守两件事：
-     A. 两个方向的 header 高首帧变化必须「像缓动起步」，不许出现 ≥ 一个
-        ribbon 高的瞬时位移（判据：首帧位移 < 15px，且 1s 内到稳态）。
-     B. 学期进度带只在今日页可见（周课表/我的页必须被塌缩格裁掉）。
+/* tab-switch-check：切页必须是「整页横向平移」，不许再有卡片收缩动画。
+   背景（2026-10-12，用户 m03248）：
+     「今日 ↔ 周课表 切换非常割裂：从今日切周课表时上面的卡片先是消失、
+       然后页面才切换；周课表上的卡片和首页的卡片已经不是同一个东西。
+       干脆删掉这两页之间切换时卡片收缩的动画，直接把整个页面平移过去。」
+   旧做法：header 是三页共享的浮层，切页靠外层 grid-rows 1fr→0fr 竖向塌缩，
+          平移层还要等 110ms 才动 ⇒ 用户看到「卡片先没了、页面才切」。
+   新做法：header 只属于今日页，和今日页用同一组参数（280ms / cubic-bezier(0.32,0.72,0.35,1)
+          / 同一个 swipeDx）一起横向平移；两处 grid 塌缩与 110ms 错峰全部删除。
+   本脚本守三件事：
+     A. 两个方向的切页都是「横向滑」，且①首帧不硬跳 ②相邻帧无大台阶
+        ③切页全程头卡高度恒定（证明卡片确实不再竖向塌缩）。
+     B. 头卡随今日页走：周课表 / 我的页上它必须已在视口外（我的页不再显示问候卡，m03289）。
+     C. 学期进度带只在今日页可见。
    跑法：先起 dist 静态服务（默认 4177），再 node tmp/tab-switch-check.mjs */
 import * as pw from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 const { chromium } = pw
@@ -52,10 +55,9 @@ const KEY = { '今日': 'today', '周课表': 'week', '我的': 'me' }
 const activeKey = () => page.evaluate(() => (document.querySelector('nav [data-nav][data-active="1"]') || {}).dataset?.nav || null)
 
 // 把正在跑的 CSS 过渡直接推到终态，再读布局。
-// ⚠ headless Chrome 在机器有负载时**动画时钟会停摆**：所有 transition 永远
-// `currentTime=0 / playState=running`，等多久都不落地（实测等 3s，header 仍 273）。
-// 这不是产品问题——把 transition 关掉立刻就是正确布局（week: header 76）。
-// 所以「稳态」类断言必须先把动画 finish 掉，否则读到的是过渡起点，会假挂。
+// ⚠ headless Chrome 在机器有负载时合成帧会被饿到 ~0.6fps：280ms 的过渡整个发生在
+// 两帧之间，rAF/定时器只会采到「起点 → 终点」。所以「稳态」类断言必须先把动画
+// finish 掉，否则读到的是过渡起点，会假挂。
 const settle = () => page.evaluate(() => { for (const a of document.getAnimations()) { try { a.finish() } catch {} } })
 
 // 点某个 tab，并**确认真的切过去了**再继续。
@@ -70,24 +72,23 @@ async function clickTab(name) {
   return false
 }
 
-// 采一次切页的**真实插值轨迹**。
-//
-// ⚠ 为什么不能靠 rAF/定时器逐帧采：
-//   本机（高负载）headless Chrome 的合成帧会被饿到 ~0.6fps（实测 5 个 rAF 花了
-//   8.4s），280ms 的过渡**整个发生在两帧之间**。用 rAF 采样只会得到「起点 → 终点」
-//   两个点，既看不出中间过程，也看不出「第一帧一次性跳了 44px」。这不是产品问题，
-//   是采样方法的局限。
-// 因此改为**主动驱动动画时钟**：点完等一个宏任务让 Vue 把 DOM 更新掉（关键！否则
-// getAnimations() 拿不到切页产生的过渡），把每个 CSSTransition pause 住，手动把
-// currentTime 从 0 推到 delay+duration，逐点读 header 高 —— 不依赖合成器帧，采到的
-// 就是浏览器真实计算出的插值轨迹（已在 headless 下验证：header 261→86→77→76）。
+/* 采一次切页的**真实插值轨迹**。
+   ⚠ 为什么不能靠 rAF/定时器逐帧采：本机 headless 合成帧会被饿到 ~0.6fps，
+     280ms 的过渡整个发生在两帧之间，只能采到起点与终点，看不出过程。
+   因此改为**主动驱动动画时钟**：点完等一个宏任务让 Vue 把 DOM 更新掉（关键！否则
+   getAnimations() 拿不到切页产生的过渡），把每个 CSSTransition pause 住，手动把
+   currentTime 从 0 推到 delay+duration，逐点读「浮层左边缘 + 头卡高」——
+   不依赖合成器帧，采到的就是浏览器真实计算出的插值轨迹。
+   每点同时记头卡高：新做法下它必须全程恒定（不再竖向塌缩）。 */
 async function switchAndSample(from, to) {
   if (!(await clickTab(from))) return { err: `切不到「${from}」` }
   await settle()
   await page.waitForTimeout(300)
   const seq = await page.evaluate(async (n) => {
-    const h = () => Math.round(document.querySelector('header').offsetHeight)
-    const out = [{ t: 0, h: h() }] // 点击前的稳态
+    const wrap = document.querySelector('[data-hero-wrap]')
+    const hd = document.querySelector('header')
+    const read = () => ({ left: Math.round(wrap.getBoundingClientRect().left), hh: Math.round(hd.offsetHeight) })
+    const out = [{ t: 0, ...read() }] // 点击前的稳态
     document.querySelector(`nav [data-nav="${n}"]`).click()
     // 等一个宏任务：Vue 的响应式更新在微任务里跑完，过渡这时才建得出来。
     await new Promise((r) => setTimeout(r, 30))
@@ -96,7 +97,7 @@ async function switchAndSample(from, to) {
     // 真实时钟走了多少（负载低时 30ms 已推进 ~10%），会让「首帧位移」忽大忽小。
     for (const a of anims) { try { a.pause(); a.currentTime = 0 } catch {} }
     void document.body.offsetHeight
-    out.push({ t: 1, h: h() }) // 第一帧：DOM 已更新、动画停在起点
+    out.push({ t: 1, ...read() }) // 第一帧：DOM 已更新、动画停在起点
     if (!anims.length) return out
     let total = 0
     for (const a of anims) {
@@ -110,7 +111,7 @@ async function switchAndSample(from, to) {
       const t = (i / STEPS) * total
       for (const a of anims) { try { a.currentTime = t } catch {} }
       void document.body.offsetHeight // 逼样式重算，否则读到的还是上一帧布局
-      out.push({ t: 1 + Math.round(t), h: h() })
+      out.push({ t: 1 + Math.round(t), ...read() })
     }
     return out
   }, KEY[to])
@@ -131,43 +132,68 @@ for (const [label, from, to] of [['今日 → 周课表', '今日', '周课表']
   // 采样是手动驱动动画时钟得来的，步长均匀且与真实帧率无关：
   // 相邻两次采样的间隔就是 total/STEPS ms（≈7ms），无需再按 Δt 过滤空隙。
   const first = seq[1]
-  const jump = Math.abs(first.h - seq[0].h)
-  const settled = seq[seq.length - 1].h
-  // A2：手动驱动的采样步长均匀（每步 ≈ total/STEPS ms），相邻两点就是「一帧」，
-  // 不需要再按 Δt 过滤空隙。
+  const jump = Math.abs(first.left - seq[0].left)
+  const settledLeft = seq[seq.length - 1].left
+  const heights = seq.map((x) => x.hh)
+  const hMin = Math.min(...heights)
+  const hMax = Math.max(...heights)
+  // 相邻两点就是「一帧」；横向一帧走的像素 = 屏宽 / 帧数
   const pairs = []
-  for (let i = 2; i < seq.length; i++) {
-    pairs.push({ dt: seq[i].t - seq[i - 1].t, d: Math.abs(seq[i].h - seq[i - 1].h) })
-  }
-  const maxMid = pairs.length ? Math.max(...pairs.map((p) => p.d)) : 0
-  const trace = seq.slice(0, 12).map((x) => `${x.t}:${x.h}`).join(' ')
-  console.log(`  ${label}  首帧 ${seq[0].h} → ${first.h}（Δ${jump}）  稳态 ${settled}px  帧数 ${seq.length}  有效相邻对 ${pairs.length}`)
-  console.log(`           前 12 帧 ${trace}`)
-  // A1: 首帧位移不许是一个 ribbon 高（44.5px）的瞬时插入/移除
-  ok(`${label} 首帧无硬跳`, jump < 15, `Δ${jump}px（阈值 15；ribbon 瞬时增减会是 44.5）`)
-  // A2: 真正相邻的两帧之间不该出现单帧 ≥30px 的瞬时台阶
-  ok(`${label} 相邻帧无大台阶`, maxMid < 30, `maxΔ=${maxMid}px / 有效对 ${pairs.length}（阈值 30；空隙帧已按 Δt≤40ms 过滤）`)
+  for (let i = 2; i < seq.length; i++) pairs.push(Math.abs(seq[i].left - seq[i - 1].left))
+  const maxMid = pairs.length ? Math.max(...pairs) : 0
+  const trace = seq.slice(0, 10).map((x) => `${x.t}:${x.left}`).join(' ')
+  console.log(`  ${label}  首帧 left ${seq[0].left} → ${first.left}（Δ${jump}px）  稳态 left ${settledLeft}  头卡高 ${hMin}~${hMax}  帧数 ${seq.length}`)
+  console.log(`           前 10 帧 ${trace}`)
+  // A1: 首帧不许出现整个屏宽的瞬时位移（那是「硬跳」而不是过渡）
+  ok(`${label} 首帧无硬跳`, jump < 20, `Δ${jump}px（阈值 20）`)
+  // A2: 相邻两帧之间不该出现单帧 ≥ 1/4 屏宽（97.5px）的台阶
+  ok(`${label} 相邻帧无大台阶`, maxMid < 98, `maxΔ=${maxMid}px / 有效对 ${pairs.length}`)
+  // A3: 新做法的核心 —— 切页全程头卡高度恒定，允许 ±2px 的取整抖动。
+  //     旧做法（卡片竖向塌缩）这里会是 279 → 0，所以这条能真抓住「又改回塌缩」。
+  ok(`${label} 头卡不再竖向塌缩（全程高度恒定）`, hMax - hMin <= 2, `头卡高 ${hMin}~${hMax}（极差 ${hMax - hMin}px）`)
+  // A4: 该滑出时必须真的滑出视口（不是只挪一点点）
+  const wantOff = to === '周课表'
+  if (wantOff) ok(`${label} 尾帧浮层已滑出视口`, settledLeft <= -380, `left=${settledLeft}`)
 }
 
-// B: 学期进度带只在今日页可见
+/* ================= B. 头卡归今日页：周课表 / 我的页上它必须在视口外 ================= */
+for (const name of ['周课表', '我的']) {
+  const landed = await clickTab(name)
+  await page.waitForTimeout(800)
+  await settle()
+  const r = await page.evaluate(() => {
+    const wrap = document.querySelector('[data-hero-wrap]')
+    const b = wrap.getBoundingClientRect()
+    return { left: Math.round(b.left), right: Math.round(b.right), vw: window.innerWidth }
+  })
+  if (!landed) {
+    fail++
+    console.log(`  [FAIL] 头卡在「${name}」页 —— 没切到该页，不能判`)
+    continue
+  }
+  ok(`头卡在「${name}」页已滑出视口`, r.right <= 2, JSON.stringify(r))
+}
+
+/* ================= C. 学期进度带只在今日页可见 ================= */
 for (const [name, wantVisible] of [['今日', true], ['周课表', false], ['我的', false]]) {
   const landed = await clickTab(name)
-  await page.waitForTimeout(900)
+  await page.waitForTimeout(800)
   await settle() // 动画时钟正常时也要先落地，否则量到的是过渡中间态
   const r = await page.evaluate(() => {
     const el = document.querySelector('[data-term-ribbon]')
-    const hd = document.querySelector('header')
     if (!el) return { present: false }
     const b = el.getBoundingClientRect()
-    const hb = hd.getBoundingClientRect()
-    return { present: true, h: Math.round(b.height), visible: b.height > 0 && b.bottom <= hb.bottom + 1 }
+    const vw = window.innerWidth
+    // 可见 = 有高度、且横向落在视口里（新做法下它跟着今日页横移，不再靠竖向裁切）
+    const inView = b.height > 0 && b.right > 1 && b.left < vw - 1
+    return { present: true, h: Math.round(b.height), left: Math.round(b.left), inView }
   })
   if (!landed) {
     fail++
     console.log(`  [FAIL] 学期进度带在「${name}」—— 没切到该页，不能判`)
     continue
   }
-  ok(`学期进度带在「${name}」${wantVisible ? '可见' : '被裁掉'}`, r.present && r.visible === wantVisible, JSON.stringify(r))
+  ok(`学期进度带在「${name}」${wantVisible ? '可见' : '不可见'}`, r.present && r.inView === wantVisible, JSON.stringify(r))
 }
 
 ok('全程无 pageerror', errs.length === 0, errs.slice(0, 2).join(' | ') || '无')

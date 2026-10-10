@@ -92,18 +92,15 @@ const TAB_KEYS = ['today', 'week', 'me']
 const tabIndex = computed(() => TAB_KEYS.indexOf(tab.value))
 const weekSub = ref('week') // 课表页内「周课表 / 日程清单」分段（2026-10-03 方案 C Step 1：日程页并入）
 const habitSheet = ref(false) // 打卡浮层（原「打卡」tab 改底部浮层，2026-10-03）
-/* 时序编排（用户反馈：header 收缩与内容平移同时发生=斜向甩感）：
-   进/出今日时 header 的收缩展开用各自的 transition-delay（模板里 per-element
-   `tab==='today' ? '110ms' : '0ms'`）与平移错开，每段运动单方向，折线代替斜线。
-   平移层自己的延迟见 stripDelay——只保留「离开今日」一档。 */
-/* 平移层过渡延迟：110ms 是「跨今日边界」的折线编排（header 收缩/展开与平移错开，
-   避免斜向甩感）。但原来写成「目的地不是今日就延迟」，导致周课表↔我的（两边都
-   不是今日、根本没有 header 动画）平层白等 110ms——2026-10-01 用户报「切换会顿
-   一下」。收敛为只在离开今日时保留（header 收缩要让平移先行），其余 0ms。 */
+/* 平移层过渡延迟（2026-10-12 用户 m03248 之后恒为 0）：
+   原来有 110ms 是为了让「跨今日边界」时 header 收缩与内容平移错开，避免斜向甩感；
+   现在切页改成整页平移、header 不再收缩（它跟今日页用同一组参数一起滑），
+   错峰的理由不存在了，加延迟只会看着顿一下。保留这个 ref 是给模板复用，
+   值恒 0ms。 */
 const stripDelay = ref('0ms')
 function switchTab(key) {
   if (key === tab.value) return // 幂等：重复点当前 tab
-  stripDelay.value = tab.value === 'today' && key !== 'today' ? '110ms' : '0ms'
+  stripDelay.value = '0ms'
   tab.value = key
   // 瞬时复位：默认的 scrollTo 是平滑滚动，切页动画期间会被浏览器节流/取消，
   // 留下「切到某页但页面停在旧滚动位置」的中间态（App 启动时 initNotify → goMeTab
@@ -243,34 +240,36 @@ const heroOpenH = computed(() => (heroFullH.value ? heroFullH.value + HERO_WRAP_
 // 收起后的最小高度：顶部留白 + 状态条 + 底部留白。底部这 8px 是给触区用的 ——
 // 没有它，按钮 after 撑出的下沿会被 overflow-hidden 裁掉（实测 39px）。
 const heroMinH = computed(() => (heroBarH.value ? heroBarH.value + HERO_WRAP_PAD + HERO_WRAP_PAD_BOTTOM : 0))
-const heroActive = computed(() => tab.value === 'today' && !heroLocked.value && heroOpenH.value > heroMinH.value)
+// 2026-10-12：头卡只属于今日页、靠横向平移离场，所以下面这些量一律不再看 tab ——
+// 切页时 tab 立刻变成目标页，若还带 `tab === 'today'` 判断，头卡会在滑走的中途
+// 突然弹回展开态（heroP 归零），看着就是另一处抖动。让它保持当前折叠状态滑出去。
+const heroActive = computed(() => !heroLocked.value && heroOpenH.value > heroMinH.value)
 const heroCompressLen = computed(() => Math.max(0, heroOpenH.value - heroMinH.value))
 const clamp01 = (v) => Math.max(0, Math.min(1, v))
 // 折叠进度：0 展开 → 1 只剩一行（1:1 跟着上拉，跟手）
 // 折到底之后不再继续变化 —— 状态条钉在顶上不动（用户 m01369：反正不占空间，
 // 别跟着继续滑走；原来还有一段「走掉」位移，2026-10-10 按用户要求删掉）
 const heroP = computed(() => (heroActive.value ? clamp01(heroScroll.value / heroCompressLen.value) : 0))
-// 浮层高度：今日页按进度收；别的 tab 返回 null（不写内联高度 ⇒ 按自然高度渲染）——
-// 周课表靠外层 grid 的 0fr 整块收起，我的页要显示紧凑版问候卡，都别插手。
-// 未测量到高度时也返回 null，先按自然高度渲染一帧
+// 浮层高度：跟着折叠进度收。2026-10-12 起不再看 tab —— 头卡靠横向平移离场，
+// 若在切页瞬间就放手（返回 null 按自然高度渲染），滑走的那 280ms 里卡片会
+// 一边横移一边「长回展开态」，又是一处抖动。让它保持当前状态滑出去。
+// 未测量到高度时返回 null，先按自然高度渲染一帧
 const heroWrapH = computed(() => {
-  if (tab.value !== 'today') return null
   if (!heroOpenH.value) return null
   const h = heroOpenH.value - heroCompressLen.value * heroP.value
   return Math.max(heroMinH.value, Math.round(h))
 })
-// 头卡高度：随折叠进度整块塌掉（heroFullH → 0），和「今日 → 周课表」同一个手法（1fr → 0fr）。
+// 头卡高度：随折叠进度整块塌掉（heroFullH → 0）。
 // 头卡自己 opaque + overflow-hidden，塌到 0 时被整块裁掉，下方内容自然顶上；
 // 浮动状态条是 hero-wrap 里的绝对定位兄弟，不跟着塌，塌完正好只剩它那一行。
 // 注意 header 是 border-box：只把 height 归零，padding 仍是高度下限，
 // 卡片会留下 2×20px 的渐变底压在状态条后面 —— 所以把纵向 padding 一起内联塌掉。
 // 折叠期间同时关掉 padding 过渡（transition 会跟手指打架，做不到 1:1）。
-// ⚠ 没在收（heroP === 0）时必须返回 null：切回今日页那一下，内联的定高 + padding +
-//   transition-property:none 会当场生效，把 header 自己的 280ms padding 过渡掐死，
-//   头部于是「啪」地跳到位 —— 2026-10-10 用户 m01369 报的切页动画坏掉就是这个。
-//   交给 CSS 过渡，只在真的在收时才接管。
+// 2026-10-12：不再看 tab（padding 类也不再随 tab 变），头卡滑走时保持当前折叠状态。
+// ⚠ 没在收（heroP === 0）时必须返回 null：内联的定高 + padding + transition-property:none
+//   会当场生效，把 header 自己的过渡掐死。2026-10-10 用户 m01369 报的切页动画坏掉就是这个。
 const heroHeaderStyle = computed(() => {
-  if (tab.value !== 'today' || !heroFullH.value) return null
+  if (!heroFullH.value) return null
   if (heroP.value <= 0) return null
   const k = 1 - heroP.value
   return {
@@ -4706,48 +4705,47 @@ provide(APP_CTX, reactive({
        —— 2026-10-01 真机「小幅上下拖」的第二层根因（第一层在 gridH 公式） -->
   <div class="relative mx-auto flex min-h-[calc(100vh-var(--sat,0px))] max-w-md flex-col overflow-x-clip">
     <!-- 顶栏：淡雅氛围卡——四角全圆+四周留白，浏览器里不再有「上尖下圆」的裁切感 -->
-    <!-- 头部问候卡：今日页完整版（大问候语 + 状态气泡 + 今日概要）；周课表/我的页紧凑版
-         （2026-10-01 用户要求「上方卡片收缩时多缩一点，给课表多腾空间」——原来只有
-         气泡和概要会收，问候语和 padding 常驻不动，头部占 ~140px；紧凑版收掉 ~50px） -->
-    <!-- Stage 8：课表页不需要问候卡（今日页那句在这儿是重复的），整张头部在课表页收起，
-         网格拿回整屏。用与今日页主体同一套 grid-rows 塌缩，0fr 时 overflow-hidden 把
-         卡片连同 mt-3 外边距一起裁掉，所以收起后不残留一条空白。 -->
-    <div
-      class="grid transition-[grid-template-rows] duration-[280ms]"
-      :class="tab === 'week' ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'"
-      style="transition-timing-function: cubic-bezier(0.3, 0.75, 0.3, 1)"
-    >
-      <div class="min-h-0 overflow-hidden">
+    <!-- 头部问候卡（2026-10-12，用户 m03248 改造）：它原来浮在三页之上、是三页共享的一层，
+         切页靠「整张卡竖向塌缩 + 平移层延迟 110ms」错峰，用户看到的是「上面的卡片先消失、
+         页面才开始切换」，很割裂。现在改成：头卡只属于今日页，切页时和今日页用同一组
+         参数（280ms / cubic-bezier(0.32,0.72,0.35,1) / 同一个 swipeDx）一起横向平移过去。
+         周课表/我的页不再显示它（我的页内容因此整体上移，用户 m03289 拍板），
+         所以两页之间切换时不再有任何卡片收缩动画。
+         位置仍是绝对定位浮层（绝不能回到文档流里，理由见下面 hero 计算块的长注释），
+         只是多了一个跟随 tabIndex 的 translateX。 -->
     <!-- 今日页头部上拉收缩（2026-10-09，用户拍板「乙」：压成一行；折到底后钉住，用户 m01369）。
          裁剪盒的高度完全由 heroWrapH 驱动、不加 transition —— 它跟着 scrollTop 走，
          加过渡就等于跟手指打架。header 自己也不用 transform 过渡，同理。
-         pt-3 是从 header 原来的 mt-3 搬进来的：放进盒子里才能随 0fr 一起被裁掉，
-         否则收起来会残留一条 12px 空白。
+         pt-3 原是 header 的 mt-3：从前它得待在 0fr 裁切盒里才能被一起裁掉；现在卡片靠
+         横向平移离场，这层留白就只是浮层自身的顶边距。
          bg-canvas（2026-10-12，用户拍板 A）：折到底钉住后，浮层会和下方滚动内容共处一屏，
          而头卡此时已塌成 0，浮层若不铺底色，下面的待办文字就从状态条背后透上来叠字
          （实测重叠区暗像素 33.9%，加底后 19.9%）。铺成页面底色 = 内容从状态条下方滚过时被挡住。
          展开态铺不铺都一样（头卡自己是不透明渐变卡，盖在上面看不见底）。 -->
+    <!-- 2026-10-12 起卡片随今日页一起横向平移（原来的「整卡竖向塌缩给课表腾空间」已删除）。 -->
     <div
       data-hero-wrap
-      class="overflow-hidden px-4"
-      :class="tab === 'today' ? 'absolute inset-x-0 top-0 z-10 bg-canvas pt-3' : (tab === 'week' ? 'relative h-0 pt-0' : 'relative pt-3')"
-      :style="tab === 'today' && heroWrapH !== null ? { height: heroWrapH + 'px' } : null"
+      class="absolute inset-x-0 top-0 z-10 overflow-hidden bg-canvas px-4 pt-3"
+      :class="tab === 'today' ? '' : 'pointer-events-none'"
+      :style="{
+        transform: `translateX(calc(-${tabIndex * 100}% + ${swipeDx}px))`,
+        transitionProperty: swiping ? 'none' : 'transform',
+        transitionDuration: '280ms',
+        transitionTimingFunction: 'cubic-bezier(0.32, 0.72, 0.35, 1)',
+        ...(heroWrapH !== null ? { height: heroWrapH + 'px' } : {}),
+      }"
     >
     <header
       ref="heroRef"
-      class="relative overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-50 to-primary-100 shadow-sm transition-[padding] duration-[280ms]"
-      :class="tab === 'today' ? 'px-5 pb-5 pt-5' : 'px-5 pb-3 pt-3.5'"
-      :style="tab === 'today' ? heroHeaderStyle : null"
+      class="relative overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-50 to-primary-100 px-5 pt-5 pb-5 shadow-sm"
+      :style="heroHeaderStyle"
     >
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">
           <p class="text-[13px] font-medium text-primary-600">
             {{ dateText }} {{ weekDay }} · 第 {{ semester.week }} 周
           </p>
-          <h1
-            class="font-bold tracking-tight text-ink transition-all duration-[280ms]"
-            :class="tab === 'today' ? 'mt-1 text-2xl' : 'mt-0.5 truncate text-lg'"
-          >{{ greetingText }}</h1>
+          <h1 class="mt-1 text-2xl font-bold tracking-tight text-ink">{{ greetingText }}</h1>
           <!-- Stage 2：原「状态气泡」并入顶卡主体（没课时用它那句可爱话当副行），这里不再单独占一行 -->
         </div>
         <!-- 主题切换：太阳 / 月亮 -->
@@ -4765,13 +4763,10 @@ provide(APP_CTX, reactive({
           </svg>
         </button>
       </div>
-      <!-- Stage 2 主体 + 页脚：随 tab 收起（沿用同一套 grid-rows 塌缩，高度动画与原来一致） -->
-      <div
-        class="grid transition-[grid-template-rows] duration-[280ms]"
-        :class="tab === 'today' ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
-        style="transition-timing-function: cubic-bezier(0.3, 0.75, 0.3, 1)"
-        :style="{ transitionDelay: tab === 'today' ? '110ms' : '0ms' }"
-      >
+      <!-- Stage 2 主体 + 页脚（2026-10-12：原来的「随 tab 收起」整段删掉）：
+           头卡只属于今日页、靠横向平移离场，不再需要按 tab 把自己的主体塌缩，
+           所以这里从 grid-rows 塌缩盒改成普通 div，周课表/我的页不会再看到它。 -->
+      <div>
         <div class="min-h-0 overflow-hidden">
           <!-- 主体：现在做什么（class 有课 / review 该收尾 / free 没安排）
                录音钮三种形态都在——无感录音的入口只留这一颗，不随形态消失。
@@ -4916,8 +4911,6 @@ provide(APP_CTX, reactive({
         </button>
       </span>
     </div>
-    </div>
-      </div>
     </div>
 
     <!-- 内容平移层（Day 11 二轮）：三页并排各占 1/3，translateX 跟随 tab，连点改道可打断。

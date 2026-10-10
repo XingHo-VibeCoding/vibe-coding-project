@@ -195,14 +195,20 @@ await scrollTo(p, 0)
 const E = await p.evaluate(PROBE)
 t('E1. 回顶部复位成展开态（浮层高回到 ±3）', Math.abs(E.wrapH - openH) <= 3, `${openH} → ${E.wrapH}`)
 
-/* ================= F. 别的 tab 不残留 ================= */
+/* ================= F. 别的 tab 不残留 =================
+   2026-10-12（用户 m03248）改成整页横向平移：头卡不再靠竖向塌缩裁掉，
+   而是跟今日页一起用同一个 translateX 滑出屏幕。所以这里不再量「父级裁切盒高」，
+   改量「浮层确实横移到视口外」。 */
 await p.$eval('[data-nav="week"]', (el) => el.click())
-await p.waitForTimeout(700)
+await p.waitForTimeout(900)
 const F = await p.evaluate(() => {
   const wrap = document.querySelector('[data-hero-wrap]')
-  return { clipH: Math.round(wrap.parentElement.getBoundingClientRect().height) }
+  const r = wrap.getBoundingClientRect()
+  const tr = getComputedStyle(wrap).transform
+  const wrapW = Math.round(wrap.offsetWidth)
+  return { left: Math.round(r.left), right: Math.round(r.right), wrapW, tr, vw: window.innerWidth }
 })
-t('F1. 课表页头部整块裁掉（可见高 < 2px）', F.clipH < 2, `clipH=${F.clipH}`)
+t('F1. 课表页头部整块滑出屏幕（右边缘不侵入视口）', F.right <= 2, `left=${F.left} right=${F.right} vw=${F.vw} transform=${F.tr}`)
 await p.$eval('[data-nav="today"]', (el) => el.click())
 await p.waitForTimeout(900)
 const F2 = await p.evaluate(PROBE)
