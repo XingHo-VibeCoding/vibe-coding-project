@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>今日页顶卡 · 上拉收缩动画的三个方向</title>
+<style>
+  :root{
+    --canvas:#f5f7fa; --card:#fff; --line:rgba(0,0,0,.06); --soft:#eef0f4; --soft2:#e3e6ec;
+    --ink:#1c2333; --dim:#626b7d; --p50:#eef4fe; --p100:#d9e6fd; --p200:#b3cdfa;
+    --p500:#2f6feb; --p600:#1f57cc;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:#e9ecf1;color:var(--ink);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .page{max-width:1560px;margin:0 auto;padding:34px 30px 60px}
+  h1{font-size:25px;margin:0 0 6px}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 22px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;align-items:start}
+  .col h2{font-size:15px;margin:0 0 3px}
+  .col .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--soft);color:var(--dim);margin-bottom:10px}
+  .col .tag.a{background:#e6f6ed;color:#0f8a5f}
+  .col .tag.b{background:#fdf1e0;color:#b45309}
+  .col .tag.c{background:#fde8e8;color:#b91c1c}
+
+  .stage{margin-bottom:14px}
+  .stage .lbl{font-size:11px;color:var(--dim);margin:0 0 5px 3px;font-variant-numeric:tabular-nums}
+  .stage .lbl b{color:var(--p600)}
+  .phone{position:relative;background:var(--canvas);border:1px solid #d8dce4;border-radius:20px;
+    overflow:hidden;height:430px;display:flex;flex-direction:column}
+  .ph-mark{position:absolute;left:0;right:0;border-top:1px dashed #c4cad6;pointer-events:none}
+  .ph-mark span{position:absolute;left:4px;top:-14px;font-size:9.5px;color:#8b93a4;background:var(--canvas);padding:0 3px}
+
+  /* ---- 头部（可动的那块） ---- */
+  .head{flex:none;background:var(--canvas);transition:none}
+  .hcard{margin:8px 9px 0;border-radius:16px;padding:11px 13px;
+    background:linear-gradient(135deg,#e6ecfd,#e9e6fb);overflow:hidden}
+  .hd{font-size:11px;color:var(--p600);font-weight:600;display:flex;align-items:center;gap:6px}
+  .hd .moon{margin-left:auto;width:17px;height:17px;border-radius:99px;background:#fff;display:grid;place-items:center;font-size:9px;color:#3b4a6b}
+  .hi{font-size:18px;font-weight:800;margin:2px 0 8px}
+  .hero{margin-top:8px;background:rgba(255,255,255,.75);border:1px solid rgba(255,255,255,.7);border-radius:13px;padding:8px 10px}
+  .hero .r1{display:flex;align-items:center;gap:8px}
+  .hero .tt{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hero .ss{font-size:10.5px;color:var(--dim);margin-top:1px}
+  .hero .btn{margin-left:auto;flex:none;background:var(--p500);color:#fff;font-size:10.5px;font-weight:600;
+    padding:5px 11px;border-radius:99px}
+  .hero .pg{margin-top:7px;height:4px;border-radius:99px;background:var(--p100);overflow:hidden}
+  .hero .pg i{display:block;height:100%;width:72%;background:var(--p500);border-radius:99px}
+  /* 顶卡压成一行（乙） */
+  .hero.mini{margin-top:7px;padding:5px 9px}
+  .hero.mini .ss,.hero.mini .pg{display:none}
+  .hero.mini .tt{font-size:12px}
+  /* 收成一条（丙） */
+  .oneline{margin:8px 9px 0;height:32px;border-radius:11px;background:#fff;border:1px solid var(--line);
+    display:flex;align-items:center;gap:7px;padding:0 11px;font-size:11.5px;font-weight:600;
+    box-shadow:0 1px 3px rgba(20,30,60,.05)}
+  .oneline .d{color:var(--dim);font-weight:500;font-size:10.5px}
+  .oneline .btn{margin-left:auto;flex:none;background:var(--p500);color:#fff;font-size:10px;font-weight:600;
+    padding:4px 10px;border-radius:99px}
+  .oneline .dot{width:7px;height:7px;border-radius:99px;background:var(--p500);flex:none}
+
+  .strip{margin:8px 9px 0;background:#fff;border:1px solid var(--line);border-radius:13px;
+    padding:7px 11px;display:flex;align-items:center;gap:9px;font-size:10.5px;font-weight:600}
+  .strip .pg{margin-left:auto;width:78px;height:4px;border-radius:99px;background:var(--soft2);overflow:hidden}
+  .strip .pg i{display:block;height:100%;width:100%;background:var(--p500);border-radius:99px}
+  .ribbon{margin:8px 9px 6px}
+  .ribbon .r1{display:flex;justify-content:space-between;font-size:10px;color:var(--p600);font-weight:600}
+  .ribbon .r1 span:last-child{color:var(--dim);font-weight:400}
+  .ribbon .bars{display:flex;gap:2px;margin-top:4px}
+  .ribbon .bars i{flex:1;height:6px;border-radius:2px;background:rgba(255,255,255,.75)}
+  .ribbon .bars i.on{background:rgba(47,111,235,.85);height:8px}
+
+  /* ---- 滚动区 ---- */
+  .body{flex:1;min-height:0;overflow:hidden;padding:4px 9px 0}
+  .body .sec{font-size:13px;font-weight:800;margin:4px 2px 7px}
+  .k{display:flex;gap:8px;padding:8px 9px;background:var(--card);border:1px solid var(--line);
+    border-radius:11px;margin-bottom:6px;align-items:stretch}
+  .k .hour{flex:none;width:38px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;font-size:11.5px;padding-top:1px;color:var(--dim)}
+  .k .bar{flex:none;width:2px;border-radius:2px;background:var(--soft2)}
+  .k .ttl{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .k .meta{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+  .k .rt{margin-left:auto;flex:none;font-size:10.5px;color:var(--dim);padding-top:1px}
+  .k.now{border-color:var(--p200);background:var(--p50)}
+  .k.now .bar{background:var(--p500)}
+  .k.now .ttl{color:var(--p600);font-weight:700}
+  .k.now .rt{color:var(--p600);font-weight:600}
+  .k.done .ttl{color:var(--dim);font-weight:500}
+  .nav{flex:none;height:52px;background:#fff;border-top:1px solid var(--line);display:flex;align-items:center;
+    justify-content:space-around;font-size:10px;color:var(--dim)}
+  .nav .on{color:var(--p600);font-weight:700}
+
+  .note{margin-top:16px;background:#fff;border:1px solid #dfe3ea;border-radius:12px;padding:13px 15px;font-size:12.5px;line-height:1.75}
+  .note ul{margin:6px 0 0 18px;padding:0}
+  .note li{margin:3px 0}
+  code{background:var(--soft);padding:1px 5px;border-radius:5px;font-size:11.5px}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:8px}
+  th,td{border-bottom:1px solid #e5e8ee;padding:7px 8px;text-align:left;vertical-align:top}
+  th{color:var(--dim);font-weight:600;background:#fafbfd}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>今日页顶卡 · 上拉时收缩的三个方向</h1>
+  <p class="sub">
+    实测基准（390×844 浏览器，5 门课）：头部整块 <b>273px</b>（问候语 56 + 顶卡 77 + 页脚计数 35 + 学期进度带 33 + 内外边距），
+    今日页滚动窗口 <b>489px</b>，内容只比窗口高 <b>211px</b> —— 所以「收缩」省下来的高度会直接换成可滚动距离，滑得更多，不是白省。
+    每列三格：① 刚进页面 ② 上滑到一半 ③ 收到底（再往上滑，整块就跟着页面走掉了）。
+  </p>
+
+  <div class="grid">
+    <!-- ============ 现状 ============ -->
+    <div class="col">
+      <h2>现状｜头固定不动</h2>
+      <span class="tag">问题是这个</span>
+
+      <div class="stage">
+        <p class="lbl">① 刚进页面　scrollTop <b>0</b></p>
+        <div class="phone">
+          <div class="head">
+            <div class="hcard">
+              <div class="hd">10月9日 周五 · 第1周<span class="moon">☾</span></div>
+              <div class="hi">下午好呀 ~ 再坚持一下下</div>
+              <div class="hero">
+                <div class="r1"><span class="tt">进行中 · 环境工程概论</span><span class="btn">录音</span></div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+                <div class="pg"><i></i></div>
+              </div>
+            </div>
+            <div class="strip">今天 5 项安排<span class="pg"><i></i></span></div>
+            <div class="ribbon">
+              <div class="r1"><span>学期进度 · 第 1 / 16 周</span><span>距期末 108 天</span></div>
+              <div class="bars"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k now"><span class="hour">14:00</span><span class="bar"></span><span><span class="ttl">环境工程概论</span><span class="meta">紫金港西2-301 · 每周</span></span><span class="rt">还剩 25 分</span></div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <p class="lbl">② 上滑一半　scrollTop <b>105</b></p>
+        <div class="phone">
+          <div class="ph-mark" style="top:273px"><span>头尾边界不动</span></div>
+          <div class="head">
+            <div class="hcard">
+              <div class="hd">10月9日 周五 · 第1周<span class="moon">☾</span></div>
+              <div class="hi">下午好呀 ~ 再坚持一下下</div>
+              <div class="hero">
+                <div class="r1"><span class="tt">进行中 · 环境工程概论</span><span class="btn">录音</span></div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+                <div class="pg"><i></i></div>
+              </div>
+            </div>
+            <div class="strip">今天 5 项安排<span class="pg"><i></i></span></div>
+            <div class="ribbon">
+              <div class="r1"><span>学期进度 · 第 1 / 16 周</span><span>距期末 108 天</span></div>
+              <div class="bars"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k now"><span class="hour">14:00</span><span class="bar"></span><span><span class="ttl">环境工程概论</span><span class="meta">紫金港西2-301 · 每周</span></span><span class="rt">还剩 25 分</span></div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <p class="lbl">③ 滚到底　头部 <b>一点没动</b></p>
+        <div class="phone">
+          <div class="head">
+            <div class="hcard">
+              <div class="hd">10月9日 周五 · 第1周<span class="moon">☾</span></div>
+              <div class="hi">下午好呀 ~ 再坚持一下下</div>
+              <div class="hero">
+                <div class="r1"><span class="tt">进行中 · 环境工程概论</span><span class="btn">录音</span></div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+                <div class="pg"><i></i></div>
+              </div>
+            </div>
+            <div class="strip">今天 5 项安排<span class="pg"><i></i></span></div>
+            <div class="ribbon">
+              <div class="r1"><span>学期进度 · 第 1 / 16 周</span><span>距期末 108 天</span></div>
+              <div class="bars"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="note" style="margin-top:0;font-size:12px">
+        <b>问题在哪：</b>头占了 273px（整屏的 32%），滑到底它也一分不让 —— 可用滚动区永远是 489px，
+        5 门课就得靠 211px 的滚动量硬挤。
+      </div>
+    </div>
+
+    <!-- ============ 甲 ============ -->
+    <div class="col">
+      <h2>甲｜轻收：收掉「进度」两块</h2>
+      <span class="tag">省 ~68px</span>
+
+      <div class="stage">
+        <p class="lbl">① 刚进页面　scrollTop <b>0</b></p>
+        <div class="phone">
+          <div class="head">
+            <div class="hcard">
+              <div class="hd">10月9日 周五 · 第1周<span class="moon">☾</span></div>
+              <div class="hi">下午好呀 ~ 再坚持一下下</div>
+              <div class="hero">
+                <div class="r1"><span class="tt">进行中 · 环境工程概论</span><span class="btn">录音</span></div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+                <div class="pg"><i></i></div>
+              </div>
+            </div>
+            <div class="strip">今天 5 项安排<span class="pg"><i></i></span></div>
+            <div class="ribbon">
+              <div class="r1"><span>学期进度 · 第 1 / 16 周</span><span>距期末 108 天</span></div>
+              <div class="bars"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k now"><span class="hour">14:00</span><span class="bar"></span><span><span class="ttl">环境工程概论</span><span class="meta">紫金港西2-301 · 每周</span></span><span class="rt">还剩 25 分</span></div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <p class="lbl">② 上滑一点，两块进度淡出　<b>231 → 205</b></p>
+        <div class="phone">
+          <div class="ph-mark" style="top:205px"><span>边界上移 68px</span></div>
+          <div class="head">
+            <div class="hcard">
+              <div class="hd">10月9日 周五 · 第1周<span class="moon">☾</span></div>
+              <div class="hi">下午好呀 ~ 再坚持一下下</div>
+              <div class="hero">
+                <div class="r1"><span class="tt">进行中 · 环境工程概论</span><span class="btn">录音</span></div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+                <div class="pg"><i></i></div>
+              </div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k now"><span class="hour">14:00</span><span class="bar"></span><span><span class="ttl">环境工程概论</span><span class="meta">紫金港西2-301 · 每周</span></span><span class="rt">还剩 25 分</span></div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <p class="lbl">③ 滚到底　头部 <b>还是不动</b></p>
+        <div class="phone">
+          <div class="head">
+            <div class="hcard">
+              <div class="hd">10月9日 周五 · 第1周<span class="moon">☾</span></div>
+              <div class="hi">下午好呀 ~ 再坚持一下下</div>
+              <div class="hero">
+                <div class="r1"><span class="tt">进行中 · 环境工程概论</span><span class="btn">录音</span></div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+                <div class="pg"><i></i></div>
+              </div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="note" style="margin-top:0;font-size:12px">
+        <b>做法：</b>滚动一开始就让「今天 N 项安排」和「学期进度带」淡出并塌掉高度。<br>
+        <b>好处：</b>顶卡一个字不动，改的就是两块装饰性内容，风险最低；这两块本来也不需要边滑边看。<br>
+        <b>代价：</b>只省 68px，头还是占 205px（整屏 24%），滑到底仍然不动 —— 你要的「离开视野」没实现。
+      </div>
+    </div>
+
+    <!-- ============ 乙 ============ -->
+    <div class="col">
+      <h2>乙｜压成一行 + 整块走掉</h2>
+      <span class="tag a">推荐 · 省 ~200px</span>
+
+      <div class="stage">
+        <p class="lbl">① 刚进页面　scrollTop <b>0</b></p>
+        <div class="phone">
+          <div class="head">
+            <div class="hcard">
+              <div class="hd">10月9日 周五 · 第1周<span class="moon">☾</span></div>
+              <div class="hi">下午好呀 ~ 再坚持一下下</div>
+              <div class="hero">
+                <div class="r1"><span class="tt">进行中 · 环境工程概论</span><span class="btn">录音</span></div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+                <div class="pg"><i></i></div>
+              </div>
+            </div>
+            <div class="strip">今天 5 项安排<span class="pg"><i></i></span></div>
+            <div class="ribbon">
+              <div class="r1"><span>学期进度 · 第 1 / 16 周</span><span>距期末 108 天</span></div>
+              <div class="bars"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k now"><span class="hour">14:00</span><span class="bar"></span><span><span class="ttl">环境工程概论</span><span class="meta">紫金港西2-301 · 每周</span></span><span class="rt">还剩 25 分</span></div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <p class="lbl">② 上滑 130px，压成一行　<b>273 → 96</b></p>
+        <div class="phone">
+          <div class="ph-mark" style="top:96px"><span>压缩到底</span></div>
+          <div class="head">
+            <div class="oneline">
+              <span class="dot"></span>
+              <span>环境工程概论 · 还剩 25 分</span>
+              <span class="d">14:00–15:45</span>
+              <span class="btn">录音</span>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k now"><span class="hour">14:00</span><span class="bar"></span><span><span class="ttl">环境工程概论</span><span class="meta">紫金港西2-301 · 每周</span></span><span class="rt">还剩 25 分</span></div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">20:00</span><span class="bar"></span><span><span class="ttl">晚自习</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <p class="lbl">③ 再上滑 96px　那条 <b>跟着走掉</b></p>
+        <div class="phone">
+          <div class="head" style="height:12px"></div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">20:00</span><span class="bar"></span><span><span class="ttl">晚自习</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">21:30</span><span class="bar"></span><span><span class="ttl">洗漱睡觉</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">22:00</span><span class="bar"></span><span><span class="ttl">日记</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="note" style="margin-top:0;font-size:12px">
+        <b>做法：</b>滚动头 130px 里，问候语塌成日期、顶卡压成一行（课名 + 剩余 + 录音钮，收掉地点/进度条）、
+        页脚计数与进度带一起收 —— 合成一条 96px 的状态条；之后的滚动这条也跟着上移，直到离开视野。<br>
+        <b>好处：</b>省 ~200px，一屏直接从「3 条」变「6 条」；「现在做什么」始终在，只是换了形态。<br>
+        <b>代价：</b>三个格子（问候语/顶卡/页脚）都要参与动画，比甲复杂；地点被收掉（可在顶上那行小字里留）。
+      </div>
+    </div>
+
+    <!-- ============ 丙 ============ -->
+    <div class="col">
+      <h2>丙｜收成一条 32px 的摘要</h2>
+      <span class="tag c">最激进 · 省 ~240px</span>
+
+      <div class="stage">
+        <p class="lbl">① 刚进页面　scrollTop <b>0</b></p>
+        <div class="phone">
+          <div class="head">
+            <div class="hcard">
+              <div class="hd">10月9日 周五 · 第1周<span class="moon">☾</span></div>
+              <div class="hi">下午好呀 ~ 再坚持一下下</div>
+              <div class="hero">
+                <div class="r1"><span class="tt">进行中 · 环境工程概论</span><span class="btn">录音</span></div>
+                <div class="ss">紫金港西2-301 · 还剩 25 分钟</div>
+                <div class="pg"><i></i></div>
+              </div>
+            </div>
+            <div class="strip">今天 5 项安排<span class="pg"><i></i></span></div>
+            <div class="ribbon">
+              <div class="r1"><span>学期进度 · 第 1 / 16 周</span><span>距期末 108 天</span></div>
+              <div class="bars"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k now"><span class="hour">14:00</span><span class="bar"></span><span><span class="ttl">环境工程概论</span><span class="meta">紫金港西2-301 · 每周</span></span><span class="rt">还剩 25 分</span></div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <p class="lbl">② 上滑一点就塌成一条　<b>273 → 40</b></p>
+        <div class="phone">
+          <div class="ph-mark" style="top:40px"><span>只剩一条</span></div>
+          <div class="head">
+            <div class="oneline" style="margin-top:4px">
+              <span class="dot"></span>
+              <span>环境工程概论</span>
+              <span class="d">还剩 25 分</span>
+              <span class="btn">录音</span>
+            </div>
+          </div>
+          <div class="body">
+            <div class="sec">接下来</div>
+            <div class="k now"><span class="hour">14:00</span><span class="bar"></span><span><span class="ttl">环境工程概论</span><span class="meta">紫金港西2-301 · 每周</span></span><span class="rt">还剩 25 分</span></div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">20:00</span><span class="bar"></span><span><span class="ttl">晚自习</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <p class="lbl">③ 再上滑 40px　<b>整块走掉</b>，全屏都是列表</p>
+        <div class="phone">
+          <div class="body" style="padding-top:8px">
+            <div class="sec">接下来</div>
+            <div class="k"><span class="hour">16:45</span><span class="bar"></span><span><span class="ttl">弹性力学</span><span class="meta">紫金港北4-102 · 每周</span></span></div>
+            <div class="k"><span class="hour">18:30</span><span class="bar"></span><span><span class="ttl">英语跟读打卡</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">20:00</span><span class="bar"></span><span><span class="ttl">晚自习</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">21:30</span><span class="bar"></span><span><span class="ttl">洗漱睡觉</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">22:00</span><span class="bar"></span><span><span class="ttl">日记</span><span class="meta">每周</span></span></div>
+            <div class="k"><span class="hour">22:30</span><span class="bar"></span><span><span class="ttl">放下手机</span><span class="meta">每周</span></span></div>
+          </div>
+          <div class="nav"><span class="on">今日</span><span>周课表</span><span>我的</span></div>
+        </div>
+      </div>
+
+      <div class="note" style="margin-top:0;font-size:12px">
+        <b>做法：</b>滚一点点就把整块头部塌成一条 32–40px 的摘要条（状态点 + 课名 + 剩余 + 录音钮），
+        再滚一点这条也走掉。<br>
+        <b>好处：</b>等于把今日页变成「一条状态 + 全屏列表」，一屏 7 条。<br>
+        <b>代价：</b>问候语、日期、学期进度、地点、今日计数全都看不见了 —— 只剩一条线时，「今天是几号、第几周」
+        这类信息要用户切走再切回来才看得到。
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>三个方向共同的三个必须钉住的点（不管选哪个）：</b>
+    <ul>
+      <li><b>录音中 / 复盘按钮不能被收掉。</b>顶卡上那几颗钮（<code>data-today-rec-start</code> / <code>data-today-rec-stop</code> / <code>data-review-start</code>）在任何收缩档位都必须还在，而且触区 ≥44px —— 正在录音时最不该去猜按钮在哪。<b>建议：录音中直接锁住收缩（停在展开态）</b>，录完再恢复联动。</li>
+      <li><b>滚动窗口要跟着长高。</b>现在的滚动窗口高度是 <code>innerHeight − 今日页顶 − 导航 − 8</code>，按「头部展开态」一次性算死的（<code>App.vue:190 function measureTodayH()</code>，且偏移量只涨不跌）。头部一旦会变矮/上移，这个高度必须同步加上「省掉的那部分」，否则底部会空出一条。</li>
+      <li><b>切 tab / 切页面要复位。</b>切到「周课表」再切回来、或点开详情浮层回来，头部必须回到展开态，而且滚动位置与头部形态要一致（不能出现「头是压扁的、列表却停在顶部」）。</li>
+    </ul>
+    <p style="margin:10px 0 0;color:var(--dim)">
+      注：本图按现有 token 与字号渲染的<b>示意稿</b>，不是真机截图。你定了方向我再动代码，动完照规矩给你真机/浏览器截图逐格核对。
+    </p>
+  </div>
+</div>
+</body>
+</html>

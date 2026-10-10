@@ -1,10 +1,10 @@
 # TECH_DESIGN.md — 大学生日程助手 · 一期技术设计
 
-> 版本：v1.2 ｜ 日期：2026-09-20（Day 5 技术设计）｜ 最近更新：2026-10-08（P13 小学期 / P14 调休 / P12b 密钥库 / Day 24 检查台 Bug 均已写入；收口时校正过期数字）
+> 版本：v1.2 ｜ 日期：2026-09-20（Day 5 技术设计）｜ 最近更新：2026-10-09（今日页头部上拉收缩（乙）：头部改绝对定位浮层 + `stripInstant`；校正过期数字）
 > 输入文档：`PRD.md`（一期功能与验收标准）、`大学生日程助手-设计方案.md` v1.1（数据模型与分期）、`research.md`（规则优先原则）
 > 本文档只定义一期范围内**怎么搭**，不重复定义**做什么**（那是 PRD 的职责）。
 > **注意**：根目录 vanilla 实现自 Day 14 起封存；**Day 15 起正式版在 `web2/`**，其数据层与本机键约定见 §4.3（第四节其余内容是封存版的内部接口记录，仍有参考价值）。
-> **当前事实（2026-10-08 收口实测，以这行为准；正文里带日期的历史章节保留原数字不追改）**：版本 **1.43.0**、最新提交 `fdefa40`、装机包 `dist-apk/schedule-v1.43.0-20261008-debug.apk`；`web2/src/App.vue` **4745 行**、`APP_CTX` **792 个绑定**、`sheets/*.vue` **13 个**；测试基线 **95 个脚本 / 非 0 退出 0 个**、质量门 **0 处问题**。项目现状与剩余施工项看 `docs/PROJECT_MAP.md` 头部与 `docs/下一轮施工单.md` §5b。
+> **当前事实（2026-10-09 实测，以这行为准；正文里带日期的历史章节保留原数字不追改）**：版本 **1.43.0**、最新提交 `f81623f`（其上「今日页头部上拉收缩」待提交）；`web2/src/App.vue` **5205 行**、`APP_CTX` **827 个绑定**、`sheets/*.vue` **13 个**；测试基线 **97 个脚本 / 非 0 退出 0 个**、质量门 **0 处问题**。项目现状与剩余施工项看 `docs/PROJECT_MAP.md` 头部与 `docs/下一轮施工单.md` §5b。
 
 ---
 
@@ -227,6 +227,35 @@ web2 (App.vue watch / visibilitychange)
      自检 `web2/tmp/status-frame-check.mjs` **63 过 / 0 挂**（A17–A22 `tapLedger` 纯逻辑六项：`LEDGER_FROM === 1080`、17:59 不给 / 18:00 整给 / **上课中即便 19:00 也回今日页** / 快照里不再有 `canLedger`/`classDone` / 条目带 `teacher`；B14 已砍的 `classDone` 动作被无声忽略、不写记号、不报错；C5–C7 已砍动作不写脏数据 + `window.__frame.fire({type:'openLedger'})` → `[data-sheet-review]` 出现 **且 `web2.frame.marks` 仍为 null**）。
 
   5. **跨层字段的类型要在网页侧就对齐（v1.41.2 验收时翻出，v1.41.3 已修）**。状态框快照里 `today[].start/end`、`tomorrowFirst.start` 都已经过 `minOf()` 转成"从零点起的分钟数"，**而 `dndStart/dndEnd` 当初是原样透传的字符串 `'23:00'`**（`web2/src/data/statusFrame.js:109-110`）；原生用 `JSONObject.optInt("dndStart", 23*60)` 读（`StatusFrameStore.kt:181-182`），`Integer.valueOf('07:00')` 抛 `NumberFormatException` 后回落到默认值——**状态框的勿扰窗口于是永远是 23:00–07:00，用户在「练耳设置」里改的时段从来没传过去**。**修法（v1.41.3 已落地）**：`web2/src/data/statusFrame.js` 新增 `dndMin()`，两个字段按分钟转整数；拿不到就**整个省掉这个键**（省掉 ≠ 0：0 是"00:00 起勿扰"这个有效值）；`web2/tmp/status-frame-check.mjs` 加 A9–A13 五项 → **48 过 / 0 挂**。教训：**同一条快照里同类语义的字段必须同一种类型**，别让"能跑"（`optInt` 有默认值兜着）掩盖"没生效"。
+
+### 2.5 今日页头部上拉收缩（Day 28 续）
+
+今日页顶部问候卡随上拉等比压缩成一行状态条、再整块滑出视野。
+
+**唯一的结构决定：头部必须是 `absolute` 浮层，不能留在文档流里。**
+若头部在流内、上拉时收掉自身高度 `s`，则「滚动窗口的顶」也上移 `s`，而窗口 `scrollTop` 也是 `s` ⇒ **列表内容以 2× 速度飞走，且 `scrollTop` 会被反复夹回原位**。要让内容 1:1 跟手，只有让滚动窗口自己不动：头部 `position: absolute` 浮在上面，`main[data-page="today"]` 的高度 = 整块可用高度（顶到 root 顶），滚动内容加一段**与展开态等高的常量 `padding-top`**（`heroContentPad = heroOpenH + HERO_CONTENT_PAD`，**刻意不随滚动变** —— 变一下就又变回 2×）。压缩/走掉全程是纯视觉（`height` 裁切 + `opacity` + `transform`），**不触发布局**，窗口高度恒定 ⇒ 不存在「底部空一条」。
+
+`web2/src/App.vue` 里的量：`HERO_WRAP_PAD = 12`（浮层顶部留白，原 header 的 `mt-3` 搬进来）、`HERO_CONTENT_PAD = 16`（内容原本的 `pt-4`）；`heroFullH` / `heroBarH` 由 `measureHero()` 量 `heroRef` / `heroBarRef` 的 `offsetHeight`：
+
+| 量 | 含义 |
+|---|---|
+| `heroActive` | `tab === 'today' && !heroLocked && heroOpenH > heroMinH` —— 只有今日页、且没被锁、且确实有得收时才参与 |
+| `heroP` | `clamp01(heroScroll / heroCompressLen)`，0 展开 → 1 只剩一行（1:1 跟手） |
+| `heroT` | 折到底后再上拉：`clamp01((heroScroll − heroCompressLen) / heroMinH)`，把整块推走 |
+| `heroWrapH` | 浮层高度 = `heroOpenH − heroCompressLen·heroP − heroMinH·heroT`；**别的 tab 返回 `null`**（不写内联高度，交回外层 grid 的 0fr 收起） |
+| `heroTranslateY` | `heroMinH · heroT` |
+| `heroFullOpacity` | `max(0, 1 − 1.6·heroP)`（头卡淡出） |
+| `heroBarOpacity` | `clamp01((heroP − 0.5)·2)`（状态条 50% 之后才淡入，避免两套文案叠着看不清） |
+| `heroLocked` | `!!recActiveId \|\| !!reviewSheet` ⇒ 录音中 / 复盘浮层开着时 `heroP`、`heroT` 恒 0，头部停展开态（按钮位置永远稳定） |
+| `onTodayScroll()` | 用 `requestAnimationFrame` 去抖，回调里读 `todayRef.scrollTop` 写 `heroScroll` |
+
+**`measureHero()` 只涨不跌**（`if (h > heroFullH.value) heroFullH.value = h`）：切回今日页时 `header` 的 padding 类从紧凑版切回展开版有 280ms 过渡，`watch(tabIndex)` 的 `nextTick` 会量到「还没长开」的值；一旦写小，`heroContentPad` 跟着变小 ⇒ `scrollHeight` 变小 ⇒ 浏览器立刻把 `scrollTop` 夹掉，位置丢失（实测 246 → 73；与文件既有 `todayTopOffset`「只涨不跌」是同一条理由，2026-10-05 已为它实证过一次）。
+
+**带出的一处真回归（务必记住）**：内容平移层的 strip 内联 `height: stripH + 'px'` **同时带 280ms 的 `transition-property: height`**。外壳让位（`--sat` 生效）让课表页高度 839 → 811 正好一个状态栏，这 280ms 的「慢慢降」期间 strip 比 root 的 `min-height` 高，文档就多出最多 23px 可滚 —— 头部浮层化把今日页的自然高从 501px 抬到 863px，于是原本「由低向高涨、不会超」的过渡变成了「由高向低降、中途超」。修法是新增 `stripInstant`（`markStripInstant()` 在 `onWinResize()` 第一行调用，压 `transition-duration` 到 0ms 并 300ms 后恢复）：**外壳让位不是导航、是布局重定义，本来就该瞬时；切 tab 的滑动过渡不动**。
+
+**踩坑留档**：判断这类高度问题必须**同时打印 `strip.style.height` 与 `strip.offsetHeight`** —— 浏览器对 flex 容器在 `height` 过渡期间的 `offsetHeight` 读取会滞后/取整，两者能差几百 px，只看一个会得出互相矛盾的结论。
+
+自检 `web2/tmp/hero-collapse-check.mjs` **26 过 / 0 挂**（关键四条：A1 头部不在滚动窗口里 `header.closest('[data-today-scroll]') === null`、B1 内容位移 = `scrollTop` 而非 2×、B4 窗口高度全程恒定、F1 课表页头部整块裁掉），另有 `today-shell-check` 17/0、`week-fit-check` 19/19、`week-menu-check` 22/0、质量门 0 处问题。口径与三方向对比见 `docs/结构动效前置约定.md`。
 
 ---
 
