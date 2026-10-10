@@ -1,6 +1,7 @@
-/* 今日页头部上拉收缩（乙：压成一行 + 整块走掉）检查——playwright，走 dist 静态服务。
-   需求（m26207）：上拉时顶卡压缩成一行，收缩到底后再随页面走掉。
+/* 今日页头部上拉收缩（乙：压成一行，折到底后钉住）检查——playwright，走 dist 静态服务。
+   需求（m26207）：上拉时顶卡压缩成一行。
    拍板（m26282）：乙方案 + 「录音 / 复盘时锁住，停在展开态」。
+   拍板（m01369，2026-10-10）：折到底后那一行不再跟着继续上滑走掉，钉在顶上。
 
    核心不变量（这条错了整个方案就塌）：
      **头部必须是绝对定位浮层，不在滚动窗口里** —— 若留在流内，收掉高度 s 会让窗口顶也上移 s，
@@ -11,8 +12,11 @@
            折叠前状态条是透明的、头卡是不透明的；
    B1-B4 跟手：B1 内容位移 == scrollTop（1×，不是 2×）；B2 头部收掉的高度 == scrollTop（1:1，±3）；
            B3 头卡顶边不动（压缩不推内容）；B4 全程窗口高度恒定；
-   C1-C3 折到底：C1 浮层高 ≈ 一行（44px）；C2 状态条淡入；C3 头卡淡出；
-   D1-D2 走掉：D1 再上拉整块离开视野；D2 窗口仍恒定；
+   C1-C3 折到底：C1 浮层高 ≈ 一行（44px）；C2 状态条露出来；C3 头卡被高度整块裁掉（高 ≈ 0）；
+           ※ 2026-10-10 由「淡出」改「真收缩」：头卡不再调 opacity，改由 height 塌到 0 裁切；
+             状态条仍用 opacity 从最后 10%（heroP>0.9）露出，所以 A4/C2/G3 口径不变；
+   D1-D3 钉住：D1 再上拉状态条顶边不动（2026-10-10 用户 m01369 要求「不继续上升」，
+            旧口径「整块走掉 wrapTop < -20」已废）；D2 窗口仍恒定；D3 浮层高仍是一行；
    E1    回顶部复位成展开态；
    F1-F2 别的 tab：F1 课表页头部整块裁掉（可见高 < 2px）；F2 切回今日页恢复；
    G0-G4 锁定：复盘浮层开着时上拉，头部不收缩、头卡仍完全展开；
@@ -113,9 +117,18 @@ const PROBE = () => {
   }
 }
 
+/* 滚到指定位置。
+   ⚠ 必须在页内 await 若干 rAF：onTodayScroll 是 rAF 去抖的，而 headless Chrome 在
+   没有合成帧的时候**不会自己推进 rAF** —— 只 set scrollTop + page.waitForTimeout()
+   会得到「scrollTop 已经变了、但 heroScroll 没更新」的假失败（2026-10-10 实测：
+   B2/C1/C2/C3/D3/G5/H1 全挂，根因全在这一处测试脚手架，不在 App）。 */
 const scrollTo = async (page, v) => {
-  await page.evaluate((n) => { document.querySelector('[data-page="today"]').scrollTop = n }, v)
-  await page.waitForTimeout(200)
+  await page.evaluate(async (n) => {
+    const el = document.querySelector('[data-page="today"]')
+    el.scrollTop = n
+    for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r))
+  }, v)
+  await page.waitForTimeout(120)
 }
 
 /* ================= A. 结构地基 ================= */
@@ -148,14 +161,17 @@ t('B4. 窗口高度全程恒定', B.clientH === A.clientH, `clientH ${A.clientH}
 await scrollTo(p, openH - 44)
 const C = await p.evaluate(PROBE)
 t('C1. 折到底浮层高 ≈ 一行（44px，±4）', Math.abs(C.wrapH - 44) <= 4, `wrapH=${C.wrapH}`)
-t('C2. 折到底状态条淡入（>0.9）', C.barOpacity > 0.9, `barOpacity=${C.barOpacity}`)
-t('C3. 折到底头卡淡出（<0.1）', C.headerOpacity < 0.1, `headerOpacity=${C.headerOpacity}`)
+t('C2. 折到底状态条露出来（>0.9）', C.barOpacity > 0.9, `barOpacity=${C.barOpacity}`)
+t('C3. 折到底头卡被整块裁掉（高 ≈ 0，±2）', C.headerH <= 2, `headerH=${C.headerH} headerOpacity=${C.headerOpacity}`)
 
-/* ================= D. 整块走掉 ================= */
+/* ================= D. 折到底后钉住（不再走掉） =================
+   2026-10-10 用户 m01369：折到底后那一行不占空间，就别再跟着上滑走掉，钉在顶上。
+   所以这里断言「再上拉，浮层顶边不动、高度不变」，与旧的「整块走掉」相反。 */
 await scrollTo(p, A.maxScroll)
 const D = await p.evaluate(PROBE)
-t('D1. 再上拉整块离开视野（浮层顶边 < -20）', D.wrapTop < -20, `wrapTop=${D.wrapTop}`)
-t('D2. 走掉时窗口仍恒定', D.clientH === A.clientH, `clientH ${A.clientH} → ${D.clientH}`)
+t('D1. 再上拉状态条钉住不动（浮层顶边不位移）', Math.abs(D.wrapTop - C.wrapTop) <= 1, `wrapTop ${C.wrapTop} → ${D.wrapTop}`)
+t('D2. 再上拉窗口仍恒定', D.clientH === A.clientH, `clientH ${A.clientH} → ${D.clientH}`)
+t('D3. 再上拉浮层高仍是一行（±4）', Math.abs(D.wrapH - 44) <= 4, `wrapH ${C.wrapH} → ${D.wrapH}`)
 
 /* ================= E. 复位 ================= */
 await scrollTo(p, 0)

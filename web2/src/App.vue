@@ -213,7 +213,7 @@ function measureTodayH() {
   todayH.value = Math.max(320, Math.round(window.innerHeight - rootTop - todayTopOffset - navH.value - 8))
 }
 /* ---------------- 今日页头部上拉收缩（m26207 用户要，m26282 拍板「乙」） ----------------
-   上拉时头部压成一行状态条（课名 + 剩余 + 录音钮），再继续上拉这条也整块走掉。
+   上拉时头部压成一行状态条（课名 + 剩余 + 录音钮），折到底后钉在顶部（不再继续滑走，用户 m01369）。
 
    ⚠ 为什么头部是「浮层」而不是留在文档流里（2026-10-09 推导，别改回去）：
    如果头部在流里、上拉时把自己的高度收掉，那么「列表窗口的顶」会跟着上移 s，而窗口里的
@@ -221,7 +221,7 @@ function measureTodayH() {
    只有让滚动窗口自己不动：头部改成绝对定位浮在上面，今日页窗口 = 整块可用高度（顶到 root 顶），
    滚动内容加一段等高的 padding-top 把第一条推到头卡下面。这样
    · 内容相对视口位移 = 只有 scrollTop（1×）；
-   · 头卡压缩/走掉全程纯视觉（clip + opacity + transform），一次布局都不触发；
+   · 头卡收缩/走掉全程纯视觉（clip + 高度伸缩 + transform），不动滚动窗口的布局；
    · 窗口高度恒定 ⇒ 不存在「底部空一条」。
    三条硬约束：
    ① 录音中 / 复盘浮层开着时锁在展开态 —— 按钮位置永远稳定，不跟着滚动跑；
@@ -241,12 +241,9 @@ const heroActive = computed(() => tab.value === 'today' && !heroLocked.value && 
 const heroCompressLen = computed(() => Math.max(0, heroOpenH.value - heroMinH.value))
 const clamp01 = (v) => Math.max(0, Math.min(1, v))
 // 折叠进度：0 展开 → 1 只剩一行（1:1 跟着上拉，跟手）
+// 折到底之后不再继续变化 —— 状态条钉在顶上不动（用户 m01369：反正不占空间，
+// 别跟着继续滑走；原来还有一段「走掉」位移，2026-10-10 按用户要求删掉）
 const heroP = computed(() => (heroActive.value ? clamp01(heroScroll.value / heroCompressLen.value) : 0))
-// 走掉进度：折叠到底之后才开始，走的距离就是这一行自己的高度（再往上 1:1 跟手）
-const heroT = computed(() => {
-  if (!heroActive.value || heroP.value < 1) return 0
-  return clamp01((heroScroll.value - heroCompressLen.value) / heroMinH.value)
-})
 // 浮层高度：今日页按进度收；别的 tab 返回 null（不写内联高度 ⇒ 按自然高度渲染）——
 // 周课表靠外层 grid 的 0fr 整块收起，我的页要显示紧凑版问候卡，都别插手。
 // 未测量到高度时也返回 null，先按自然高度渲染一帧
@@ -256,10 +253,29 @@ const heroWrapH = computed(() => {
   const h = heroOpenH.value - heroCompressLen.value * heroP.value
   return Math.max(heroMinH.value, Math.round(h))
 })
-const heroTranslateY = computed(() => Math.round(heroMinH.value * heroT.value))
-const heroFullOpacity = computed(() => Math.max(0, 1 - 1.6 * heroP.value))
-// 状态条在快收完时才淡入，避免中途两套文案叠在一起看不清
-const heroBarOpacity = computed(() => clamp01((heroP.value - 0.5) * 2))
+// 头卡高度：随折叠进度整块塌掉（heroFullH → 0），和「今日 → 周课表」同一个手法（1fr → 0fr）。
+// 头卡自己 opaque + overflow-hidden，塌到 0 时被整块裁掉，下方内容自然顶上；
+// 浮动状态条是 hero-wrap 里的绝对定位兄弟，不跟着塌，塌完正好只剩它那一行。
+// 注意 header 是 border-box：只把 height 归零，padding 仍是高度下限，
+// 卡片会留下 2×20px 的渐变底压在状态条后面 —— 所以把纵向 padding 一起内联塌掉。
+// 折叠期间同时关掉 padding 过渡（transition 会跟手指打架，做不到 1:1）。
+// ⚠ 没在收（heroP === 0）时必须返回 null：切回今日页那一下，内联的定高 + padding +
+//   transition-property:none 会当场生效，把 header 自己的 280ms padding 过渡掐死，
+//   头部于是「啪」地跳到位 —— 2026-10-10 用户 m01369 报的切页动画坏掉就是这个。
+//   交给 CSS 过渡，只在真的在收时才接管。
+const heroHeaderStyle = computed(() => {
+  if (tab.value !== 'today' || !heroFullH.value) return null
+  if (heroP.value <= 0) return null
+  const k = 1 - heroP.value
+  return {
+    height: Math.max(0, Math.round(heroFullH.value * k)) + 'px',
+    paddingTop: Math.round(20 * k) + 'px',
+    paddingBottom: Math.round(20 * k) + 'px',
+    transitionProperty: 'none',
+  }
+})
+// 状态条在头卡快塌完时才露出来（最后 10%），避免中途两套文案叠在一起看不清
+const heroBarOpacity = computed(() => clamp01((heroP.value - 0.9) / 0.1))
 const heroBarTitle = computed(() => String(heroTitle.value || '').replace(/^进行中 · /, ''))
 const heroBarRemain = computed(() => (currentCourse.value ? `还剩 ${Math.max(0, minOf(currentCourse.value.end) - nowTime.value)} 分` : ''))
 const heroRange = computed(() => {
@@ -4602,78 +4618,78 @@ provide(APP_CTX, reactive({
   onWeekMenuAway, stripRef, stripH, stripInstant, stripInstantTimer, markStripInstant, measureStrip, todayH,
   todayRef, todayTopOffset, measureTodayH, HERO_WRAP_PAD, HERO_CONTENT_PAD, heroRef, heroBarRef, heroFullH,
   heroBarH, heroScroll, heroLocked, heroOpenH, heroMinH, heroActive, heroCompressLen, clamp01,
-  heroP, heroT, heroWrapH, heroTranslateY, heroFullOpacity, heroBarOpacity, heroBarTitle, heroBarRemain,
-  heroRange, heroContentPad, heroRaf, onTodayScroll, measureHero, swipeDx, swiping, sw,
-  onStripTouchStart, onStripTouchMove, onStripTouchEnd, onStripTouchCancel, APP_PLUGIN, backHint, closeTopmostLayer, lastBackTs,
-  backHintTimer, initBackButton, picker, pickerRef, openDateField, openTimeField, openNumberField, pickerConfirm,
-  initial, source, semester, weekAll, events, routines, dayOverrides, importMsg,
-  setDayOverrides, reloadDayOverrides, WEEKDAY_CN, KIND_OPTIONS, addDayOverride, patchDayOverride, removeDayOverride, holidayMsg,
-  holidayBusy, refreshHolidaysNow, holidaySyncing, syncHolidaysOnBoot, reloadDataset, addedDupCount, dedupCourses, onImportFile,
-  onClearImport, eduPreview, eduBusy, eduMsg, eduMsgBad, eduConfirming, eduSnapshot, eduLoginOpen,
-  eduLoginUser, eduLoginPw, eduLoginRemember, eduLoginShowPw, eduLoginBusy, eduLoginStage, eduLoginMsg, eduLoginMsgBad,
-  eduSecretReady, eduTermXnm, eduTermXqm, eduKeepAllTerms, eduNewFirstMonday, eduNewWeeks, eduFromOnboard, mondayOfToday,
-  eduPreviewOf, closeEduPreview, onEduFile, confirmEduImport, onRestoreEduSnapshot, EDU_STAGE_LABELS, EDU_TERM_LABELS, EDU_ORD_LABELS,
-  eduTermCountsText, termFromSemester, openEduLogin, closeEduLogin, onEduLogin, notifySettings, notifyPerm, notifyOk,
-  notifyTesting, notifyMsg, notifyMsgBad, exactAlarm, exactAsking, exactMsg, exactMsgBad, exactHint,
-  refreshExactAlarm, onAskExactAlarm, goMeTab, applyNotifySchedule, toggleNotify, setNotifyLead, onTestNotify, initNotify,
-  frameSettings, frameIsApp, frameMarksToday, refreshFrameMarks, unmarkListenDone, frameMarkedClips, frameMsg, frameMsgBad,
-  setFrameMsg, frameToast, frameToastTimer, showFrameToast, frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop, frameTodayItems,
-  frameTomorrowFirst, pushFrameNow, applyFrameActions, frameDrainErr, drainFrameActions, initFrame, toggleFrame, onFrameVisible,
-  ONBOARD_KEY, onboarding, onboardStep, OB_STEP_LABELS, onboardStepNo, finishOnboarding, confirmClear, doClearData,
-  habits, habitInput, habitName, habitToday, reloadHabits, addHabitConfirm, removeHabitConfirm, habitDelId,
-  habitDelTimer, onHabitDelete, toggleHabit, habitsAllDoneToday, undoAllHabitsToday, habitGrace, habitWeekBase, habitViewDays,
-  habitWeekLabel, shiftHabitWeek, habitTodayDone, onHabitCell, habitCellState, HABIT_CELL_CLS, habitTodayText, lectures,
-  recActiveId, recElapsed, recMsg, recMsgBad, playingId, recTicker, audioEl, recSupported,
-  refreshLectures, setRecMsg, fmtDur, fmtLecDate, lecStatusLabel, defaultLecTitle, entryName, tickRec,
-  startRec, AUTO_STOP_GRACE_MIN, finalizeRecording, stopRec, onVisibleCheckAutoStop, reconcileKeepAlive, playLec, onPlayFail,
-  delLecId, pressActiveId, pressTimer, pressPos, delLec, startLecPress, moveLecPress, cancelLecPress,
-  doDeleteLecture, listenClips, listenSettings, listenMsg, listenMsgBad, listenOpen, listenIsApp, setListenMsg,
-  refreshListen, initListen, listenDayKey, applyListenSchedule, reviewSheet, reviewHistory, reviewSettings, reviewMsg,
-  reviewMsgBad, REVIEW_AT_CHOICES, WD_LABELS, todayReview, reviewStepTotal, weekdayLabelOf, refreshReviews, setReviewMsg,
-  moodLabelOf, initReview, reviewStatsNow, openReview, closeReview, reviewSetAnswer, reviewNext, reviewBack,
-  reviewFinish, toggleReviewNotify, setReviewAt, applyReviewSchedule, dailyBook, todayDaily, dailyBaseline, snapshotToday,
-  dailyLineOf, accountToday, accountHistory, reasonBook, saveReasonBook, reasonCallout, reasonAskedToday, patternDays,
-  weekdayGapList, topGap, patternTell, patternAi, patternLine, patternSrc, askPatternLine, noteReason,
-  sayReasonBack, muteCurrentReason, markPatternSeen, reviewFocusText, reviewAddTodo, isSameDay, listenSuggestions, listenDue,
-  listenTodayAll, listenStageLabel, onListenPick, listenAutoMark, toggleListenNotify, listenSettingsOpen, patchListenSettings, onListenRepeat,
-  onListenIntervals, onListenDnd, onListenNum, resetListenSettings, listenBlobUrls, listenPlayId, listenPlayRound, listenPlayTotal,
-  listenAudio, listenPaused, pauseListen, clearListen, resumeListen, onListenEnded, onListenPlay, trSupported,
-  trBusyId, trPhase, trPercent, trLabel, trOpenId, fmtSize, startTr, llmCfg,
-  llmInputOpen, settingsOpen, meSub, meSubTitle, openMeSub, closeMeSub, PROVIDER_OPTIONS, llmReady,
-  sumBusyId, sumStage, sumOpenId, sumCtrl, saveLlm, onLlmProvider, onLlmKey, llmTest,
-  llmModels, testLlm, cancelSummary, startSummary, runAutoPipeline, tomorrowStr, homeworkToTodos, onboardFile,
-  onboardImport, onboardEduLogin, obImportMsg, onOnboardFile, semForm, semErr, DEFAULT_PERIODS, openSemEdit,
-  evenSplitSubTerms, saveSemEdit, defaultTermName, fmtDateYMD, obForm, obErr, goObForm, obPageDir,
-  goObPeriods, backObForm, obStepDir, obAiFrom, obAiErr, gotoAiCfg, onObAiKey, obAiTest,
-  obAiDone, obAiBack, obPickStart, obStartHint, obPickWeeks, SEG_NAMES, segName, obTimeSummary,
-  obPickDur, obPickGap, obGlobal, obReperiod, obSegGroups, obPickPeriodStart, obPickPeriodEnd, obAddPeriod,
-  obRemovePeriod, obSubmit, obRecFile, obRecBusy, obRecErr, recPreview, WEEKDAY_LABELS, WEEK_RULE_LABELS,
-  recSelectedCount, obPeriods, obSegView, recFromMine, minePeriods, recPeriods, recSegView, mineRecStart,
-  mineRecCancel, goObRec, recBackForm, obManualAdd, obRecClick, onObRecFile, recSecOptions, recTimeRange,
-  recRemove, recGrid, recCols, recRows, recRowIdx, recColsStyle, recGridStyle, recOverlapNote,
-  palOf, recItemHot, recPressCell, recCellDown, recCellUp, recCell, recCellErr, openRecAdd,
-  openRecEdit, recCellWhere, recCellWhen, submitRecCell, delRecCell, recBack, recImport, THEME_KEY,
-  theme, isDark, applyTheme, toggleTheme, ACCENTS, ACCENT_KEY, savedAccent, accent,
-  applyAccent, setAccent, AUTO_THEME_KEY, autoTheme, AUTO_SLOTS, autoSlot, autoSlotName, autoApplied,
-  applyAutoTheme, setAutoTheme, todos, doneCount, toggleTodo, TODO_FILTERS, todoFilter, shownTodos,
-  setTodoFilter, todoForm, todoErr, openTodoAdd, openTodoEdit, submitTodo, deleteTodoNow, confirmDelTodo,
-  confirmDelTodoTimer, onDeleteTodo, evtForm, evtErr, evtWarn, evtConfirmed, openEventAdd, submitEvent,
-  onExportBack, onExportIcs, today, todayIdx, todayStr, todayEffWd, todayMark, todayCourses,
-  todayRoutineCount, termInfo, conflictPool, tParam, nowTime, GREET_CUTE, greetingText, state,
-  currentCourse, headerCourseText, nextTodayId, minUntil, rowMeta, LIVE_PREVIEW, todayPast, todayLive,
-  todayExpanded, pastOpen, pastSpan, livePreview, hiddenCount, rowsShown, REVIEW_FROM, heroCourse,
-  allTodayCoursesDone, heroMode, heroSubline, heroTitle, recEntryOn, heroSub, dateText, weekDay,
-  DAY_START, DAY_END, weekOffset, weekNo, monday, weekDays, weekSubTerm, weekVisible,
-  weekDayMarks, weekCols, gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME, winH, navH,
-  satPx, gridTop, gridH, measureNavH, measureSat, measureGridTop, onWinResize, gridColsStyle,
-  gridBodyStyle, cardFit, PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine, pal,
-  periods, periodSpan, courseStatus, gridStatus, nowPct, nowClock, nowLineY, undoneCount,
-  undoneTodos, doneTodos, detail, openDetail, WDN, listTotalCount, listFixedCount, listDateLabel,
-  listGroups, listBarColor, listMeta, onListItem, addForm, addErr, addWarn, addConfirmed,
-  DURATIONS, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail,
-  editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail,
-  onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove, gridUp,
-  gridDbl, anySheetOpen, syncBodyScrollLock,
+  heroP, heroWrapH, heroHeaderStyle, heroBarOpacity, heroBarTitle, heroBarRemain, heroRange, heroContentPad,
+  heroRaf, onTodayScroll, measureHero, swipeDx, swiping, sw, onStripTouchStart, onStripTouchMove,
+  onStripTouchEnd, onStripTouchCancel, APP_PLUGIN, backHint, closeTopmostLayer, lastBackTs, backHintTimer, initBackButton,
+  picker, pickerRef, openDateField, openTimeField, openNumberField, pickerConfirm, initial, source,
+  semester, weekAll, events, routines, dayOverrides, importMsg, setDayOverrides, reloadDayOverrides,
+  WEEKDAY_CN, KIND_OPTIONS, addDayOverride, patchDayOverride, removeDayOverride, holidayMsg, holidayBusy, refreshHolidaysNow,
+  holidaySyncing, syncHolidaysOnBoot, reloadDataset, addedDupCount, dedupCourses, onImportFile, onClearImport, eduPreview,
+  eduBusy, eduMsg, eduMsgBad, eduConfirming, eduSnapshot, eduLoginOpen, eduLoginUser, eduLoginPw,
+  eduLoginRemember, eduLoginShowPw, eduLoginBusy, eduLoginStage, eduLoginMsg, eduLoginMsgBad, eduSecretReady, eduTermXnm,
+  eduTermXqm, eduKeepAllTerms, eduNewFirstMonday, eduNewWeeks, eduFromOnboard, mondayOfToday, eduPreviewOf, closeEduPreview,
+  onEduFile, confirmEduImport, onRestoreEduSnapshot, EDU_STAGE_LABELS, EDU_TERM_LABELS, EDU_ORD_LABELS, eduTermCountsText, termFromSemester,
+  openEduLogin, closeEduLogin, onEduLogin, notifySettings, notifyPerm, notifyOk, notifyTesting, notifyMsg,
+  notifyMsgBad, exactAlarm, exactAsking, exactMsg, exactMsgBad, exactHint, refreshExactAlarm, onAskExactAlarm,
+  goMeTab, applyNotifySchedule, toggleNotify, setNotifyLead, onTestNotify, initNotify, frameSettings, frameIsApp,
+  frameMarksToday, refreshFrameMarks, unmarkListenDone, frameMarkedClips, frameMsg, frameMsgBad, setFrameMsg, frameToast,
+  frameToastTimer, showFrameToast, frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop, frameTodayItems, frameTomorrowFirst, pushFrameNow,
+  applyFrameActions, frameDrainErr, drainFrameActions, initFrame, toggleFrame, onFrameVisible, ONBOARD_KEY, onboarding,
+  onboardStep, OB_STEP_LABELS, onboardStepNo, finishOnboarding, confirmClear, doClearData, habits, habitInput,
+  habitName, habitToday, reloadHabits, addHabitConfirm, removeHabitConfirm, habitDelId, habitDelTimer, onHabitDelete,
+  toggleHabit, habitsAllDoneToday, undoAllHabitsToday, habitGrace, habitWeekBase, habitViewDays, habitWeekLabel, shiftHabitWeek,
+  habitTodayDone, onHabitCell, habitCellState, HABIT_CELL_CLS, habitTodayText, lectures, recActiveId, recElapsed,
+  recMsg, recMsgBad, playingId, recTicker, audioEl, recSupported, refreshLectures, setRecMsg,
+  fmtDur, fmtLecDate, lecStatusLabel, defaultLecTitle, entryName, tickRec, startRec, AUTO_STOP_GRACE_MIN,
+  finalizeRecording, stopRec, onVisibleCheckAutoStop, reconcileKeepAlive, playLec, onPlayFail, delLecId, pressActiveId,
+  pressTimer, pressPos, delLec, startLecPress, moveLecPress, cancelLecPress, doDeleteLecture, listenClips,
+  listenSettings, listenMsg, listenMsgBad, listenOpen, listenIsApp, setListenMsg, refreshListen, initListen,
+  listenDayKey, applyListenSchedule, reviewSheet, reviewHistory, reviewSettings, reviewMsg, reviewMsgBad, REVIEW_AT_CHOICES,
+  WD_LABELS, todayReview, reviewStepTotal, weekdayLabelOf, refreshReviews, setReviewMsg, moodLabelOf, initReview,
+  reviewStatsNow, openReview, closeReview, reviewSetAnswer, reviewNext, reviewBack, reviewFinish, toggleReviewNotify,
+  setReviewAt, applyReviewSchedule, dailyBook, todayDaily, dailyBaseline, snapshotToday, dailyLineOf, accountToday,
+  accountHistory, reasonBook, saveReasonBook, reasonCallout, reasonAskedToday, patternDays, weekdayGapList, topGap,
+  patternTell, patternAi, patternLine, patternSrc, askPatternLine, noteReason, sayReasonBack, muteCurrentReason,
+  markPatternSeen, reviewFocusText, reviewAddTodo, isSameDay, listenSuggestions, listenDue, listenTodayAll, listenStageLabel,
+  onListenPick, listenAutoMark, toggleListenNotify, listenSettingsOpen, patchListenSettings, onListenRepeat, onListenIntervals, onListenDnd,
+  onListenNum, resetListenSettings, listenBlobUrls, listenPlayId, listenPlayRound, listenPlayTotal, listenAudio, listenPaused,
+  pauseListen, clearListen, resumeListen, onListenEnded, onListenPlay, trSupported, trBusyId, trPhase,
+  trPercent, trLabel, trOpenId, fmtSize, startTr, llmCfg, llmInputOpen, settingsOpen,
+  meSub, meSubTitle, openMeSub, closeMeSub, PROVIDER_OPTIONS, llmReady, sumBusyId, sumStage,
+  sumOpenId, sumCtrl, saveLlm, onLlmProvider, onLlmKey, llmTest, llmModels, testLlm,
+  cancelSummary, startSummary, runAutoPipeline, tomorrowStr, homeworkToTodos, onboardFile, onboardImport, onboardEduLogin,
+  obImportMsg, onOnboardFile, semForm, semErr, DEFAULT_PERIODS, openSemEdit, evenSplitSubTerms, saveSemEdit,
+  defaultTermName, fmtDateYMD, obForm, obErr, goObForm, obPageDir, goObPeriods, backObForm,
+  obStepDir, obAiFrom, obAiErr, gotoAiCfg, onObAiKey, obAiTest, obAiDone, obAiBack,
+  obPickStart, obStartHint, obPickWeeks, SEG_NAMES, segName, obTimeSummary, obPickDur, obPickGap,
+  obGlobal, obReperiod, obSegGroups, obPickPeriodStart, obPickPeriodEnd, obAddPeriod, obRemovePeriod, obSubmit,
+  obRecFile, obRecBusy, obRecErr, recPreview, WEEKDAY_LABELS, WEEK_RULE_LABELS, recSelectedCount, obPeriods,
+  obSegView, recFromMine, minePeriods, recPeriods, recSegView, mineRecStart, mineRecCancel, goObRec,
+  recBackForm, obManualAdd, obRecClick, onObRecFile, recSecOptions, recTimeRange, recRemove, recGrid,
+  recCols, recRows, recRowIdx, recColsStyle, recGridStyle, recOverlapNote, palOf, recItemHot,
+  recPressCell, recCellDown, recCellUp, recCell, recCellErr, openRecAdd, openRecEdit, recCellWhere,
+  recCellWhen, submitRecCell, delRecCell, recBack, recImport, THEME_KEY, theme, isDark,
+  applyTheme, toggleTheme, ACCENTS, ACCENT_KEY, savedAccent, accent, applyAccent, setAccent,
+  AUTO_THEME_KEY, autoTheme, AUTO_SLOTS, autoSlot, autoSlotName, autoApplied, applyAutoTheme, setAutoTheme,
+  todos, doneCount, toggleTodo, TODO_FILTERS, todoFilter, shownTodos, setTodoFilter, todoForm,
+  todoErr, openTodoAdd, openTodoEdit, submitTodo, deleteTodoNow, confirmDelTodo, confirmDelTodoTimer, onDeleteTodo,
+  evtForm, evtErr, evtWarn, evtConfirmed, openEventAdd, submitEvent, onExportBack, onExportIcs,
+  today, todayIdx, todayStr, todayEffWd, todayMark, todayCourses, todayRoutineCount, termInfo,
+  conflictPool, tParam, nowTime, GREET_CUTE, greetingText, state, currentCourse, headerCourseText,
+  nextTodayId, minUntil, rowMeta, LIVE_PREVIEW, todayPast, todayLive, todayExpanded, pastOpen,
+  pastSpan, livePreview, hiddenCount, rowsShown, REVIEW_FROM, heroCourse, allTodayCoursesDone, heroMode,
+  heroSubline, heroTitle, recEntryOn, heroSub, dateText, weekDay, DAY_START, DAY_END,
+  weekOffset, weekNo, monday, weekDays, weekSubTerm, weekVisible, weekDayMarks, weekCols,
+  gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME, winH, navH, satPx, gridTop,
+  gridH, measureNavH, measureSat, measureGridTop, onWinResize, gridColsStyle, gridBodyStyle, cardFit,
+  PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine, pal, periods, periodSpan,
+  courseStatus, gridStatus, nowPct, nowClock, nowLineY, undoneCount, undoneTodos, doneTodos,
+  detail, openDetail, WDN, listTotalCount, listFixedCount, listDateLabel, listGroups, listBarColor,
+  listMeta, onListItem, addForm, addErr, addWarn, addConfirmed, DURATIONS, fmtTime,
+  clampStart, openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail, editRoutineFromDetail, stepStart,
+  submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail, onDelRoutine, lpTimer,
+  lpFrom, cellAt, firePick, gridDown, gridMove, gridUp, gridDbl, anySheetOpen,
+  syncBodyScrollLock,
 }))
 /* ===== APP_CTX:end ===== */
 </script>
@@ -4696,7 +4712,7 @@ provide(APP_CTX, reactive({
       style="transition-timing-function: cubic-bezier(0.3, 0.75, 0.3, 1)"
     >
       <div class="min-h-0 overflow-hidden">
-    <!-- 今日页头部上拉收缩（2026-10-09，用户拍板「乙」：压成一行 + 整块走掉）。
+    <!-- 今日页头部上拉收缩（2026-10-09，用户拍板「乙」：压成一行；折到底后钉住，用户 m01369）。
          裁剪盒的高度完全由 heroWrapH 驱动、不加 transition —— 它跟着 scrollTop 走，
          加过渡就等于跟手指打架。header 自己也不用 transform 过渡，同理。
          pt-3 是从 header 原来的 mt-3 搬进来的：放进盒子里才能随 0fr 一起被裁掉，
@@ -4705,15 +4721,13 @@ provide(APP_CTX, reactive({
       data-hero-wrap
       class="overflow-hidden px-4"
       :class="tab === 'today' ? 'absolute inset-x-0 top-0 z-10 pt-3' : (tab === 'week' ? 'relative h-0 pt-0' : 'relative pt-3')"
-      :style="tab === 'today' && heroWrapH !== null
-        ? { height: heroWrapH + 'px', transform: 'translateY(-' + heroTranslateY + 'px)' }
-        : null"
+      :style="tab === 'today' && heroWrapH !== null ? { height: heroWrapH + 'px' } : null"
     >
     <header
       ref="heroRef"
       class="relative overflow-hidden rounded-[20px] bg-gradient-to-br from-primary-50 to-primary-100 shadow-sm transition-[padding] duration-[280ms]"
       :class="tab === 'today' ? 'px-5 pb-5 pt-5' : 'px-5 pb-3 pt-3.5'"
-      :style="tab === 'today' ? { opacity: heroFullOpacity } : null"
+      :style="tab === 'today' ? heroHeaderStyle : null"
     >
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0 flex-1">

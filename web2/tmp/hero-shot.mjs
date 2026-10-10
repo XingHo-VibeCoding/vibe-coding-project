@@ -1,4 +1,8 @@
-// 今日页头部上拉收缩：三个状态出图（展开 / 压成一行 / 整块走掉）。用完即删。
+/* 今日页头部上拉收缩：状态出图（展开 / 压成一行 / 折到底再上拉的暗色版）。
+   ⚠ 2026-10-10：折到底后头部钉住、不再「整块走掉」（用户 m01369），故走掉档已删。
+   ⚠ scrollTo 必须在 page.evaluate 内 await 6 帧：onTodayScroll 是 rAF 去抖的，
+     而 headless Chrome 无合成帧时不推进 rAF，否则量到的是没更新的几何。
+   用法：先 vite build + 起 dist 静态服务（默认 4177），再 node tmp/hero-shot.mjs */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
 const BASE = process.env.BASE || 'http://127.0.0.1:4177/'
@@ -38,26 +42,40 @@ await page.goto(BASE, { waitUntil: 'load' })
 await page.waitForSelector('[data-page="today"]')
 await page.waitForTimeout(900)
 
-const scrollTo = async (s) => { await page.evaluate((v) => { document.querySelector('[data-page="today"]').scrollTop = v }, s); await page.waitForTimeout(220) }
+const scrollTo = async (v) => {
+  await page.evaluate(async (n) => {
+    document.querySelector('[data-page="today"]').scrollTop = n
+    for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r))
+  }, v)
+  await page.waitForTimeout(350)
+}
 const geom = () => page.evaluate(() => {
   const main = document.querySelector('[data-page="today"]')
   const wrap = document.querySelector('[data-hero-wrap]')
-  return { scrollTop: main.scrollTop, max: main.scrollHeight - main.clientHeight, wrapH: Math.round(wrap.getBoundingClientRect().height), wrapTop: Math.round(wrap.getBoundingClientRect().top) }
+  const header = document.querySelector('header')
+  const bar = document.querySelector('[data-hero-bar]')
+  return {
+    scrollTop: main.scrollTop, maxScroll: main.scrollHeight - main.clientHeight,
+    wrapH: Math.round(wrap.getBoundingClientRect().height), wrapTop: Math.round(wrap.getBoundingClientRect().top),
+    headerH: Math.round(header.getBoundingClientRect().height),
+    headerOp: getComputedStyle(header).opacity,
+    barOp: parseFloat(getComputedStyle(bar).opacity).toFixed(2),
+  }
 })
 
 const full = await geom()
-console.log('展开态：', JSON.stringify(full))
+console.log('展开态：  ', JSON.stringify(full))
 await page.screenshot({ path: 'tmp/hero-1-full.png' })
 
 // 折到底：滚动 = openH − minH（minH 就是那一行状态条 + 12 顶距）
-await scrollTo(full.wrapH - 44)
-console.log('折到底：', JSON.stringify(await geom()))
+const collapsed = full.wrapH - 44
+await scrollTo(collapsed)
+console.log('折到底：  ', JSON.stringify(await geom()))
 await page.screenshot({ path: 'tmp/hero-2-bar.png' })
 
-// 整块走掉
-await scrollTo(full.max)
-console.log('走掉：  ', JSON.stringify(await geom()))
-await page.screenshot({ path: 'tmp/hero-3-gone.png' })
+// 再往上拉：状态条钉住不动（不写新图，只打印几何验证「不走了」）
+await scrollTo(full.maxScroll)
+console.log('再往上拉：', JSON.stringify(await geom()), '← wrapTop / wrapH 应与「折到底」一致')
 
 // 暗色版折到底
 await page.evaluate(() => { localStorage.setItem('web2.theme', 'dark'); location.reload() })
@@ -65,6 +83,6 @@ await page.waitForSelector('[data-page="today"]')
 await page.waitForTimeout(900)
 const full2 = await geom()
 await scrollTo(full2.wrapH - 44)
-await page.screenshot({ path: 'tmp/hero-4-bar-dark.png' })
+await page.screenshot({ path: 'tmp/hero-3-bar-dark.png' })
 
 await browser.close()

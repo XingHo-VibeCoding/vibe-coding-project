@@ -230,23 +230,21 @@ web2 (App.vue watch / visibilitychange)
 
 ### 2.5 今日页头部上拉收缩（Day 28 续）
 
-今日页顶部问候卡随上拉等比压缩成一行状态条、再整块滑出视野。
+今日页顶部问候卡随上拉等比压缩成一行状态条；**折到底后钉在顶上，不再继续滑走**（2026-10-10 按用户 m01369 修订，原「再整块滑出视野」已废止），「接下来」列表顶到它下面。
 
 **唯一的结构决定：头部必须是 `absolute` 浮层，不能留在文档流里。**
-若头部在流内、上拉时收掉自身高度 `s`，则「滚动窗口的顶」也上移 `s`，而窗口 `scrollTop` 也是 `s` ⇒ **列表内容以 2× 速度飞走，且 `scrollTop` 会被反复夹回原位**。要让内容 1:1 跟手，只有让滚动窗口自己不动：头部 `position: absolute` 浮在上面，`main[data-page="today"]` 的高度 = 整块可用高度（顶到 root 顶），滚动内容加一段**与展开态等高的常量 `padding-top`**（`heroContentPad = heroOpenH + HERO_CONTENT_PAD`，**刻意不随滚动变** —— 变一下就又变回 2×）。压缩/走掉全程是纯视觉（`height` 裁切 + `opacity` + `transform`），**不触发布局**，窗口高度恒定 ⇒ 不存在「底部空一条」。
+若头部在流内、上拉时收掉自身高度 `s`，则「滚动窗口的顶」也上移 `s`，而窗口 `scrollTop` 也是 `s` ⇒ **列表内容以 2× 速度飞走，且 `scrollTop` 会被反复夹回原位**。要让内容 1:1 跟手，只有让滚动窗口自己不动：头部 `position: absolute` 浮在上面，`main[data-page="today"]` 的高度 = 整块可用高度（顶到 root 顶），滚动内容加一段**与展开态等高的常量 `padding-top`**（`heroContentPad = heroOpenH + HERO_CONTENT_PAD`，**刻意不随滚动变** —— 变一下就又变回 2×）。压缩全程是纯视觉（`height` 裁切），**不触发布局**，窗口高度恒定 ⇒ 不存在「底部空一条」。
 
 `web2/src/App.vue` 里的量：`HERO_WRAP_PAD = 12`（浮层顶部留白，原 header 的 `mt-3` 搬进来）、`HERO_CONTENT_PAD = 16`（内容原本的 `pt-4`）；`heroFullH` / `heroBarH` 由 `measureHero()` 量 `heroRef` / `heroBarRef` 的 `offsetHeight`：
 
 | 量 | 含义 |
 |---|---|
 | `heroActive` | `tab === 'today' && !heroLocked && heroOpenH > heroMinH` —— 只有今日页、且没被锁、且确实有得收时才参与 |
-| `heroP` | `clamp01(heroScroll / heroCompressLen)`，0 展开 → 1 只剩一行（1:1 跟手） |
-| `heroT` | 折到底后再上拉：`clamp01((heroScroll − heroCompressLen) / heroMinH)`，把整块推走 |
-| `heroWrapH` | 浮层高度 = `heroOpenH − heroCompressLen·heroP − heroMinH·heroT`；**别的 tab 返回 `null`**（不写内联高度，交回外层 grid 的 0fr 收起） |
-| `heroTranslateY` | `heroMinH · heroT` |
-| `heroFullOpacity` | `max(0, 1 − 1.6·heroP)`（头卡淡出） |
-| `heroBarOpacity` | `clamp01((heroP − 0.5)·2)`（状态条 50% 之后才淡入，避免两套文案叠着看不清） |
-| `heroLocked` | `!!recActiveId \|\| !!reviewSheet` ⇒ 录音中 / 复盘浮层开着时 `heroP`、`heroT` 恒 0，头部停展开态（按钮位置永远稳定） |
+| `heroP` | `clamp01(heroScroll / heroCompressLen)`，0 展开 → 1 只剩一行（1:1 跟手；**折到底后不再变化**，状态条钉住） |
+| `heroWrapH` | 浮层高度 = `heroOpenH − heroCompressLen·heroP`；**别的 tab 返回 `null`**（不写内联高度，交回外层 grid 的 0fr 收起） |
+| `heroHeaderStyle` | **仅当 `tab==='today' && heroFullH && heroP > 0`** 才返回 `{ height, paddingTop, paddingBottom, transitionProperty:'none' }`，三者都乘 `(1 − heroP)` —— 头卡**真收缩**（2026-10-10 由 `heroFullOpacity` 淡出改来：header 是 border-box，光把 height 归零会留 `2×20px` padding 的渐变底，纵向 padding 必须一起塌）。⚠ `heroP === 0` 必须返回 `null`：否则切回今日页那一帧内联样式会掐死 header 自己的 280ms padding 过渡，切页动画变成硬跳（2026-10-10 用户报的 bug） |
+| `heroBarOpacity` | `clamp01((heroP − 0.9) / 0.1)`（状态条只在最后 10% 露出，避免中途两套文案叠着看不清） |
+| `heroLocked` | `!!recActiveId \|\| !!reviewSheet` ⇒ 录音中 / 复盘浮层开着时 `heroP` 恒 0，头部停展开态（按钮位置永远稳定） |
 | `onTodayScroll()` | 用 `requestAnimationFrame` 去抖，回调里读 `todayRef.scrollTop` 写 `heroScroll` |
 
 **`measureHero()` 只涨不跌**（`if (h > heroFullH.value) heroFullH.value = h`）：切回今日页时 `header` 的 padding 类从紧凑版切回展开版有 280ms 过渡，`watch(tabIndex)` 的 `nextTick` 会量到「还没长开」的值；一旦写小，`heroContentPad` 跟着变小 ⇒ `scrollHeight` 变小 ⇒ 浏览器立刻把 `scrollTop` 夹掉，位置丢失（实测 246 → 73；与文件既有 `todayTopOffset`「只涨不跌」是同一条理由，2026-10-05 已为它实证过一次）。
