@@ -232,10 +232,14 @@ web2 (App.vue watch / visibilitychange)
 
 今日页顶部问候卡随上拉等比压缩成一行状态条；**折到底后钉在顶上，不再继续滑走**（2026-10-10 按用户 m01369 修订，原「再整块滑出视野」已废止），「接下来」列表顶到它下面。
 
+**（2026-10-12 三次修订，用户 m02029 拍板）钉住带来的两处必修**：① **浮层必须铺底色**。钉住后这一行与下方滚动内容长期共处一屏，而头卡已塌成 `height:0`；浮层原本无背景（实测 `rgba(0,0,0,0)`）⇒ 下方待办文字从状态条背后透上来叠字。today 分支加 `bg-canvas`（`--color-canvas`，随浅/深主题走）；实测重叠区暗像素占比 33.87% → 19.91%。② **收起高度 44 → 52px**。状态条按钮本体 34px，靠 `after:-inset-y-1.5` 撑到 46px 触区，但浮层 `overflow-hidden` 把 `after` 下沿裁掉，而 `heroMinH` 只有 `heroBarH + HERO_WRAP_PAD = 32 + 12`（底部留白 0）⇒ 实际可点高度只有 39px。新增 `HERO_WRAP_PAD_BOTTOM = 8` 加进 `heroMinH` 后为 `12 + 32 + 8 = 52`，触区补满。
+
+**（2026-10-12 四次修订，用户 m02386）切页硬跳的真凶：学期进度带在塌缩格之外。** 2026-10-10 只修了 `heroHeaderStyle` 的 `heroP <= 0 → null`（让位给 CSS 过渡），切页**仍**硬跳，且**两个方向都跳**：`周课表 → 今日` 首帧 `76 → 120`（+44px）、`今日 → 周课表` 首帧 `273 → 229`（−44px），都发生在 `postSync` 之后第一个 rAF 内。`tabswitch-boxdump.mjs` 逐子元素量盒模型：今日态 header 273px 有三个 kid，其中 kid#2 为 `data-term-ribbon`（高 32.5 + `mt-3` 的 12px = **44.5px**）；周课表态只有两个 kid、kid#2 不存在。`tabswitch-ribbon-check.mjs` 运行时注入 `[data-term-ribbon]{display:none !important}` 后六帧全停在 `hH=76`，跳变消失 ⇒ 根因确认。**修法**：把学期进度带**搬进 header 内「主体」那个 `1fr/0fr` 塌缩格**，并**去掉 `tab === 'today'` 条件**（只留 `v-if="termInfo"`）。别的 tab 上该格本来就是 `grid-rows-[0fr]` + 内层 `min-h-0 overflow-hidden`，整块被裁掉，不会露出来撑高。修后 `tabswitch-full.mjs`：`今日 → 周课表` 首帧 `273 → 263`、`周课表 → 今日` 单帧最大变化 **11px**，两方向均在 ~370ms 内平滑走到位。**规矩：凡是切页要增减高度的东西，必须放进那个塌缩格、由它统一裁切。**
+
 **唯一的结构决定：头部必须是 `absolute` 浮层，不能留在文档流里。**
 若头部在流内、上拉时收掉自身高度 `s`，则「滚动窗口的顶」也上移 `s`，而窗口 `scrollTop` 也是 `s` ⇒ **列表内容以 2× 速度飞走，且 `scrollTop` 会被反复夹回原位**。要让内容 1:1 跟手，只有让滚动窗口自己不动：头部 `position: absolute` 浮在上面，`main[data-page="today"]` 的高度 = 整块可用高度（顶到 root 顶），滚动内容加一段**与展开态等高的常量 `padding-top`**（`heroContentPad = heroOpenH + HERO_CONTENT_PAD`，**刻意不随滚动变** —— 变一下就又变回 2×）。压缩全程是纯视觉（`height` 裁切），**不触发布局**，窗口高度恒定 ⇒ 不存在「底部空一条」。
 
-`web2/src/App.vue` 里的量：`HERO_WRAP_PAD = 12`（浮层顶部留白，原 header 的 `mt-3` 搬进来）、`HERO_CONTENT_PAD = 16`（内容原本的 `pt-4`）；`heroFullH` / `heroBarH` 由 `measureHero()` 量 `heroRef` / `heroBarRef` 的 `offsetHeight`：
+`web2/src/App.vue` 里的量：`HERO_WRAP_PAD = 12`（浮层顶部留白，原 header 的 `mt-3` 搬进来）、`HERO_WRAP_PAD_BOTTOM = 8`（收起后浮层底部留白，2026-10-12 加，专为撑住状态条按钮触区）、`HERO_CONTENT_PAD = 16`（内容原本的 `pt-4`）；`heroFullH` / `heroBarH` 由 `measureHero()` 量 `heroRef` / `heroBarRef` 的 `offsetHeight`：
 
 | 量 | 含义 |
 |---|---|
@@ -244,6 +248,7 @@ web2 (App.vue watch / visibilitychange)
 | `heroWrapH` | 浮层高度 = `heroOpenH − heroCompressLen·heroP`；**别的 tab 返回 `null`**（不写内联高度，交回外层 grid 的 0fr 收起） |
 | `heroHeaderStyle` | **仅当 `tab==='today' && heroFullH && heroP > 0`** 才返回 `{ height, paddingTop, paddingBottom, transitionProperty:'none' }`，三者都乘 `(1 − heroP)` —— 头卡**真收缩**（2026-10-10 由 `heroFullOpacity` 淡出改来：header 是 border-box，光把 height 归零会留 `2×20px` padding 的渐变底，纵向 padding 必须一起塌）。⚠ `heroP === 0` 必须返回 `null`：否则切回今日页那一帧内联样式会掐死 header 自己的 280ms padding 过渡，切页动画变成硬跳（2026-10-10 用户报的 bug） |
 | `heroBarOpacity` | `clamp01((heroP − 0.9) / 0.1)`（状态条只在最后 10% 露出，避免中途两套文案叠着看不清） |
+| `heroMinH` | `heroBarH + HERO_WRAP_PAD + HERO_WRAP_PAD_BOTTOM` = `32 + 12 + 8 = 52px`（2026-10-12 由 44 上调：底部那 8px 买触区，见上） |
 | `heroLocked` | `!!recActiveId \|\| !!reviewSheet` ⇒ 录音中 / 复盘浮层开着时 `heroP` 恒 0，头部停展开态（按钮位置永远稳定） |
 | `onTodayScroll()` | 用 `requestAnimationFrame` 去抖，回调里读 `todayRef.scrollTop` 写 `heroScroll` |
 
@@ -394,7 +399,7 @@ web2 (App.vue watch / visibilitychange)
 **「时间感」三件套（v1.41.6，2026-10-04）**：四处都在 `web2/src/App.vue`，**不改数据、不加接口**，只把「现在」画出来。
 1. **今日页活进度条**：课卡内 `v-if="courseStatus(c) === 'now'"` 的 `data-now-bar`（底槽 `h-1` + 内层 `width: nowPct(c) + '%'`），「进行中」那行补「· 还剩 M 分钟」（`Math.max(0, minOf(c.end) - nowTime)`）。`nowTime` 是分钟数 ref，测试用 `?t=HH:MM` 冻结（`App.vue:2634-2635`：带 `?t=` 时 30 秒自走定时器不启动）。
 2. **周课表「现在」游标**：computed `nowLineY` —— `weekOffset.value !== 0` 或 rows/gridH 为空时返回 `null`（**翻到别的周不画，否则等于骗人**）；遍历 `gridRows`，`type === 'p'` 用 `minOf(r.p.start/end)`、`type === 'gap'` 用「上一节 end → 下一节 start」，命中 `t ∈ [from, to)` 时 `((i + (t - from) / (to - from)) / n) * gridH.value`。模板在 `[data-grid]` 内、`<template v-for="(r, ri) in gridRows">` 之前插 `data-now-line`（`pointer-events-none absolute inset-x-0 z-20`，`:style="{ top: nowLineY + 'px' }"`，全宽 1.5px 线 + 左端圆点 + 右端 `nowClock` 时间胶囊）。
-3. **学期进度带**：computed `termInfo` —— 无 `totalWeeks` 返回 `null`（**整条不出现，不猜**）；`wk = min(max(Number(s.week) || 1, 1), total)`；**只有 `firstMonday` 存在时**才算 `daysLeft`（`firstMonday + total*7` 减今天，`ceil`、下限 0），否则不显示「距期末」——示例数据没有 `first_monday`，所以回落示例数据时进度带出、期末日不猜。模板 `data-term-ribbon`（`v-if="tab === 'today' && termInfo"`，放在问候卡内紧邻今日状态窄条之前），格子 `data-term-w` 便于断言（当前周 `height:10px`、其余 7px）。
+3. **学期进度带**：computed `termInfo` —— 无 `totalWeeks` 返回 `null`（**整条不出现，不猜**）；`wk = min(max(Number(s.week) || 1, 1), total)`；**只有 `firstMonday` 存在时**才算 `daysLeft`（`firstMonday + total*7` 减今天，`ceil`、下限 0），否则不显示「距期末」——示例数据没有 `first_monday`，所以回落示例数据时进度带出、期末日不猜。模板 `data-term-ribbon`（`v-if="termInfo"` —— **不带 `tab` 条件**，2026-10-12 四次修订从 `v-if="tab === 'today' && termInfo"` 改来；**位置在问候卡内「主体」那个 `1fr/0fr` 塌缩格里、紧邻今日状态窄条之后**，切页时由该格统一裁切，别的 tab 上整块被 `0fr + overflow-hidden` 裁掉），格子 `data-term-w` 便于断言（当前周 `height:10px`、其余 7px）。另有 `web2/tmp/ribbon-tabs-check.mjs` 守「今日可见、周课表/我的不可见」。
 4. **主题随时间呼吸**：`AUTO_THEME_KEY = 'web2.theme.auto'`、`autoTheme = ref(localStorage.getItem(AUTO_THEME_KEY) === '1')`、`AUTO_SLOTS = [{5-9,'mint',浅,'清晨'},{9-17,'blue',浅,'白天'},{17-21,'lavender',浅,'傍晚'},{21-29,'lavender',深,'夜里'}]`、`autoSlot(h)`（`h < 5` 时 `h + 24` 再匹配，于是 21–05 是连续的夜里档）、`autoSlotName`、`applyAutoTheme(force)`：**只在 `key` 变化那一刻接管**（`key = accent + (dark ? '/dark' : '/light')`，`!force && key === autoApplied` 直接 return），命中才写 `web2.accent` / `web2.theme` 并调 `applyAccent()` / `applyTheme()`；关掉清 `autoApplied`；`setAutoTheme(on)` + `setInterval(applyAutoTheme, 5 * 60_000)` + 首帧 `applyAutoTheme(true)`。设置里那行 `data-theme-auto`（`role="switch"`）副文案显示「当前时段：X（深色/浅色）」。
 - 验收 `web2/tmp/lively-check.mjs`（**31 过 / 0 挂**：A 段进度带 9 项、B 段活进度条 6 项、C 段游标 6 项、D 段主题 10 项）与截图脚本 `web2/tmp/lively-shot.mjs`（`tmp/lively-today.png` / `lively-week.png` / `lively-theme.png`）。回归：`step3-check` 15/0、`header-status-check` 6/6、`settings-fold-check` 18/0、`today-rec-entry-check` 10/10、`status-frame-check` 48/0；`week-grid-check` 仍红 2 项（A2 列数、G3 列宽）——**改版前就红、与本次改动无关**（本次 diff 对 `App.vue` 纯新增 169 行、没碰网格列逻辑）。
 

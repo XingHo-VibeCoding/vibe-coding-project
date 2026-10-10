@@ -67,8 +67,9 @@ const full = await geom()
 console.log('展开态：  ', JSON.stringify(full))
 await page.screenshot({ path: 'tmp/hero-1-full.png' })
 
-// 折到底：滚动 = openH − minH（minH 就是那一行状态条 + 12 顶距）
-const collapsed = full.wrapH - 44
+// 折到底：滚动 = openH − minH（minH = 12 顶白 + 32 状态条 + 8 底白 = 52，2026-10-12）
+const MINH = 52
+const collapsed = full.wrapH - MINH
 await scrollTo(collapsed)
 console.log('折到底：  ', JSON.stringify(await geom()))
 await page.screenshot({ path: 'tmp/hero-2-bar.png' })
@@ -82,7 +83,7 @@ await page.evaluate(() => { localStorage.setItem('web2.theme', 'dark'); location
 await page.waitForSelector('[data-page="today"]')
 await page.waitForTimeout(900)
 const full2 = await geom()
-await scrollTo(full2.wrapH - 44)
+await scrollTo(full2.wrapH - MINH)
 await page.screenshot({ path: 'tmp/hero-3-bar-dark.png' })
 
 await browser.close()

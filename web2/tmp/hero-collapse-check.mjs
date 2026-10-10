@@ -2,6 +2,9 @@
    需求（m26207）：上拉时顶卡压缩成一行。
    拍板（m26282）：乙方案 + 「录音 / 复盘时锁住，停在展开态」。
    拍板（m01369，2026-10-10）：折到底后那一行不再跟着继续上滑走掉，钉在顶上。
+   拍板（m02029，2026-10-12）：① 浮层铺页面底色（折到底钉住后内容会从状态条背后透上来叠字）；
+                           ② 浮层底部留 8px，把状态条按钮的触区从 39px 补到 44px。
+                           ⇒ 收起高度由 44px（12 顶白 + 32 条）变成 52px（+8 底白）。
 
    核心不变量（这条错了整个方案就塌）：
      **头部必须是绝对定位浮层，不在滚动窗口里** —— 若留在流内，收掉高度 s 会让窗口顶也上移 s，
@@ -12,7 +15,8 @@
            折叠前状态条是透明的、头卡是不透明的；
    B1-B4 跟手：B1 内容位移 == scrollTop（1×，不是 2×）；B2 头部收掉的高度 == scrollTop（1:1，±3）；
            B3 头卡顶边不动（压缩不推内容）；B4 全程窗口高度恒定；
-   C1-C3 折到底：C1 浮层高 ≈ 一行（44px）；C2 状态条露出来；C3 头卡被高度整块裁掉（高 ≈ 0）；
+   C1-C3 折到底：C1 浮层高 ≈ 一行（52px = 12 顶白 + 32 状态条 + 8 底白）；C2 状态条露出来；
+           C3 头卡被高度整块裁掉（高 ≈ 0）；
            ※ 2026-10-10 由「淡出」改「真收缩」：头卡不再调 opacity，改由 height 塌到 0 裁切；
              状态条仍用 opacity 从最后 10%（heroP>0.9）露出，所以 A4/C2/G3 口径不变；
    D1-D3 钉住：D1 再上拉状态条顶边不动（2026-10-10 用户 m01369 要求「不继续上升」，
@@ -101,6 +105,7 @@ const PROBE = () => {
   const hr = header.getBoundingClientRect()
   const barCs = getComputedStyle(bar)
   const headerCs = getComputedStyle(header)
+  const wrapCs = getComputedStyle(wrap)
   return {
     scrollTop: main.scrollTop,
     maxScroll: main.scrollHeight - main.clientHeight,
@@ -114,6 +119,14 @@ const PROBE = () => {
     barOpacity: parseFloat(barCs.opacity),
     barRect: { x: br.x, y: br.y, w: br.width, h: br.height },
     wrapClipH: (() => { const p = wrap.parentElement; return p ? Math.round(p.getBoundingClientRect().height) : -1 })(),
+    wrapBg: wrapCs.backgroundColor,
+    wrapOpaque: (() => {
+      // 底色不透明 ⇒ alpha 为 1（判定用，不解析 rgb/rgba 的两种书写）
+      const m = wrapCs.backgroundColor.match(/rgba?\(([^)]+)\)/)
+      if (!m) return false
+      const parts = m[1].split(',').map((s) => parseFloat(s))
+      return parts.length < 4 || parts[3] >= 0.99
+    })(),
   }
 }
 
@@ -146,7 +159,9 @@ const openH = A.wrapH
 t('A6. 展开态浮层高度 > 一行（确实有得收）', openH > 200, `wrapH=${openH}`)
 
 /* ================= B. 跟手（1:1，不是 2×） ================= */
-const half = Math.round((openH - 44) / 2)
+/* 收起高度：12 顶白 + 32 状态条 + 8 底白 = 52（2026-10-12 由 44 上调，底部那 8px 买触区） */
+const MINH = 52
+const half = Math.round((openH - MINH) / 2)
 await scrollTo(p, half)
 const B = await p.evaluate(PROBE)
 t('B1. 内容位移 == scrollTop（1×，不是 2×）',
@@ -158,11 +173,13 @@ t('B3. 头卡顶边不动（压缩不推内容）', Math.abs(B.headerTop - A.hea
 t('B4. 窗口高度全程恒定', B.clientH === A.clientH, `clientH ${A.clientH} → ${B.clientH}`)
 
 /* ================= C. 折到底 ================= */
-await scrollTo(p, openH - 44)
+await scrollTo(p, openH - MINH)
 const C = await p.evaluate(PROBE)
-t('C1. 折到底浮层高 ≈ 一行（44px，±4）', Math.abs(C.wrapH - 44) <= 4, `wrapH=${C.wrapH}`)
+t('C1. 折到底浮层高 ≈ 一行（52px，±4）', Math.abs(C.wrapH - MINH) <= 4, `wrapH=${C.wrapH}`)
 t('C2. 折到底状态条露出来（>0.9）', C.barOpacity > 0.9, `barOpacity=${C.barOpacity}`)
 t('C3. 折到底头卡被整块裁掉（高 ≈ 0，±2）', C.headerH <= 2, `headerH=${C.headerH} headerOpacity=${C.headerOpacity}`)
+/* 新增：浮层必须铺底色，否则钉住后下方内容从状态条背后透上来叠字（用户 m02029 拍板 A） */
+t('C4. 折到底浮层有底色（不透明，挡住下方内容）', C.wrapOpaque, `bg=${C.wrapBg}`)
 
 /* ================= D. 折到底后钉住（不再走掉） =================
    2026-10-10 用户 m01369：折到底后那一行不占空间，就别再跟着上滑走掉，钉在顶上。
@@ -171,7 +188,7 @@ await scrollTo(p, A.maxScroll)
 const D = await p.evaluate(PROBE)
 t('D1. 再上拉状态条钉住不动（浮层顶边不位移）', Math.abs(D.wrapTop - C.wrapTop) <= 1, `wrapTop ${C.wrapTop} → ${D.wrapTop}`)
 t('D2. 再上拉窗口仍恒定', D.clientH === A.clientH, `clientH ${A.clientH} → ${D.clientH}`)
-t('D3. 再上拉浮层高仍是一行（±4）', Math.abs(D.wrapH - 44) <= 4, `wrapH ${C.wrapH} → ${D.wrapH}`)
+t('D3. 再上拉浮层高仍是一行（±4）', Math.abs(D.wrapH - MINH) <= 4, `wrapH ${C.wrapH} → ${D.wrapH}`)
 
 /* ================= E. 复位 ================= */
 await scrollTo(p, 0)
@@ -217,14 +234,13 @@ if (await reviewBtn.count() > 0) {
 }
 
 /* ================= H. 折到底时按钮点得中 ================= */
-await scrollTo(p, openH - 44)
+await scrollTo(p, openH - MINH)
 await p.waitForTimeout(300)
 const H = await p.evaluate(() => {
   const bar = document.querySelector('[data-hero-bar]')
   const btn = bar.querySelector('[data-hero-bar-rec], [data-hero-bar-review]')
   if (!btn) return { ok: false, why: '状态条上没有按钮锚点' }
   const r = btn.getBoundingClientRect()
-  // 按钮本体 + after:-inset-y-1.5（上下各扩 6px × 2 = 12px）→ 有效触区应 ≥44
   const hitAt = (dx, dy) => {
     const x = r.x + (dx === null ? r.width / 2 : dx)
     const y = r.y + (dy === null ? r.height / 2 : dy)
@@ -232,16 +248,22 @@ const H = await p.evaluate(() => {
     return { hit: el === btn || btn.contains(el), tag: el ? el.tagName : 'null' }
   }
   const center = hitAt(null, null)
-  const above = hitAt(null, -4)   // 按钮上方 4px（落进 ::after 扩展区）
-  const below = hitAt(null, r.height + 4)
+  // 2026-10-12：改量「真实可点高度」而不是只量按钮盒。按钮本体 34px + after:-inset-y-1.5
+  // 上下各扩 6px = 46px 期望触区；浮层底部留白不够时下沿会被 overflow-hidden 裁掉，
+  // 之前只处 39px 却因断言太弱照过 —— 现在直接数出可点像素跨度。
+  let top = null, bottom = null
+  for (let dy = -12; dy <= r.height + 12; dy++) {
+    if (hitAt(null, dy).hit) { if (top === null) top = dy; bottom = dy }
+  }
+  const span = top === null ? 0 : bottom - top + 1
   return {
-    ok: center.hit && (above.hit || below.hit),
-    h: Math.round(r.height), w: Math.round(r.width),
-    center: center.tag, above: above.tag, below: below.tag,
+    ok: center.hit && span >= 44,
+    h: Math.round(r.height), w: Math.round(r.width), span,
+    center: center.tag, top, bottom,
   }
 })
-t('H1. 折到底时状态条按钮命中（中心 + 沿触区扩展方向至少一处）',
-  H.ok, JSON.stringify(H))
+t('H1. 折到底时状态条按钮可点高度 ≥44px（WCAG 2.5.8）',
+  H.ok, `可点跨度=${H.span}px 按钮盒=${H.h}px 中心=${H.center}`)
 
 /* ================= Z. 报错 ================= */
 t('Z1. 全程无 pageerror / console.error',
