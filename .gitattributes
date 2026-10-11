@@ -1,0 +1,4 @@
+# 发布归档必须逐字节保持原样：它是回退底牌，靠 sha256 与线上比对。
+# 本机 core.autocrlf=true 会在检出时把 LF 换成 CRLF，导致归档与线上对不上。
+# 所以 release-archive/ 下全部按二进制处理（-text = 不做任何行尾转换）。
+release-archive/** -text

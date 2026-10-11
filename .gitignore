@@ -43,3 +43,6 @@ cloudbaserc.json
 
 # ===== 静态托管发布前的自动备份（tcb hosting deploy --safe 生成）=====
 .cloudbase-backup/
+
+# Day 26 回滚演练：故意发坏的版本是过程物，不入库；v1.0 归档入库（见 release-archive/v1.0/）
+release-archive/_drill-bad/
