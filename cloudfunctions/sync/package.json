@@ -1,0 +1,6 @@
+{
+  "name": "sync",
+  "version": "1.0.0",
+  "description": "Day 28 云同步接口：POST /api/sync 整份上传、GET /api/sync 下载、DELETE /api/sync 清空 —— 经官方 REST API(PostgREST) 读写 sync_docs 一张表；同步串 HMAC 派 owner_uid",
+  "main": "index.js"
+}
