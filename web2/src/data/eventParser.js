@@ -18,7 +18,7 @@
 import { loadLlmConfig } from './summarizer.js'
 import { compressImage } from './recognizer.js'
 
-export const EVENT_PARSE_PROMPT_VERSION = 1
+export const EVENT_PARSE_PROMPT_VERSION = 2
 
 /* 表单只支持这四档时长（App.vue 的 DURATIONS），识别出的分钟数吸附到最近一档 */
 export const EVENT_DURATIONS = [40, 45, 60, 90]
@@ -36,7 +36,7 @@ export function buildEventPrompt({ today = '', weekdayCN = '', isImage = false }
   const lines = [
     '你是日程录入助手。从用户给的' + (isImage ? '图片（活动通知、群消息截图、海报、课表照片等）' : '一段话') + '里抽出一条日程，输出结构化字段。',
     '',
-    '【今天是哪天】' + (today ? `今天 = ${today}${weekdayCN ? '（' + weekdayCN + '）' : ''}。所有「明天」「后天」「下周三」「这周五」都要基于这一天算成具体日期。` : '（缺锚点，请只输出图上明确写出的绝对日期，不要推算相对日期）'),
+    '【今天是哪天】' + anchorLine(today, weekdayCN),
     '',
     '【要抽什么】',
     '- title：日程名称，取最能代表这件事的短名（如「班会」「高数期中考试」「项目答辩」）。去掉「通知」「关于」这类套话。',
@@ -53,6 +53,44 @@ export function buildEventPrompt({ today = '', weekdayCN = '', isImage = false }
     '- 全部用简体中文。',
   ]
   return lines.join('\n')
+}
+
+/* ---------- 批量提示词（P15 后半，2026-10-12）----------
+   一次抽多条：群消息里连着说好几件事、一张通知图上有好几行、一段文字里有多个时间。
+   输出套一层 {"events":[...]}，每条的结构与单条完全一致（同一套逐条收敛函数）。 */
+export function buildEventListPrompt({ today = '', weekdayCN = '', isImage = false } = {}) {
+  const lines = [
+    '你是日程录入助手。从用户给的' + (isImage ? '图片（活动通知、群消息截图、海报、多行安排表等）' : '一段文字') + '里抽出**所有**日程，输出一个数组。',
+    '',
+    '【今天是哪天】' + anchorLine(today, weekdayCN),
+    '',
+    '【要抽什么】每一件事一个对象，字段同下：',
+    '- title：日程名称，取最能代表这件事的短名（如「班会」「高数期中考试」）。去掉「通知」「关于」这类套话。',
+    '- date：YYYY-MM-DD。写了绝对日期就照抄；写了「明天」「下周三」这类相对说法就按上面的今天是哪天算。',
+    '- start：24 小时制 HH:MM。只写了「下午」这种半天，取该半天最常见的整点（下午=14:00，上午=09:00，晚上=19:00）。',
+    '- duration：分钟数（数字）。写了结束时间就用结束减开始；完全没提就填 60。',
+    '- place：地点，没有则空字符串。',
+    '',
+    '【怎么算一条】',
+    '- 同一件事说了多遍（如「班会」在标题和正文各出现一次）**只算一条**，不要重复输出。',
+    '- 只有时间、没有事由的句子（如「周三下午开个会」）也算一条，title 取能概括的说法。',
+    '- 纯背景信息（「请大家互相转告」「地点不变」）**不是日程**，不要输出。',
+    '- 实在一条都没识别出来时输出 {"events":[]}，不要硬凑。',
+    '- title 必须尽力给一个（实在没有就给「新日程」），其余字段没提就按上面的默认值，不要瞎猜具体地点。',
+    '',
+    '【输出要求】只输出一个 JSON 对象，不要输出任何其他文字或代码块标记，结构如下：',
+    '{"events":[{"title":"班会","date":"2026-10-13","start":"18:00","duration":60,"place":"教二 110","notes":[]}]}',
+    '- duration 是数字，不要带单位；events 里每条都带全字段（没有的填空字符串或 60）。',
+    '- 全部用简体中文。',
+  ]
+  return lines.join('\n')
+}
+
+/* 日期锚点那句（单条 / 批量共用，两处口径必须逐字一致，否则同一个「下周三」会算出两个结果） */
+function anchorLine(today, weekdayCN) {
+  return today
+    ? `今天 = ${today}${weekdayCN ? '（' + weekdayCN + '）' : ''}。所有「明天」「后天」「下周三」「这周五」都要基于这一天算成具体日期。`
+    : '（缺锚点，请只输出图上明确写出的绝对日期，不要推算相对日期）'
 }
 
 /* ---------- 结果解析与校验 ----------
@@ -97,19 +135,9 @@ export function snapDuration(min) {
   return best
 }
 
-export function parseEventJson(text) {
-  let t = String(text || '').trim()
-  const m = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
-  if (m) t = m[1]
-  let obj
-  try {
-    obj = JSON.parse(t)
-  } catch {
-    throw new Error('识别结果不是有效 JSON，重试一次通常可解。')
-  }
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-    throw new Error('识别结果不完整，重试一次。')
-  }
+/* 单条收敛：把一个原始对象（无论来自单条还是批量）变成 {event, notes, warnings}。
+   单条 / 批量共用同一套口径 —— 否则「批量里某一条」的容错会跟单条漂移。 */
+function oneEventFrom(obj) {
   const warnings = []
   const title = String(obj.title == null ? '' : obj.title).trim() || (warnings.push('没认出日程名称，先填了「新日程」，请改一下'), '新日程')
   const date = normDate(obj.date)
@@ -130,83 +158,135 @@ export function parseEventJson(text) {
   return { event: { title, date: date || '', start: start || '', duration, place }, notes, warnings }
 }
 
+export function parseEventJson(text) {
+  const obj = plainJson(text, '识别结果不完整，重试一次。')
+  if (Array.isArray(obj)) throw new Error('识别结果不完整，重试一次。')
+  return oneEventFrom(obj)
+}
+
+/* 批量收敛：{"events":[…]}
+   - 也容忍模型直接把数组丢出来（顶层是 [ … ]）—— 便宜的兼容，不算额外口径。
+   - **一条都认不出时抛错**，不返回空数组：空数组在界面上表现为「点了没反应」，
+     用户无法区分「真的没有日程」和「识别坏了」。 */
+export function parseEventListJson(text) {
+  const obj = plainJson(text, '识别结果不完整，重试一次。')
+  const raw = Array.isArray(obj) ? obj : obj.events
+  if (!Array.isArray(raw)) throw new Error('识别结果不是日程列表，重试一次。')
+  const items = raw
+    .filter((o) => o && typeof o === 'object' && !Array.isArray(o))
+    .map((o) => oneEventFrom(o))
+  if (!items.length) throw new Error('这一份里没认出日程。若确实有多件事，换一张更清楚的图或把时间写全再试。')
+  return { events: items.map((i) => i.event), notes: items.map((i) => i.notes), warnings: items.map((i) => i.warnings) }
+}
+
+/* 剥代码块壳 → JSON.parse（单条 / 批量共用） */
+function plainJson(text, msg) {
+  let t = String(text || '').trim()
+  const m = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/)
+  if (m) t = m[1]
+  let obj
+  try {
+    obj = JSON.parse(t)
+  } catch {
+    throw new Error('识别结果不是有效 JSON，重试一次通常可解。')
+  }
+  if (!obj || typeof obj !== 'object') throw new Error(msg)
+  return obj
+}
+
 /* ---------- 识别调用（文字） ----------
    opts.today / opts.weekdayCN：日期锚点，必传（否则相对日期必错）。
+   opts.list = true 时走批量提示词与批量解析（P15 后半）。
    与纪要/课表同款错误映射，同款 provider 校验。 */
 export async function parseEventText(text, opts = {}) {
   const src = String(text || '').trim()
   if (!src) throw new Error('没填内容。')
-  const c = loadLlmConfig()
-  if (c.provider !== 'deepseek' || !c.key) {
-    throw new Error('还没配置 DeepSeek API Key（识别与课堂纪要共用同一个 Key）。')
-  }
+  const c = requireKey()
+  const list = !!opts.list
+  const prompt = list
+    ? buildEventListPrompt({ today: opts.today, weekdayCN: opts.weekdayCN, isImage: false })
+    : buildEventPrompt({ today: opts.today, weekdayCN: opts.weekdayCN, isImage: false })
   if (opts.onStage) opts.onStage('call')
-  let res
-  try {
-    res = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key },
-      body: JSON.stringify({
-        model: 'deepseek-flash',
-        messages: [{ role: 'user', content: buildEventPrompt({ today: opts.today, weekdayCN: opts.weekdayCN, isImage: false }) + '\n\n【用户给的文字】\n' + src }],
-        response_format: { type: 'json_object' },
-        thinking: { type: 'disabled' },
-        temperature: 0.1,
-        max_tokens: MAX_TOKENS,
-      }),
-      signal: opts.signal,
-    })
-  } catch (e) {
-    if (e && e.name === 'AbortError') throw e
-    throw new Error('网络请求失败，请检查网络后重试。')
-  }
+  const res = await postToDeepseek({
+    key: c.key,
+    signal: opts.signal,
+    body: {
+      model: 'deepseek-flash',
+      messages: [{ role: 'user', content: prompt + '\n\n【用户给的文字】\n' + src }],
+    },
+  })
   if (opts.onStage) opts.onStage('parse')
-  return parseEventResponse(res)
+  return readEventResponse(res, list)
 }
 
 /* 图片版：管道与课表识别一致（先压缩，长图交给 recognizer 的切块逻辑不合适——
-   日程图多为通知截图/海报，单图压缩即可；真的要长图，用户会切屏再传）。 */
+   日程图多为通知截图/海报，单图压缩即可；真的要长图，用户会切屏再传）。
+   opts.list = true 时走批量（一张通知图上多行安排）。 */
 export async function parseEventImage(file, opts = {}) {
+  const c = requireKey()
+  const list = !!opts.list
+  if (opts.onStage) opts.onStage('compress')
+  const { dataUrl } = await compressImage(file, { maxEdge: 2000, quality: 0.9 })
+  if (opts.onStage) opts.onStage('call')
+  const prompt = list
+    ? buildEventListPrompt({ today: opts.today, weekdayCN: opts.weekdayCN, isImage: true })
+    : buildEventPrompt({ today: opts.today, weekdayCN: opts.weekdayCN, isImage: true })
+  const res = await postToDeepseek({
+    key: c.key,
+    signal: opts.signal,
+    body: {
+      model: 'deepseek-flash', // 视觉能力只有 flash 有，同课表识别
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
+        },
+      ],
+    },
+  })
+  if (opts.onStage) opts.onStage('parse')
+  return readEventResponse(res, list)
+}
+
+/* Key 校验（单条 / 批量 / 图片共用一份文案，避免三处漂移） */
+function requireKey() {
   const c = loadLlmConfig()
   if (c.provider !== 'deepseek' || !c.key) {
     throw new Error('还没配置 DeepSeek API Key（识别与课堂纪要共用同一个 Key）。')
   }
-  if (opts.onStage) opts.onStage('compress')
-  const { dataUrl } = await compressImage(file, { maxEdge: 2000, quality: 0.9 })
-  if (opts.onStage) opts.onStage('call')
+  return c
+}
+
+/* 统一发请求：把三处重复的 body 公共项（json_object / 关闭思考 / 低温度 / 上限）收在一处。
+   response_format 用 json_object 而不是 json_schema：批量与单条共用，且模型对它最稳。 */
+async function postToDeepseek({ key, signal, body }) {
   let res
   try {
     res = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + c.key },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
       body: JSON.stringify({
-        model: 'deepseek-flash', // 视觉能力只有 flash 有，同课表识别
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: buildEventPrompt({ today: opts.today, weekdayCN: opts.weekdayCN, isImage: true }) },
-              { type: 'image_url', image_url: { url: dataUrl } },
-            ],
-          },
-        ],
         response_format: { type: 'json_object' },
         thinking: { type: 'disabled' },
         temperature: 0.1,
         max_tokens: MAX_TOKENS,
+        ...body,
       }),
-      signal: opts.signal,
+      signal,
     })
   } catch (e) {
     if (e && e.name === 'AbortError') throw e
     throw new Error('网络请求失败，请检查网络后重试。')
   }
-  if (opts.onStage) opts.onStage('parse')
-  return parseEventResponse(res)
+  return res
 }
 
-/* 共用的响应处理 + 错误映射（与 recognizer.js 逐条对齐，文案改成日程口径） */
-async function parseEventResponse(res) {
+/* 共用的响应处理 + 错误映射（与 recognizer.js 逐条对齐，文案改成日程口径）。
+   list=false 返回 {event, notes, warnings}；list=true 返回 {events, notes, warnings}（三个等长数组）。 */
+async function readEventResponse(res, list) {
   if (res.status === 401) throw new Error('API Key 无效（401），请检查 Key 是否填对。')
   if (res.status === 402) throw new Error('DeepSeek 账户余额不足（402），请充值后重试。')
   if (res.status === 429) throw new Error('请求太频繁（429），稍等几秒再试。')
@@ -215,7 +295,7 @@ async function parseEventResponse(res) {
   const data = await res.json()
   const text = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content
   if (!text) throw new Error('DeepSeek 返回了空内容。')
-  return parseEventJson(text)
+  return list ? parseEventListJson(text) : parseEventJson(text)
 }
 
 /* 可用性检查：与纪要/课表识别共用配置。 */

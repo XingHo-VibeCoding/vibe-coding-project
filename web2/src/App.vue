@@ -3655,6 +3655,40 @@ function submitEvent() {
   reloadDataset()
 }
 
+/* 批量添加（P15 后半「一次多条」，用户 m07172）：列表里改完勾选，一次落库。
+   冲突口径与单条**完全一致**（第一次只提示、confirmed=true 再点照样添加）——
+   同功能两套规则会让人猜不透到底拦不拦。
+   返回 { added, conflicts }：conflicts 有值时调用方负责提示，本次不写库。 */
+function submitEvents(list, confirmed) {
+  const events = (list || []).filter((e) => e && String(e.title || '').trim() && e.date && e.start)
+  if (!events.length) return { added: 0, conflicts: [], invalid: (list || []).length }
+  const pool = conflictPool.value
+  const conflicts = []
+  if (!confirmed) {
+    for (const e of events) {
+      const sc = dayScope(e.date, semester.value)
+      const hit = findConflicts(
+        {
+          type: 'event',
+          date: e.date,
+          weekday: sc ? sc.weekday : null,
+          weekNo: sc ? sc.weekNo : null,
+          start: e.start,
+          end: fmtTime(minOf(e.start) + e.duration),
+        },
+        pool,
+      )
+      if (hit.length) conflicts.push({ title: e.title, names: [...new Set(hit.map((c) => c.name))] })
+    }
+    if (conflicts.length) return { added: 0, conflicts, invalid: 0 }
+  }
+  for (const e of events) {
+    addEvent({ title: String(e.title).trim(), date: e.date, start_time: e.start, duration: e.duration, location: e.place || '' })
+  }
+  reloadDataset()
+  return { added: events.length, conflicts: [], invalid: (list || []).length - events.length }
+}
+
 /* 导出回写主项目：下载「原格式 + 最新勾选」的 JSON，到主项目导入即完成同步 */
 function onExportBack() {
   const text = exportImportedText()
@@ -4645,22 +4679,22 @@ provide(APP_CTX, reactive({
   setAccent, AUTO_THEME_KEY, autoTheme, AUTO_SLOTS, autoSlot, autoSlotName, autoApplied, applyAutoTheme,
   setAutoTheme, todos, doneCount, toggleTodo, TODO_FILTERS, todoFilter, shownTodos, setTodoFilter,
   todoForm, todoErr, openTodoAdd, openTodoEdit, submitTodo, deleteTodoNow, confirmDelTodo, confirmDelTodoTimer,
-  onDeleteTodo, evtForm, evtErr, evtWarn, evtConfirmed, openEventAdd, submitEvent, onExportBack,
-  onExportIcs, today, todayIdx, todayStr, todayEffWd, todayMark, todayCourses, todayRoutineCount,
-  termInfo, conflictPool, tParam, nowTime, GREET_CUTE, greetingText, state, currentCourse,
-  headerCourseText, nextTodayId, minUntil, rowMeta, LIVE_PREVIEW, todayPast, todayLive, todayExpanded,
-  pastOpen, pastSpan, livePreview, hiddenCount, rowsShown, REVIEW_FROM, heroCourse, allTodayCoursesDone,
-  heroMode, heroSubline, heroTitle, recEntryOn, heroSub, dateText, weekDay, DAY_START,
-  DAY_END, weekOffset, weekNo, monday, weekDays, weekSubTerm, weekVisible, weekDayMarks,
-  weekCols, gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME, winH, navH, satPx,
-  gridTop, gridH, measureNavH, measureSat, measureGridTop, onWinResize, gridColsStyle, gridBodyStyle,
-  cardFit, PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine, pal, periods,
-  periodSpan, courseStatus, gridStatus, nowPct, nowClock, nowLineY, undoneCount, undoneTodos,
-  doneTodos, detail, openDetail, WDN, addForm, addErr, addWarn, addConfirmed,
-  DURATIONS, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail,
-  editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail,
-  onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove, gridUp,
-  gridDbl, anySheetOpen, syncBodyScrollLock,
+  onDeleteTodo, evtForm, evtErr, evtWarn, evtConfirmed, openEventAdd, submitEvent, submitEvents,
+  onExportBack, onExportIcs, today, todayIdx, todayStr, todayEffWd, todayMark, todayCourses,
+  todayRoutineCount, termInfo, conflictPool, tParam, nowTime, GREET_CUTE, greetingText, state,
+  currentCourse, headerCourseText, nextTodayId, minUntil, rowMeta, LIVE_PREVIEW, todayPast, todayLive,
+  todayExpanded, pastOpen, pastSpan, livePreview, hiddenCount, rowsShown, REVIEW_FROM, heroCourse,
+  allTodayCoursesDone, heroMode, heroSubline, heroTitle, recEntryOn, heroSub, dateText, weekDay,
+  DAY_START, DAY_END, weekOffset, weekNo, monday, weekDays, weekSubTerm, weekVisible,
+  weekDayMarks, weekCols, gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME, winH, navH,
+  satPx, gridTop, gridH, measureNavH, measureSat, measureGridTop, onWinResize, gridColsStyle,
+  gridBodyStyle, cardFit, PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine, pal,
+  periods, periodSpan, courseStatus, gridStatus, nowPct, nowClock, nowLineY, undoneCount,
+  undoneTodos, doneTodos, detail, openDetail, WDN, addForm, addErr, addWarn,
+  addConfirmed, DURATIONS, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind,
+  editCourseFromDetail, editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse,
+  removeRoutineFromDetail, onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove,
+  gridUp, gridDbl, anySheetOpen, syncBodyScrollLock,
 }))
 /* ===== APP_CTX:end ===== */
 </script>

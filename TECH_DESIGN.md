@@ -281,18 +281,35 @@ web2 (App.vue watch / visibilitychange)
 
 ### 2.7 「添加日程」的 ✨ 智能填写（2026-10-12，用户 m06155）
 
-需求原话（m06155）「我想在新建日程界面里加一个小按钮用来放这个功能」—— 把「根据上传的图片或文字自动创建日程」收进 `web2/src/sheets/EventSheet.vue` 里的一颗小按钮，不新开页面。三项设计口径已拍板：**① 识别结果只填表单、不直接落库**（用户核对后再点「添加」）；**② 一颗按钮点开两条路**（拍照/选图、粘贴文字）；**③ 文字走弹框粘贴或手打，不读剪贴板**。
+需求原话（m06155）「我想在新建日程界面里加一个小按钮用来放这个功能」—— 把「根据上传的图片或文字自动创建日程」收进 `web2/src/sheets/EventSheet.vue` 里的一颗小按钮，不新开页面。三项设计口径已拍板：**① 识别结果只填表单、不直接落库**（用户核对后再点「添加」）；**② 一颗按钮点开两条路**（拍照/选图、粘贴文字；2026-10-12 增补第三条「一次多条」，见 §2.7.1）；**③ 文字走弹框粘贴或手打，不读剪贴板**。
 
 - **新模块 `web2/src/data/eventParser.js`**（纯函数 + 薄网络层，便于单测）：
-  - 导出 `EVENT_PARSE_PROMPT_VERSION = 1`、`EVENT_DURATIONS = [40, 45, 60, 90]`、`buildEventPrompt({ today, weekdayCN, isImage })`、`snapDuration(min)`、`parseEventJson(text)`、`parseEventText(text, opts)`、`parseEventImage(file, opts)`、`eventParserAvailable()`。
+  - 导出 `EVENT_PARSE_PROMPT_VERSION = 2`（1 → 2 = 加批量，见 §2.7.1）、`EVENT_DURATIONS = [40, 45, 60, 90]`、`buildEventPrompt({ today, weekdayCN, isImage })`、`buildEventListPrompt(...)`、`snapDuration(min)`、`parseEventJson(text)`、`parseEventListJson(text)`、`parseEventText(text, opts)`、`parseEventImage(file, opts)`、`eventParserAvailable()`。
   - **提示词必须带今天锚点**：把「【今天是哪天】今天 = YYYY-MM-DD（周X）。所有『明天』『后天』『下周三』『这周五』都要基于这一天算成具体日期」写死。没有锚点模型会把「下周三」算成训练时见过的某一年。
   - **输出契约**：`{"title","date","place","start","duration","notes":[]}`，`duration` 是**数字**（分钟）。请求体 `max_tokens: 800` / `temperature: 0.1` / `thinking: {type:'disabled'}` / `response_format: {type:'json_object'}`，**模型固定 `deepseek-flash`**（视觉只有它有，与课表识别同一条路）。图片走 `content: [{type:'text'}, {type:'image_url'}]`，先 `compressImage(file, { maxEdge: 2000, quality: 0.9 })`（复用 `recognizer.js` 的压缩与错误映射，**提示词/解析不共用**——课表识别只认 weekday/节次且明令不采信图上时间，日程口径正好相反）。
   - **合法性把关（宁空不错）**：`:63 DATE_OK = /^\d{4}-\d{2}-\d{2}$/`、`:64 TIME_OK = /^\d{1,2}:\d{2}$/`；`normTime` 归一全角冒号并校验 0–23 时 / 0–59 分；`normDate` 用 `new Date(y, mo-1, da)` **反查真实存在性**（挡 `2026-02-31`）。**date / start 非法 → 置空并 push warning**，不硬塞。
   - 错误映射 401 / 402 / 429 / 400 与 `recognizer.js` 逐条对齐，文案改日程口径。
-- **`EventSheet.vue`（85 → 251 行）**：`fillForm(ev, warnings)` **只覆盖识别到的字段**（`if (ev.date) f.date = ev.date` …）；填完给 `smartHint`「已按识别结果填入：…；请核对后再点『添加』」；**没认出但表单原有值时追加点名**「日期保留你原先选的 …」——表单 `openEventAdd()` 预填了今天，不点名用户会把预填值当成识别结果。组件本地状态（`smartOpen`/`textOpen`/`smartBusy`/`smartErr`/`smartHint`/`smartText`/`smartFile`）**不进 APP_CTX**（`gen-app-ctx --check` 仍 827 绑定）；`watch(evtForm)` 每次打开表单重置；`anchorWeekday()` 由 `todayStr` 算「周X」。锚点：`data-event-smart` / `data-event-smart-image` / `data-event-smart-text` / `data-event-smart-input` / `data-event-smart-run` / `data-event-smart-hint` / `data-event-smart-err` / `data-event-smart-file`。
+- **`EventSheet.vue`（85 → 251 行；§2.7.1 加批量后 452 行）**：`fillForm(ev, warnings)` **只覆盖识别到的字段**（`if (ev.date) f.date = ev.date` …）；填完给 `smartHint`「已按识别结果填入：…；请核对后再点『添加』」；**没认出但表单原有值时追加点名**「日期保留你原先选的 …」——表单 `openEventAdd()` 预填了今天，不点名用户会把预填值当成识别结果。组件本地状态（`smartOpen`/`textOpen`/`smartBusy`/`smartErr`/`smartHint`/`smartText`/`smartFile`）**不进 APP_CTX**（`gen-app-ctx --check` 827 绑定，§2.7.1 加 `submitEvents` 后 **828**）；`watch(evtForm)` 每次打开表单重置；`anchorWeekday()` 由 `todayStr` 算「周X」。锚点：`data-event-smart` / `data-event-smart-image` / `data-event-smart-text` / `data-event-smart-input` / `data-event-smart-run` / `data-event-smart-hint` / `data-event-smart-err` / `data-event-smart-file`。
 - **负向验证**：把 `fillForm` 改成无条件 `f.date = ev.date`（空值也覆盖下去）→ **3 条 FAIL**（B11 原值被冲、E5 提示没点名、E6 保留值不对），改回即 **41 过 / 0 挂**。
 - **自检 `web2/tmp/event-smart-check.mjs`（41 过 / 0 挂）**：stub `window.fetch` 拦 `api.deepseek.com`（请求体记到 `window.__aiCalls`），六组 —— A 入口形态 8 / B 文字回填 13（**B9 未点「添加」前不落库**）/ C 请求体 5（模型、今天锚点、`json_object`、`thinking` 关闭）/ D 缺 Key 2 / E 非法字段 6 / F 图片路径 7（走真实 `<input type=file>`）。**踩坑**：断言日期/时间钮**不能用 `nth(0)/nth(1)`**——表单里还有「✨ 智能填写」，下标会错位，必须按文本形状取（`/^\d{4}-\d{2}-\d{2}$/`、`/^\d{2}:\d{2}$/`）。
 - **回归**：`routine-add-check` 40/40、`routine-today-check` 26/0、`ui-identical` 16 张 0 错误、`quality-scan` 0 处问题。
+
+#### 2.7.1 一次多条：批量识别（2026-10-12 增补，用户 m07172）
+
+落库口径由用户拍板为「**列表核对 + 一次『添加所选』**」——不是静默批量入库，也不是逐条填表。
+
+- **解析层**（`eventParser.js`，`EVENT_PARSE_PROMPT_VERSION` 1 → 2）：
+  - 新增 `buildEventListPrompt({ today, weekdayCN, isImage })`，输出契约 `{"events":[{title,date,start,duration,place,notes:[]}]}`。与单条提示词**共用 `anchorLine(today, weekdayCN)`**——两处锚点文案必须逐字一致，否则同一个「下周三」在两条路里会算出两个日期。
+  - 新增 `parseEventListJson(text)`：容忍模型直接把顶层数组丢出来；逐条走**同一个 `oneEventFrom(obj)`**（单条/批量共用一套字段收敛，否则批量里某条的容错会跟单条漂移）；**一条都认不出时抛错**，不返回空数组（空数组在界面上表现为「点了没反应」，用户无法区分「真的没有」和「识别坏了」）。
+  - 顺带把三处重复的请求构造收进 `postToDeepseek({key, signal, body})`、三处 Key 校验收进 `requireKey()`、响应处理收进 `readEventResponse(res, list)`（`list=true` 走批量解析）。`parseEventText` / `parseEventImage` 新增 `opts.list`。
+- **`EventSheet.vue`（251 → 452 行）**：选单第三条路 `data-event-smart-multi`；批量面板 `data-event-smart-input-multi` / `data-event-smart-run-multi` / `data-event-smart-image-multi`；核对列表 `data-event-batch-list` / `-count` / `-all` / `-item` / `-check` / `-title` / `-add`。`batchItems` 非空时模板用 `v-else` 让单条表单整块让位。每条卡可就地改标题（input）、日期/时间（复用 `openDateField` / `openTimeField`）、时长（`DURATIONS`）、地点；每条的 `warnText` 写在**它自己那张卡**里（堆顶部会让人不知道改哪条）。
+- **`App.vue` 新增 `submitEvents(list, confirmed)`**（配 `APP_CTX` 827 → **828** 绑定）：过滤掉「标题/日期/开始时间不全」的条目后逐条 `addEvent`，返回 `{added, conflicts, invalid}`；**冲突拦截口径与单条 `submitEvent` 完全一致**（第一次只提示 + 返回 conflicts，`confirmed=true` 再点照样添加）——同功能两套规则会让人猜不透到底拦不拦。`EventSheet` 收到 conflicts 时把明细写成「「班会」撞「高等数学」；…再点一次『添加所选』照样添加」。
+- **两个坑**（都写进了代码注释）：
+  1. `toRefs(app)` **把函数也包成 ref** —— 模板里自动解包，`<script setup>` 里必须写 `submitEvents.value(...)`。漏了 `.value` 是**运行期** `s is not a function`（Vue 的点击处理器里被吞掉），编译期与 `gen-app-ctx --check` 都不会报。
+  2. 批量列表勾选框配色**不能**用 Tailwind 的 `accent-primary-500` 工具类、也不能内联 `accent-color` —— 两者的字符串里都有 `accent`，会被 `tmp/gen-app-ctx.mjs` 的「模板用了但没解构」扫描当成 `app.accent`（App.vue 真有这个绑定，故不能只靠收窄正则）。配色收进 `web2/src/style.css` 的 `.evt-batch-check { accent-color: var(--color-primary-500) }`。
+- **负向验证**：把 `addSelected` 里的 `batchItems.value.filter((i) => i.checked)` 改成 `batchItems.value`（故意无视勾选）→ **G12 / G14 两条 FAIL**，改回即 **64 过 / 0 挂**。教训：第一版负向验证「没咬住」是因为被取消勾选的那条**本来就没有日期**（`submitEvents` 无论如何都会把它过滤掉，没有区分力）⇒ 夹具必须让「被取消勾选的那条」字段完整。另：**改完源码必须重新 build 再跑检查**，否则 dev server 还在发旧的 `dist/`，会得到假结果（踩过一次）。
+- **自检 `web2/tmp/event-smart-check.mjs`（64 过 / 0 挂，41 → 64）**：新增 G 组 17（批量列表形态、未点「添加所选」前不落库、标题按序落位、拿不准落在对应那条、请求体走列表提示词且带锚点、取消勾选后只落勾选且字段齐全的）、H 组 2（空数组必须明确报错而非静默）、I 组 3（取消退回单条表单且不落库）。**落库位置坑**：`addEvent` 在「已导入主项目数据」时写进 `data.schedules`（`type:'event'`），没有 `data` 时才落 `web2.events` 叠加层 —— 断言必须两种都数（第一版只数 `.events` 导致 G12/G13 假 FAIL）。
+- **验收图**：`web2/tmp/evt-batch-shots.mjs` → `tmp/evt-batch-shots/`（`1-three-ways.png` / `2-multi-panel.png` / `3-batch-list.png`；目录被 `web2/.gitignore:16 tmp/*-shots/` 忽略，脚本入库）。
 
 ### 2.8 周课表「＋」选单去重 + 删「其他日程」子视图（2026-10-12，用户 m04810 / m04849 / m04881）
 

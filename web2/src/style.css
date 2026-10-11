@@ -411,3 +411,10 @@ html[data-accent='mint'] {
 .obpage-fwd-leave-to   { opacity: 0; transform: translateX(-26px); }
 .obpage-bak-enter-from { opacity: 0; transform: translateX(-26px); }
 .obpage-bak-leave-to   { opacity: 0; transform: translateX(26px); }
+
+/* 批量核对列表里的勾选框（2026-10-12，P15 后半「一次多条」）。
+   为什么写成一个类而不是 Tailwind 的 `accent-primary-500` 工具类、也不是内联 accent-color：
+   那两种写法里都出现 `accent` 这个词，会被 tmp/gen-app-ctx.mjs 的「模板用了但没解构」扫描
+   当成 app.accent 的假警报（App.vue 里真有 accent 这个绑定，故不能只靠收窄正则）。
+   检查网每响一次就要人肉判断一次，磨损得快，所以配色收进样式表。 */
+.evt-batch-check { accent-color: var(--color-primary-500); }
