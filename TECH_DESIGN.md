@@ -279,7 +279,22 @@ web2 (App.vue watch / visibilitychange)
 - **录音历史列表**（2026-10-12 二次改版，用户 m04810「以周为单位还是容易一次性展开很长，建议换一个展示方式」）：`web2/src/pages/sub/LecturesPanel.vue` 由「按周分组折叠」改为「**默认最近 3 场 + 展开更多**」——`RECENT_COUNT = 3`、`lecExpanded = ref(false)`、`lecVisible = computed(() => lecExpanded.value ? lectures.value : lecRecent.value)`、`lecHiddenCount` 算出剩余场数，列表下方一枚 `data-lec-toggle` 按钮（收起态文案「展开全部（还有 N 场）」/ 展开态「收起（只留最近 3 场）」，带 `aria-expanded`）。第一版按周分支的三个坑随之作废（不再需要 `mondayKeyOf` 本地日期转换、也不需要「首帧只定一次」防弹回状态）。每场仍带 `data-lec-item="<id>"` 锚点，长按删除与「试听」照旧。
 - **自检**：`web2/tmp/me-nest-check.mjs` **27 过 / 0 挂**（A 索引页结构与旧平铺项确实消失 / B 进子页 / C 返回不跳级 / D 5 子页可达 / E 删除的入口确实没了 / F 无报错），`web2/tmp/me-lectures-check.mjs` **14 过 / 0 挂**（默认恰 3 场且倒序 / 按钮文案与 `aria-expanded` / 展开收起来回 / 每场内容与试听按钮仍在 / 无报错）。两者都做了负向验证：`closeMeSub` 改成清空栈 → 27 中挂 5；默认展开改成全展开 → 原 19 项中挂 4。
 
-### 2.7 周课表「＋」选单去重 + 删「其他日程」子视图（2026-10-12，用户 m04810 / m04849 / m04881）
+### 2.7 「添加日程」的 ✨ 智能填写（2026-10-12，用户 m06155）
+
+需求原话（m06155）「我想在新建日程界面里加一个小按钮用来放这个功能」—— 把「根据上传的图片或文字自动创建日程」收进 `web2/src/sheets/EventSheet.vue` 里的一颗小按钮，不新开页面。三项设计口径已拍板：**① 识别结果只填表单、不直接落库**（用户核对后再点「添加」）；**② 一颗按钮点开两条路**（拍照/选图、粘贴文字）；**③ 文字走弹框粘贴或手打，不读剪贴板**。
+
+- **新模块 `web2/src/data/eventParser.js`**（纯函数 + 薄网络层，便于单测）：
+  - 导出 `EVENT_PARSE_PROMPT_VERSION = 1`、`EVENT_DURATIONS = [40, 45, 60, 90]`、`buildEventPrompt({ today, weekdayCN, isImage })`、`snapDuration(min)`、`parseEventJson(text)`、`parseEventText(text, opts)`、`parseEventImage(file, opts)`、`eventParserAvailable()`。
+  - **提示词必须带今天锚点**：把「【今天是哪天】今天 = YYYY-MM-DD（周X）。所有『明天』『后天』『下周三』『这周五』都要基于这一天算成具体日期」写死。没有锚点模型会把「下周三」算成训练时见过的某一年。
+  - **输出契约**：`{"title","date","place","start","duration","notes":[]}`，`duration` 是**数字**（分钟）。请求体 `max_tokens: 800` / `temperature: 0.1` / `thinking: {type:'disabled'}` / `response_format: {type:'json_object'}`，**模型固定 `deepseek-flash`**（视觉只有它有，与课表识别同一条路）。图片走 `content: [{type:'text'}, {type:'image_url'}]`，先 `compressImage(file, { maxEdge: 2000, quality: 0.9 })`（复用 `recognizer.js` 的压缩与错误映射，**提示词/解析不共用**——课表识别只认 weekday/节次且明令不采信图上时间，日程口径正好相反）。
+  - **合法性把关（宁空不错）**：`:63 DATE_OK = /^\d{4}-\d{2}-\d{2}$/`、`:64 TIME_OK = /^\d{1,2}:\d{2}$/`；`normTime` 归一全角冒号并校验 0–23 时 / 0–59 分；`normDate` 用 `new Date(y, mo-1, da)` **反查真实存在性**（挡 `2026-02-31`）。**date / start 非法 → 置空并 push warning**，不硬塞。
+  - 错误映射 401 / 402 / 429 / 400 与 `recognizer.js` 逐条对齐，文案改日程口径。
+- **`EventSheet.vue`（85 → 251 行）**：`fillForm(ev, warnings)` **只覆盖识别到的字段**（`if (ev.date) f.date = ev.date` …）；填完给 `smartHint`「已按识别结果填入：…；请核对后再点『添加』」；**没认出但表单原有值时追加点名**「日期保留你原先选的 …」——表单 `openEventAdd()` 预填了今天，不点名用户会把预填值当成识别结果。组件本地状态（`smartOpen`/`textOpen`/`smartBusy`/`smartErr`/`smartHint`/`smartText`/`smartFile`）**不进 APP_CTX**（`gen-app-ctx --check` 仍 827 绑定）；`watch(evtForm)` 每次打开表单重置；`anchorWeekday()` 由 `todayStr` 算「周X」。锚点：`data-event-smart` / `data-event-smart-image` / `data-event-smart-text` / `data-event-smart-input` / `data-event-smart-run` / `data-event-smart-hint` / `data-event-smart-err` / `data-event-smart-file`。
+- **负向验证**：把 `fillForm` 改成无条件 `f.date = ev.date`（空值也覆盖下去）→ **3 条 FAIL**（B11 原值被冲、E5 提示没点名、E6 保留值不对），改回即 **41 过 / 0 挂**。
+- **自检 `web2/tmp/event-smart-check.mjs`（41 过 / 0 挂）**：stub `window.fetch` 拦 `api.deepseek.com`（请求体记到 `window.__aiCalls`），六组 —— A 入口形态 8 / B 文字回填 13（**B9 未点「添加」前不落库**）/ C 请求体 5（模型、今天锚点、`json_object`、`thinking` 关闭）/ D 缺 Key 2 / E 非法字段 6 / F 图片路径 7（走真实 `<input type=file>`）。**踩坑**：断言日期/时间钮**不能用 `nth(0)/nth(1)`**——表单里还有「✨ 智能填写」，下标会错位，必须按文本形状取（`/^\d{4}-\d{2}-\d{2}$/`、`/^\d{2}:\d{2}$/`）。
+- **回归**：`routine-add-check` 40/40、`routine-today-check` 26/0、`ui-identical` 16 张 0 错误、`quality-scan` 0 处问题。
+
+### 2.8 周课表「＋」选单去重 + 删「其他日程」子视图（2026-10-12，用户 m04810 / m04849 / m04881）
 
 用户原话「周课表右上 的小选单里面的选项功能好像有些重复的，改一点」。选单原 5 项里，「手动加课」（周期课程）/「加日程」（一次性事件）/「其他日程」（切子视图）三者的语义被「课程」「日程」二字搅在一起；用户进一步判断「其他日程」本身就是重复入口（待办在今日页与「我的 → 待办清单」都有，独立日程翻到那一周就在网格里看到），于是整块删除。
 
