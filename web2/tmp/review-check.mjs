@@ -78,11 +78,15 @@ async function open({ bridge = false } = {}) {
   return { page, ctx, errors }
 }
 
+/* 2026-10-12：设置改成「索引页 → 子页」两层，「每日复盘」行搬进 settings-remind 子页。
+   老路子（点 settings-toggle 后直接找 data-review-*）已失效。 */
 const goMe = async (page) => {
   await page.locator('nav button').filter({ hasText: '我的' }).click()
   await page.waitForTimeout(250)
   await page.locator('[data-settings-toggle]').click()
-  await page.waitForTimeout(250)
+  await page.waitForTimeout(300)
+  await page.$eval('[data-settings-index="remind"]', (el) => el.click())
+  await page.waitForTimeout(350)
 }
 const todoRows = (page) => page.evaluate(() => {
   const out = []

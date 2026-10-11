@@ -111,12 +111,13 @@ try {
      改为「N 处都走 <BottomSheet>」+「锚点写在组件里」两条静态断言。
      2026-10-04 五期复盘加了第 8 个（data-sheet-review），计数由 7 改 8。
   Stage 9 起浮层拆成独立组件（src/sheets/*.vue），字面量不再全在 App.vue 里 →
-  计数改成「App.vue + src/sheets/*.vue 合起来 8 处」（守的仍是同一件事：8 个浮层都走同一个外壳）。 */
+  计数改成「App.vue + src/sheets/*.vue 合起来 N 处」（守的仍是同一件事：每个浮层都走同一个外壳）。
+  2026-10-12：特殊日期从设置里搬进课表页 ＋ 选单，成了独立浮层 DayoverSheet.vue，计数 8 → 9。 */
   const sheetsDir = 'D:/Document/Project/vibe-coding-project/web2/src/sheets'
   const bottomSheetHits = [APP, ...readdirSync(sheetsDir).map((f) => `${sheetsDir}/${f}`)]
     .reduce((n, f) => n + ((readFileSync(f, 'utf8').match(/<BottomSheet/g) || []).length), 0)
-  t('C1. 静态：8 个浮层都走 BottomSheet，data-sheet-mask 在组件里',
-    bottomSheetHits === 8 &&
+  t('C1. 静态：9 个浮层都走 BottomSheet，data-sheet-mask 在组件里',
+    bottomSheetHits === 9 &&
       readFileSync(SHEET, 'utf8').includes('data-sheet-mask'))
   /* 打卡浮层（今日页「管理 ›」）—— 种子数据带 1 个习惯 */
   await page.locator('nav button', { hasText: '今日' }).click()
@@ -153,23 +154,19 @@ try {
   t('D3. 返回键收回练耳二级页（回索引，未退出、未切页）',
     (await page.locator('[data-sub-page]').count()) === 0 && (await exits()) === 0 && (await activeTab()).includes('我的'))
   t('D4. 收回后索引页 4 个入口仍在', (await page.locator('[data-page="me"] [data-me-entry]').count()) === 4)
-  /* 课表「其他日程」子视图 */
+  /* 课表页：2026-10-12（用户 m04810）「其他日程」子视图已整块删除，
+     课表页不再有第二层视图，返回键从课表页直接回今日页（不再先「回周课表」）。
+     这里守的就是这条：从课表页按一次返回即回今日页，且回到后滚动锁恢复。 */
   await page.locator('nav button', { hasText: '周课表' }).click()
   await page.waitForTimeout(450)
-  /* Stage 8：「其他日程」从顶部段控搬进 「＋」选单，先点开选单再选这一项（语义不变）。 */
-  await page.locator('[data-week-add]').click()
-  await page.waitForTimeout(300)
-  await page.locator('[data-week-sub-list]').click()
-  await page.waitForTimeout(500)
-  t('D5. 已切到「其他日程」子视图（此视图可上下滚，不该锁滚动）',
-    (await page.locator('[data-list-page]').count()) === 1 && (await overflow()) === '')
+  t('D5. 课表页只有网格，没有第二层视图（data-list-page / data-week-sub-week 都不存在）',
+    (await page.locator('[data-grid]').count()) === 1
+    && (await page.locator('[data-list-page]').count()) === 0
+    && (await page.locator('[data-week-sub-week]').count()) === 0)
+  t('D6. 课表页滚动是锁住的（它自己需要固定网格）', (await overflow()) === 'hidden')
   await fire()
   await page.waitForTimeout(500)
-  t('D6. 返回键回到「周课表」子视图（不直接跳今日页）',
-    (await page.locator('[data-grid]').count()) === 1 && (await page.locator('[data-list-page]').count()) === 0 && (await overflow()) === 'hidden')
-  await fire()
-  await page.waitForTimeout(500)
-  t('D7. 再按返回 → 回今日页', (await activeTab()).includes('今日') && (await exits()) === 0)
+  t('D7. 从课表页按一次返回 → 直接回今日页', (await activeTab()).includes('今日') && (await exits()) === 0)
 
   /* ---------- C 续：课程详情 / 待办 / picker 三类浮层（换回内置示例数据——种子数据今天没课）
      注意：种子是 addInitScript，每次导航都会重放，所以这里必须另开一个 context/page，

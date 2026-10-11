@@ -172,9 +172,15 @@ await page.$eval('[data-nav="me"]', (el) => el.click())
 await page.waitForTimeout(300)
 await page.$eval('[data-me-entry="settings"]', (el) => el.click())
 await page.waitForTimeout(300)
+/* Stage 6 两层导航：设置索引页 → 「数据与导入导出」子页，导入 JSON 的 input 在子页里 */
+await page.$eval('[data-settings-index="data"]', (el) => el.click())
+await page.waitForTimeout(350)
 await page.locator('input[accept=".json,application/json"]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(importDoc) })
 await page.waitForTimeout(600)
 /* 导入成功走 reloadDataset 统一刷新（含 habits），就地更新——回今日页看浮层即最新 */
+await page.waitForTimeout(300)
+/* Stage 6 两层导航：现在退两层（settings-data → 设置索引页 → 关闭）才回得到主界面 */
+await page.locator('[data-sub-back]').click()
 await page.waitForTimeout(300)
 await page.locator('[data-sub-back]').click()
 await page.waitForTimeout(300)

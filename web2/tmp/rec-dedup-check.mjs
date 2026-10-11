@@ -101,6 +101,9 @@ try {
   await page.waitForTimeout(400)
   await page.$eval('[data-me-entry="settings"]', (el) => el.click())
   await page.waitForTimeout(400)
+  /* Stage 6 两层导航：设置索引页 → 「数据与导入导出」子页，[data-import-msg] 在子页里 */
+  await page.$eval('[data-settings-index="data"]', (el) => el.click())
+  await page.waitForTimeout(350)
   const msg = (await page.locator('[data-import-msg]').textContent().catch(() => '')) || ''
   t('④ 导入反馈含「课表识别已导入 2 门课」', /已导入\s*2\s*门课/.test(msg), msg)
   t('⑤ 反馈把「节次超出」单列（不再与「课程名没填」混为一句）', /1\s*门因节次超出当前节次表被跳过/.test(msg), msg)

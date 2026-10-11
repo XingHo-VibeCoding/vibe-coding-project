@@ -147,6 +147,9 @@ try {
   await page.waitForTimeout(400)
   await page.$eval('[data-me-entry="settings"]', (el) => el.click())
   await page.waitForTimeout(400)
+  /* Stage 6 两层导航：设置索引页 → 「数据与导入导出」子页，[data-import-msg] 在子页里 */
+  await page.$eval('[data-settings-index="data"]', (el) => el.click())
+  await page.waitForTimeout(350)
   const msg = await page.locator('[data-import-msg]').innerText().catch(() => '')
   console.log('   导入反馈：', msg)
   t('E4. 反馈含冲突提示（高等数学）', msg.includes('冲突') && msg.includes('高等数学'))

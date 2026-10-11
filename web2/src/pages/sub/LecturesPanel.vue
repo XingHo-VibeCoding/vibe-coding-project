@@ -1,4 +1,12 @@
 <script setup>
+/* 课堂录音页（录音历史）。2026-10-12 按用户 m04810 拍板从「按周分组折叠」改成
+   「默认只显示最近 3 场 + 展开更多」：
+   按周分组的毛病是——某一周录得多（期末、连堂），点开那一组照样一次铺出十几场，
+   还是得滑很久；而且想找的那场如果在上上周，得先猜它在哪个组里。
+   现在只有一条倒序列表，默认露出最近 3 场（最可能要接着做转写/纪要的几场），
+   其余收在一行「展开全部（还有 N 场）」后面，一屏内永远看得完。
+   状态类的东西（转写/纪要/试听/长按删除）在每一场里原样保留。 */
+import { computed, ref } from 'vue'
 import { toRefs } from 'vue'
 import { useApp } from '../../composables/app-ctx.js'
 
@@ -35,6 +43,16 @@ const {
   cancelSummary,
   startSummary,
 } = toRefs(app)
+
+/* ---------------- 最近 3 场 + 展开更多（本地计算，不进 APP_CTX） ---------------- */
+const RECENT_COUNT = 3
+/* lectures 已按 started_at 倒序（App.vue 的 refreshLectures），前几场就是最近的，
+   这里不重新排序。用「一旦展开就保持展开」的布尔量而不是每次 lectures 变都重置：
+   转写完一场不该把用户的展开状态弹回去。 */
+const lecExpanded = ref(false)
+const lecRecent = computed(() => lectures.value.slice(0, RECENT_COUNT))
+const lecVisible = computed(() => (lecExpanded.value ? lectures.value : lecRecent.value))
+const lecHiddenCount = computed(() => Math.max(0, lectures.value.length - lecRecent.value.length))
 </script>
 
 <template>
@@ -74,11 +92,14 @@ const {
 
         <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ recMsg }}</p>
 
-        <!-- 场次列表：倒序，试听按钮在播放/暂停间切换 -->
-        <ul v-if="lectures.length" class="mt-3 divide-y divide-line border-t border-line">
+        <!-- 场次列表：一条倒序列表，默认只露最近 3 场，其余收在「展开全部」后面；
+             试听按钮在播放/暂停间切换 -->
+        <div v-if="lectures.length" class="mt-3 border-t border-line" data-lec-list>
+          <ul class="divide-y divide-line">
           <li
-            v-for="l in lectures"
+            v-for="l in lecVisible"
             :key="l.id"
+            :data-lec-item="l.id"
             class="py-2.5 transition-opacity select-none"
             :class="pressActiveId === l.id ? 'opacity-50' : ''"
             @contextmenu.prevent
@@ -181,7 +202,27 @@ const {
               </button>
             </template>
           </li>
-        </ul>
+          </ul>
+          <!-- 展开全部 / 收起：只露最近 3 场，剩下的收在按钮后面。
+               展开态用「展开更早的 N 场」而不是「展开全部」，让用户知道还要露出多少。 -->
+          <button
+            v-if="lecHiddenCount || lecExpanded"
+            data-lec-toggle
+            type="button"
+            class="flex w-full items-center justify-center gap-1.5 py-3 text-[12px] font-medium text-primary-600 transition active:opacity-70"
+            :aria-expanded="lecExpanded ? 'true' : 'false'"
+            @click="lecExpanded = !lecExpanded"
+          >
+            <template v-if="lecExpanded">收起<span class="text-ink-dim">（只留最近 3 场）</span></template>
+            <template v-else>展开全部<span class="text-ink-dim">（还有 {{ lecHiddenCount }} 场）</span></template>
+            <svg
+              viewBox="0 0 16 16"
+              class="h-3.5 w-3.5 shrink-0 transition-transform duration-200"
+              :class="lecExpanded ? 'rotate-180' : ''"
+              fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+            ><path d="M4 6.5l4 4 4-4" /></svg>
+          </button>
+        </div>
       </section>
 
 </template>

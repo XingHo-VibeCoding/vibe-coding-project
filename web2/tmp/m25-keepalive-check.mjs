@@ -178,11 +178,19 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   /* Stage 6：「后台录音」说明在「设置」二级页里 → 点索引页的设置入口推进去 */
   await page.$eval('[data-me-entry="settings"]', (el) => el.click())
   await page.waitForTimeout(350)
+  /* 2026-10-12 设置索引页化：设置内容分成 5 个子页，「后台录音」在「课堂录音与纪要」子页，
+     版本号在「系统与关于」子页。先推系统子页拿版本串，退回索引再推录音子页。 */
+  await page.$eval('[data-settings-index="system"]', (el) => el.click())
+  await page.waitForTimeout(350)
+  const verText = (await page.locator('[data-app-version]').innerText()).trim()
+  t('F3 页面上有 vX.Y 版本串（宽松匹配：以前写死 v1.23，每次升版本都要回来改，漏改就假红）', /^v\d+\.\d+$/.test(verText), verText)
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(350)
+  await page.$eval('[data-settings-index="recording"]', (el) => el.click())
+  await page.waitForTimeout(350)
   await page.locator('text=后台录音').first().scrollIntoViewIfNeeded()
   t('F1 App 环境显示「后台录音」说明行', (await page.locator('text=后台录音').count()) > 0)
   t('F2 说明里含通知权限提示', (await page.locator('text=打开本应用的通知权限').count()) > 0)
-  const verText = (await page.locator('text=/^v\\d+\\.\\d+$/').first().innerText()).trim()
-  t('F3 页面上有 vX.Y 版本串（宽松匹配：以前写死 v1.23，每次升版本都要回来改，漏改就假红）', /^v\d+\.\d+$/.test(verText), verText)
   await ctx.close()
 }
 

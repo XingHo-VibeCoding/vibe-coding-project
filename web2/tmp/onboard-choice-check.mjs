@@ -97,6 +97,9 @@ try {
   await p2.waitForTimeout(300)
   await p2.$eval('[data-me-entry="settings"]', (el) => el.click())
   await p2.waitForTimeout(400)
+  /* Stage 6 两层导航：设置索引页 → 「数据与导入导出」子页，[data-edu-login-open] 在子页里 */
+  await p2.$eval('[data-settings-index="data"]', (el) => el.click())
+  await p2.waitForTimeout(350)
   t('C2. 设置里仍有「登录教务网抓课表」入口', (await p2.locator('[data-edu-login-open]').count()) >= 1)
   t('C3. 零 pageerror', errs2.length === 0, errs2.join(' | '))
 

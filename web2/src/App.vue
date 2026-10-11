@@ -62,6 +62,11 @@ import LecturesPanel from './pages/sub/LecturesPanel.vue'
 import ListenPanel from './pages/sub/ListenPanel.vue'
 import TodosPanel from './pages/sub/TodosPanel.vue'
 import SettingsPanel from './pages/sub/SettingsPanel.vue'
+import SettingsAppearance from './pages/sub/settings/SettingsAppearance.vue'
+import SettingsRemind from './pages/sub/settings/SettingsRemind.vue'
+import SettingsRecording from './pages/sub/settings/SettingsRecording.vue'
+import SettingsData from './pages/sub/settings/SettingsData.vue'
+import SettingsSystem from './pages/sub/settings/SettingsSystem.vue'
 import OnboardingPage from './pages/OnboardingPage.vue'
 import TodoSheet from './sheets/TodoSheet.vue'
 import ReviewSheet from './sheets/ReviewSheet.vue'
@@ -71,6 +76,7 @@ import SemesterSheet from './sheets/SemesterSheet.vue'
 import PickerSheet from './sheets/PickerSheet.vue'
 import ConfirmClearSheet from './sheets/ConfirmClearSheet.vue'
 import DeleteLectureSheet from './sheets/DeleteLectureSheet.vue'
+import DayoverSheet from './sheets/DayoverSheet.vue'
 import AddSheet from './sheets/AddSheet.vue'
 import PressTypeSheet from './sheets/PressTypeSheet.vue'
 import ReviewGridSheet from './sheets/ReviewGridSheet.vue'
@@ -90,7 +96,10 @@ const tab = ref('today')
    新动画自动覆盖旧动画，同样可打断。全部前端临时状态，不接数据库。 */
 const TAB_KEYS = ['today', 'week', 'me']
 const tabIndex = computed(() => TAB_KEYS.indexOf(tab.value))
-const weekSub = ref('week') // 课表页内「周课表 / 日程清单」分段（2026-10-03 方案 C Step 1：日程页并入）
+/* 课表页子视图（「其他日程」清单）2026-10-12 整块删除：用户 m04853/m04885 拍了板 ——
+   待办在今日页与「我的 → 待办清单」都有，独立日程在周课表里翻到那一周就看得到，
+   单独一个跨周总览视图属于重复入口。于是 weekSub / setWeekSub 状态机一并拆掉：
+   课表页从此只有周课表一种视图，锁滚动条件退化成「在课表 tab 就锁」。 */
 const habitSheet = ref(false) // 打卡浮层（原「打卡」tab 改底部浮层，2026-10-03）
 /* 平移层过渡延迟（2026-10-12 用户 m03248 之后恒为 0）：
    原来有 110ms 是为了让「跨今日边界」时 header 收缩与内容平移错开，避免斜向甩感；
@@ -117,22 +126,18 @@ function switchTab(key) {
   )
 }
 
-/* 课表页子视图切换（2026-10-03 方案 C Step 1）：只有「周课表」子视图要锁文档滚动，
-   日程清单是要上下滚的，所以切换时重算一遍 body overflow 与网格顶。 */
-function setWeekSub(v) {
-  weekSub.value = v
-  closeWeekMenu()
-  syncBodyScrollLock()
-  setTimeout(measureGridTop, 320)
-}
-
 /* ---------------- 课表页右上「＋」选单（Stage 8） ----------------
    原来「周课表 / 其他日程」占着一整条分段位、＋ 又直接进拍课表识别；用户 m12154 批准的设计是：
-   顶部只留周次切换，加课 / 加日程 / 拍课表识别 / 其他日程都收进 ＋ 选单（网格拿回整屏）。
-   ＋ 是「拍课表识别」的旧家（data-week-add + data-mine-rec 锚点都还在，只是移进了选单）。 */
+   顶部只留周次切换，加课 / 加日程 / 拍课表识别都收进 ＋ 选单（网格拿回整屏）。
+   ＋ 是「拍课表识别」的旧家（data-week-add + data-mine-rec 锚点都还在，只是移进了选单）。
+   2026-10-12：选单里的「其他日程」随子视图一起删掉，剩 4 项纯「添加」动作。 */
 const weekMenuOpen = ref(false)
 function toggleWeekMenu() { weekMenuOpen.value = !weekMenuOpen.value }
 function closeWeekMenu() { weekMenuOpen.value = false }
+/* 特殊日期（调休）浮层：2026-10-12 从「设置」搬到 ＋ 选单。
+   理由是它跟「加课 / 加日程」一样，属于「看课表时才想起来」的动作，
+   埋在设置最底一屏之外找不着（用户 m03868 拍板搬到这里）。 */
+const dayoverSheet = ref(false)
 /* 手动加课 / 长按加课的默认落点：本周第 1 节，星期取今天（不在本周就用周一）。
    调休：今天若是补课日（周六上周三的课），默认星期要落成 3 —— 新加的课才跟今天一起出现；
    今天放假（算不出星期）就退回真实星期，让表单里自己选。
@@ -146,7 +151,7 @@ function menuAddSlot() {
 function menuAddCourse() { closeWeekMenu(); const s = menuAddSlot(); openAdd(s.wd, s.min) }
 function menuAddEvent() { closeWeekMenu(); openEventAdd() }
 function menuScan() { closeWeekMenu(); mineRecStart() }
-function menuOpenList() { closeWeekMenu(); setWeekSub('list') }
+function menuDayover() { closeWeekMenu(); dayoverSheet.value = true }
 /* 点选单以外的地方就收起（capture 阶段监听：即使点在 inert 页面里也算「点别处」）。
    ＋ 自己排除掉，否则同一次点击会先关再开、看起来没反应。 */
 function onWeekMenuAway(e) {
@@ -466,13 +471,14 @@ function closeTopmostLayer() {
   /* 日精进浮层（问答 / 今天的日精进 / 日精进·全部 三种模式同一个 reviewSheet，v1.41.9 真机反馈）：
      开着时按返回键以前什么都不做，直接落到「退到今日页」——与「不可见状态绝不能吞返回键」同一条纪律的两面。 */
   if (reviewSheet.value) { closeReview(); return true }
+  // 特殊日期浮层（从周课表 ＋ 选单开出）：与别的浮层同级，返回键先收它
+  if (dayoverSheet.value) { dayoverSheet.value = false; return true }
   // 2026-10-03 方案 C Step 5 / Stage 6：二级层一路往回收（页内展开块 → 二级页 → 课表子视图）
   // 注意：展开块切走/关页后看不见——不可见的状态绝不能吞掉返回键
   if (tab.value === 'me' && meSub.value === 'listen' && listenSettingsOpen.value) { listenSettingsOpen.value = false; return true }
   if (meSub.value) { closeMeSub(); return true }
-  // Stage 8：课表页 ＋ 选单是周课表视图里最细的一层，先收它再收子视图
+  // Stage 8：课表页 ＋ 选单是周课表视图里最细的一层，先收它
   if (tab.value === 'week' && weekMenuOpen.value) { weekMenuOpen.value = false; return true }
-  if (tab.value === 'week' && weekSub.value === 'list') { setWeekSub('week'); return true }
   return false
 }
 let lastBackTs = 0 // 上次「退出预备」按返回的时间戳（2 秒内再按才真退）
@@ -1086,7 +1092,7 @@ function goMeTab(sub = 'settings') {
      凡是从别处「跳过来让用户看某样东西」的路径，都得顺手把那一页打开，
      否则用户跳到我的页也是一脸茫然（2026-10-02 减法后新增，Stage 6 起改成二级页）：
      传 null 表示只切页（比如复盘提醒，浮层会盖在上面，不需要动二级页）。 */
-  if (sub) openMeSub(sub)
+  if (sub) resetMeSub(sub)
 }
 
 async function applyNotifySchedule() {
@@ -1142,7 +1148,7 @@ async function initNotify() {
     goMeTab(actionId === 'START_REC' ? 'lectures' : null)
     if (actionId === 'START_REC') startRec() // 幂等：已在录音则 startRec 直接 return
     /* 练耳复习提醒：无按钮，点通知回「我的」页并把练耳二级页打开、卡片展开——**不自动播放**（L6） */
-    if (extra && extra.src === LISTEN_TAG) { openMeSub('listen'); listenOpen.value = true }
+    if (extra && extra.src === LISTEN_TAG) { resetMeSub('listen'); listenOpen.value = true }
     /* 每日复盘提醒（五期）：无按钮，点通知直接把复盘浮层打开（浮层自带一层，二级页不动） */
     if (extra && extra.src === REVIEW_TAG) openReview('ask')
   })
@@ -2585,12 +2591,32 @@ const llmInputOpen = ref(false) // 课堂纪要的「纪要服务」子区展开
    但「课堂纪要」缺配置时会自动展开它（见 startSummary 缺配置分支），
    否则用户会以为功能被删了。 */
 /* Stage 6：「我的」页从「功能堆砌」改成索引页——功能都在自己的全屏二级页里。
-   settingsOpen 是旧「设置折叠」的开关，折叠没了，这个 ref 只为旧锚点/旧脚本留着（永远 false）。 */
+   settingsOpen 是旧「设置折叠」的开关，折叠没了，这个 ref 只为旧锚点/旧脚本留着（永远 false）。
+
+   2026-10-12 改栈：原来 meSub 是单值 ref，只能推入一层（设置页里的项没法再进一层）。
+   设置改成索引页后，路径变成「设置 → 外观与主题」，所以这里改成栈：
+   栈空即没有二级页；openMeSub 压栈、closeMeSub 弹一层。
+   resetMeSub(k) 是给「从别的页面直接深链进某个二级页」用的：整体重置成 [k]，
+   避免用户当前正停在第 N 层时又被叠上一层（那样返回要按好几次才出得来）。 */
 const settingsOpen = ref(false)
-const meSub = ref(null) // null | 'lectures' | 'listen' | 'todos' | 'settings'
-const meSubTitle = computed(() => ({ lectures: '课堂录音', listen: '碎片练耳', todos: '待办清单', settings: '设置' }[meSub.value] || ''))
-function openMeSub(k) { meSub.value = k }
-function closeMeSub() { meSub.value = null }
+const meSubStack = ref([]) // 例：[] | ['settings'] | ['settings', 'settings-appearance'] | ['lectures']
+const meSub = computed(() => meSubStack.value[meSubStack.value.length - 1] || null)
+const ME_SUB_TITLES = {
+  lectures: '课堂录音',
+  listen: '碎片练耳',
+  todos: '待办清单',
+  settings: '设置',
+  // 设置的五个子页（2026-10-12 索引页化）
+  'settings-appearance': '外观与主题',
+  'settings-remind': '提醒',
+  'settings-recording': '课堂录音与纪要',
+  'settings-data': '数据与导入导出',
+  'settings-system': '系统与关于',
+}
+const meSubTitle = computed(() => ME_SUB_TITLES[meSub.value] || '')
+function openMeSub(k) { meSubStack.value = [...meSubStack.value, k] }
+function resetMeSub(k) { meSubStack.value = [k] }
+function closeMeSub() { meSubStack.value = meSubStack.value.slice(0, -1) }
 const PROVIDER_OPTIONS = [
   { id: '', label: '未选择' },
   { id: 'deepseek', label: 'DeepSeek（自己的 API Key）' },
@@ -2647,7 +2673,9 @@ async function startSummary(l, opts = {}) {
   if (miss) {
     setRecMsg(auto ? `${miss}（转写已完成，配好后手动点「生成纪要」即可）` : miss, true)
     llmInputOpen.value = true // 缺配置：顺手把纪要子区展开，少一次找路
-    openMeSub('settings') // 顺手把「设置」二级页打开，否则展开了也看不见
+    // 2026-10-12：纪要配置搬到「设置 → 课堂录音与纪要」了，深链要一步到位。
+    // 直接铺成两层（而不是 reset 成一层），这样返回键先回设置索引、再退出二级页。
+    meSubStack.value = ['settings', 'settings-recording']
     return false
   }
   if (!l.transcript || String(l.transcript).trim().length < 30) {
@@ -4234,76 +4262,12 @@ function openDetail(c) {
 }
 const WDN = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
-/* ---------------- 其他日程页（三期「日程分类视图」，2026-10-02；2026-10-03 大减法） ----------------
-   存在理由见模板顶部注释：独立日程此前没有集中入口。
-   数据全部来自已就绪的 ref（weekAll / events / routines / todos），不新增任何存储。
-   减法（2026-10-02）：筛选 chips / listFilter / listCounts 整组移除。
-   分组标题自带数量（「待办 · 3」），chips 提供的计数是重复信息；
-   而 chips 的代价是每次进页都要先做一次「我该选哪个」的判断——这正是不无感。
-
-   减法（2026-10-03，方案 C Step 1 并入课表页后）：**课程与循环日程两组从清单里删掉。**
-   它们本来就按「星期 × 节次」整整齐齐画在同一个页面签的周课表网格里，列在这里等于同一份
-   数据说两遍（示例数据一进去 20 项里 16 项是课程）。清单只留**课表放不下的两类**：
-   独立日程（单次日期的事）与待办（任务，不固定占某段时间）。
-   不再列出的固定安排用一行「去周课表」的提示兜住，免得用户以为它们消失了。 */
-
-const listTotalCount = computed(() => events.value.length + todos.value.length)
-/* 被清单省略、但在周课表里看得到的固定安排数（课程 + 循环日程），给提示行用 */
-const listFixedCount = computed(() => weekAll.value.length + routines.value.length)
-
-/* 绝对日期：清单是总览，不跟今日页用「今天 / 明天」那种相对文案 */
-function listDateLabel(d) {
-  const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  return m ? Number(m[2]) + '月' + Number(m[3]) + '日' : ''
-}
-
-/* 分组：独立日程 / 待办（课程与循环日程已从清单删除，理由见上方注释）。
-   排序口径——独立日程按「日期 → 起始时间」，待办按「未完成优先 → 截止日期」。
-   空组不输出（没有内容的组连标题都不出现）。 */
-const listGroups = computed(() => {
-  const out = []
-  const evs = [...events.value].sort(
-    (a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (minOf(a.start) - minOf(b.start))
-  )
-  if (evs.length) out.push({ key: 'event', title: '独立日程', items: evs })
-  const tds = [...todos.value].sort(
-    (a, b) => ((a.done ? 1 : 0) - (b.done ? 1 : 0))
-      || String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'))
-  )
-  if (tds.length) out.push({ key: 'todo', title: '待办', items: tds })
-  return out
-})
-
-/* 左侧色条：三类日程各走自己的调色板（循环日程是固定灰蓝），待办用中性灰 */
-function listBarColor(it, kind) {
-  if (kind === 'todo') return it.done ? '#cbd1dc' : '#8b97ad'
-  return pal(it).bar
-}
-
-/* 次要行：星期或日期 + 时间区间 + 地点 + 周次规则（独立日程不重复打「日程」二字） */
-function listMeta(it, kind) {
-  if (kind === 'todo') {
-    /* 导入态有待办绝对日期（due_date）；示例态只有相对文案（due = 今天/明天/周五）。
-       两者取其一，都没有才说「无截止日期」——不要漏成「截止 —」。 */
-    const when = listDateLabel(it.due_date) || it.due || ''
-    if (it.done) return '已完成' + (when ? ' · 截止 ' + when : '')
-    if (!when) return '无截止日期'
-    const overdue = (it.due_date && it.due_date < todayKeyOf()) || it.due === '已过期'
-    return (overdue ? '已过期 · ' : '截止 ') + when
-  }
-  const parts = []
-  parts.push(it.weekday ? WDN[it.weekday - 1] : listDateLabel(it.date))
-  if (it.start) parts.push(it.start + '–' + (it.end || ''))
-  if (it.place) parts.push(it.place)
-  if (it.tag && kind !== 'event') parts.push(it.tag)
-  return parts.filter(Boolean).join(' · ')
-}
-
-/* 点条目：三类日程走同一个详情弹层（那里能编辑/删除），待办开编辑表单 */
-function onListItem(it, kind) {
-  if (kind === 'todo') openTodoEdit(it)
-  else openDetail(it)
-}
+/* ---------------- 「其他日程」清单：2026-10-12 整块删除 ----------------
+   它原本是「课表放不下的两类」的集中入口（独立日程 + 待办），但用户 m04853/m04885 判断
+   这个入口是重复的：待办在今日页「今天要交」和「我的 → 待办清单」都有；独立日程在周课表里
+   翻到那一周就看得到。于是 listTotalCount / listFixedCount / listGroups / listBarColor /
+   listMeta / onListItem / listDateLabel 七个专用绑定一并拆除，课表页只剩周课表一种视图。
+   代价已知并接受：跨周的独立日程以后没有「全部日程」总览，只能翻周查看。 */
 
 /* ---------------- 添加课程（周视图长按 / 双击空白处） ---------------- */
 const addForm = ref(null)
@@ -4573,18 +4537,20 @@ function gridDbl(e) {
 /* ---------------- 二级层收尾（2026-10-03 方案 C Step 5） ----------------
    背景滚动锁的唯一真源：任何浮层/二级页开着时，底下的页面不能再滑。
    （此前只在周课表子视图锁，浮层打开后还能拖动背景页面。）
-   switchTab / setWeekSub / onMounted 都调 syncBodyScrollLock()；
-   函数声明会提升，所以上面几处调用点写在本段之前也安全。 */
+   switchTab / onMounted 都调 syncBodyScrollLock()；
+   函数声明会提升，所以上面几处调用点写在本段之前也安全。
+   2026-10-12：「其他日程」清单删掉后课表页只剩周课表一种视图（一屏装下、不滚），
+   条件从 `week && weekSub==='week'` 退化成 `week`。 */
 const anySheetOpen = computed(() => !!(
   onboarding.value || habitSheet.value || detail.value || addPick.value ||
   addForm.value || todoForm.value || evtForm.value || picker.value ||
   confirmClear.value || delLecId.value || semForm.value || eduLoginOpen.value
 ))
 function syncBodyScrollLock() {
-  const lock = anySheetOpen.value || (tab.value === 'week' && weekSub.value === 'week')
+  const lock = anySheetOpen.value || tab.value === 'week'
   document.body.style.overflow = lock ? 'hidden' : ''
 }
-watch([anySheetOpen, tab, weekSub], syncBodyScrollLock)
+watch([anySheetOpen, tab], syncBodyScrollLock)
 
 /* ===== APP_CTX:begin（由 tmp/gen-app-ctx.mjs 生成，勿手改）=====
    Stage 9：App 仍是唯一状态持有者，这里把上下文交出去；
@@ -4616,51 +4582,52 @@ provide(APP_CTX, reactive({
   saveBook, upsertReason, pickCallout, markSaid, muteReason, weekdayGaps, gapLine, canTellPattern,
   markPatternTold, QUICK_REASONS, MonthCalendar, NumberWheel, TimeWheel, DropdownSelect, PeriodsEditor, BottomSheet,
   RowItem, APP_CTX, TodayPage, WeekPage, MePage, LecturesPanel, ListenPanel, TodosPanel,
-  SettingsPanel, OnboardingPage, TodoSheet, ReviewSheet, EventSheet, SemesterSheet, PickerSheet, ConfirmClearSheet,
-  DeleteLectureSheet, AddSheet, PressTypeSheet, ReviewGridSheet, DetailSheet, HabitSheet, EduLoginSheet, APP_VERSION,
-  tab, TAB_KEYS, tabIndex, weekSub, habitSheet, stripDelay, switchTab, setWeekSub,
-  weekMenuOpen, toggleWeekMenu, closeWeekMenu, menuAddSlot, menuAddCourse, menuAddEvent, menuScan, menuOpenList,
-  onWeekMenuAway, stripRef, stripH, stripInstant, stripInstantTimer, markStripInstant, measureStrip, todayH,
-  todayRef, todayTopOffset, measureTodayH, HERO_WRAP_PAD, HERO_WRAP_PAD_BOTTOM, HERO_CONTENT_PAD, heroRef, heroBarRef,
-  heroFullH, heroBarH, heroScroll, heroLocked, heroOpenH, heroMinH, heroActive, heroCompressLen,
-  clamp01, heroP, heroWrapH, heroHeaderStyle, heroBarOpacity, heroBarTitle, heroBarRemain, heroRange,
-  heroContentPad, heroRaf, onTodayScroll, measureHero, swipeDx, swiping, sw, onStripTouchStart,
-  onStripTouchMove, onStripTouchEnd, onStripTouchCancel, APP_PLUGIN, backHint, closeTopmostLayer, lastBackTs, backHintTimer,
-  initBackButton, picker, pickerRef, openDateField, openTimeField, openNumberField, pickerConfirm, initial,
-  source, semester, weekAll, events, routines, dayOverrides, importMsg, setDayOverrides,
-  reloadDayOverrides, WEEKDAY_CN, KIND_OPTIONS, addDayOverride, patchDayOverride, removeDayOverride, holidayMsg, holidayBusy,
-  refreshHolidaysNow, holidaySyncing, syncHolidaysOnBoot, reloadDataset, addedDupCount, dedupCourses, onImportFile, onClearImport,
-  eduPreview, eduBusy, eduMsg, eduMsgBad, eduConfirming, eduSnapshot, eduLoginOpen, eduLoginUser,
-  eduLoginPw, eduLoginRemember, eduLoginShowPw, eduLoginBusy, eduLoginStage, eduLoginMsg, eduLoginMsgBad, eduSecretReady,
-  eduTermXnm, eduTermXqm, eduKeepAllTerms, eduNewFirstMonday, eduNewWeeks, eduFromOnboard, mondayOfToday, eduPreviewOf,
-  closeEduPreview, onEduFile, confirmEduImport, onRestoreEduSnapshot, EDU_STAGE_LABELS, EDU_TERM_LABELS, EDU_ORD_LABELS, eduTermCountsText,
-  termFromSemester, openEduLogin, closeEduLogin, onEduLogin, notifySettings, notifyPerm, notifyOk, notifyTesting,
-  notifyMsg, notifyMsgBad, exactAlarm, exactAsking, exactMsg, exactMsgBad, exactHint, refreshExactAlarm,
-  onAskExactAlarm, goMeTab, applyNotifySchedule, toggleNotify, setNotifyLead, onTestNotify, initNotify, frameSettings,
-  frameIsApp, frameMarksToday, refreshFrameMarks, unmarkListenDone, frameMarkedClips, frameMsg, frameMsgBad, setFrameMsg,
-  frameToast, frameToastTimer, showFrameToast, frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop, frameTodayItems, frameTomorrowFirst,
-  pushFrameNow, applyFrameActions, frameDrainErr, drainFrameActions, initFrame, toggleFrame, onFrameVisible, ONBOARD_KEY,
-  onboarding, onboardStep, OB_STEP_LABELS, onboardStepNo, finishOnboarding, confirmClear, doClearData, habits,
-  habitInput, habitName, habitToday, reloadHabits, addHabitConfirm, removeHabitConfirm, habitDelId, habitDelTimer,
-  onHabitDelete, toggleHabit, habitsAllDoneToday, undoAllHabitsToday, habitGrace, habitWeekBase, habitViewDays, habitWeekLabel,
-  shiftHabitWeek, habitTodayDone, onHabitCell, habitCellState, HABIT_CELL_CLS, habitTodayText, lectures, recActiveId,
-  recElapsed, recMsg, recMsgBad, playingId, recTicker, audioEl, recSupported, refreshLectures,
-  setRecMsg, fmtDur, fmtLecDate, lecStatusLabel, defaultLecTitle, entryName, tickRec, startRec,
-  AUTO_STOP_GRACE_MIN, finalizeRecording, stopRec, onVisibleCheckAutoStop, reconcileKeepAlive, playLec, onPlayFail, delLecId,
-  pressActiveId, pressTimer, pressPos, delLec, startLecPress, moveLecPress, cancelLecPress, doDeleteLecture,
-  listenClips, listenSettings, listenMsg, listenMsgBad, listenOpen, listenIsApp, setListenMsg, refreshListen,
-  initListen, listenDayKey, applyListenSchedule, reviewSheet, reviewHistory, reviewSettings, reviewMsg, reviewMsgBad,
-  REVIEW_AT_CHOICES, WD_LABELS, todayReview, reviewStepTotal, weekdayLabelOf, refreshReviews, setReviewMsg, moodLabelOf,
-  initReview, reviewStatsNow, openReview, closeReview, reviewSetAnswer, reviewNext, reviewBack, reviewFinish,
-  toggleReviewNotify, setReviewAt, applyReviewSchedule, dailyBook, todayDaily, dailyBaseline, snapshotToday, dailyLineOf,
-  accountToday, accountHistory, reasonBook, saveReasonBook, reasonCallout, reasonAskedToday, patternDays, weekdayGapList,
-  topGap, patternTell, patternAi, patternLine, patternSrc, askPatternLine, noteReason, sayReasonBack,
-  muteCurrentReason, markPatternSeen, reviewFocusText, reviewAddTodo, isSameDay, listenSuggestions, listenDue, listenTodayAll,
-  listenStageLabel, onListenPick, listenAutoMark, toggleListenNotify, listenSettingsOpen, patchListenSettings, onListenRepeat, onListenIntervals,
-  onListenDnd, onListenNum, resetListenSettings, listenBlobUrls, listenPlayId, listenPlayRound, listenPlayTotal, listenAudio,
-  listenPaused, pauseListen, clearListen, resumeListen, onListenEnded, onListenPlay, trSupported, trBusyId,
-  trPhase, trPercent, trLabel, trOpenId, fmtSize, startTr, llmCfg, llmInputOpen,
-  settingsOpen, meSub, meSubTitle, openMeSub, closeMeSub, PROVIDER_OPTIONS, llmReady, sumBusyId,
+  SettingsPanel, SettingsAppearance, SettingsRemind, SettingsRecording, SettingsData, SettingsSystem, OnboardingPage, TodoSheet,
+  ReviewSheet, EventSheet, SemesterSheet, PickerSheet, ConfirmClearSheet, DeleteLectureSheet, DayoverSheet, AddSheet,
+  PressTypeSheet, ReviewGridSheet, DetailSheet, HabitSheet, EduLoginSheet, APP_VERSION, tab, TAB_KEYS,
+  tabIndex, habitSheet, stripDelay, switchTab, weekMenuOpen, toggleWeekMenu, closeWeekMenu, dayoverSheet,
+  menuAddSlot, menuAddCourse, menuAddEvent, menuScan, menuDayover, onWeekMenuAway, stripRef, stripH,
+  stripInstant, stripInstantTimer, markStripInstant, measureStrip, todayH, todayRef, todayTopOffset, measureTodayH,
+  HERO_WRAP_PAD, HERO_WRAP_PAD_BOTTOM, HERO_CONTENT_PAD, heroRef, heroBarRef, heroFullH, heroBarH, heroScroll,
+  heroLocked, heroOpenH, heroMinH, heroActive, heroCompressLen, clamp01, heroP, heroWrapH,
+  heroHeaderStyle, heroBarOpacity, heroBarTitle, heroBarRemain, heroRange, heroContentPad, heroRaf, onTodayScroll,
+  measureHero, swipeDx, swiping, sw, onStripTouchStart, onStripTouchMove, onStripTouchEnd, onStripTouchCancel,
+  APP_PLUGIN, backHint, closeTopmostLayer, lastBackTs, backHintTimer, initBackButton, picker, pickerRef,
+  openDateField, openTimeField, openNumberField, pickerConfirm, initial, source, semester, weekAll,
+  events, routines, dayOverrides, importMsg, setDayOverrides, reloadDayOverrides, WEEKDAY_CN, KIND_OPTIONS,
+  addDayOverride, patchDayOverride, removeDayOverride, holidayMsg, holidayBusy, refreshHolidaysNow, holidaySyncing, syncHolidaysOnBoot,
+  reloadDataset, addedDupCount, dedupCourses, onImportFile, onClearImport, eduPreview, eduBusy, eduMsg,
+  eduMsgBad, eduConfirming, eduSnapshot, eduLoginOpen, eduLoginUser, eduLoginPw, eduLoginRemember, eduLoginShowPw,
+  eduLoginBusy, eduLoginStage, eduLoginMsg, eduLoginMsgBad, eduSecretReady, eduTermXnm, eduTermXqm, eduKeepAllTerms,
+  eduNewFirstMonday, eduNewWeeks, eduFromOnboard, mondayOfToday, eduPreviewOf, closeEduPreview, onEduFile, confirmEduImport,
+  onRestoreEduSnapshot, EDU_STAGE_LABELS, EDU_TERM_LABELS, EDU_ORD_LABELS, eduTermCountsText, termFromSemester, openEduLogin, closeEduLogin,
+  onEduLogin, notifySettings, notifyPerm, notifyOk, notifyTesting, notifyMsg, notifyMsgBad, exactAlarm,
+  exactAsking, exactMsg, exactMsgBad, exactHint, refreshExactAlarm, onAskExactAlarm, goMeTab, applyNotifySchedule,
+  toggleNotify, setNotifyLead, onTestNotify, initNotify, frameSettings, frameIsApp, frameMarksToday, refreshFrameMarks,
+  unmarkListenDone, frameMarkedClips, frameMsg, frameMsgBad, setFrameMsg, frameToast, frameToastTimer, showFrameToast,
+  frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop, frameTodayItems, frameTomorrowFirst, pushFrameNow, applyFrameActions, frameDrainErr,
+  drainFrameActions, initFrame, toggleFrame, onFrameVisible, ONBOARD_KEY, onboarding, onboardStep, OB_STEP_LABELS,
+  onboardStepNo, finishOnboarding, confirmClear, doClearData, habits, habitInput, habitName, habitToday,
+  reloadHabits, addHabitConfirm, removeHabitConfirm, habitDelId, habitDelTimer, onHabitDelete, toggleHabit, habitsAllDoneToday,
+  undoAllHabitsToday, habitGrace, habitWeekBase, habitViewDays, habitWeekLabel, shiftHabitWeek, habitTodayDone, onHabitCell,
+  habitCellState, HABIT_CELL_CLS, habitTodayText, lectures, recActiveId, recElapsed, recMsg, recMsgBad,
+  playingId, recTicker, audioEl, recSupported, refreshLectures, setRecMsg, fmtDur, fmtLecDate,
+  lecStatusLabel, defaultLecTitle, entryName, tickRec, startRec, AUTO_STOP_GRACE_MIN, finalizeRecording, stopRec,
+  onVisibleCheckAutoStop, reconcileKeepAlive, playLec, onPlayFail, delLecId, pressActiveId, pressTimer, pressPos,
+  delLec, startLecPress, moveLecPress, cancelLecPress, doDeleteLecture, listenClips, listenSettings, listenMsg,
+  listenMsgBad, listenOpen, listenIsApp, setListenMsg, refreshListen, initListen, listenDayKey, applyListenSchedule,
+  reviewSheet, reviewHistory, reviewSettings, reviewMsg, reviewMsgBad, REVIEW_AT_CHOICES, WD_LABELS, todayReview,
+  reviewStepTotal, weekdayLabelOf, refreshReviews, setReviewMsg, moodLabelOf, initReview, reviewStatsNow, openReview,
+  closeReview, reviewSetAnswer, reviewNext, reviewBack, reviewFinish, toggleReviewNotify, setReviewAt, applyReviewSchedule,
+  dailyBook, todayDaily, dailyBaseline, snapshotToday, dailyLineOf, accountToday, accountHistory, reasonBook,
+  saveReasonBook, reasonCallout, reasonAskedToday, patternDays, weekdayGapList, topGap, patternTell, patternAi,
+  patternLine, patternSrc, askPatternLine, noteReason, sayReasonBack, muteCurrentReason, markPatternSeen, reviewFocusText,
+  reviewAddTodo, isSameDay, listenSuggestions, listenDue, listenTodayAll, listenStageLabel, onListenPick, listenAutoMark,
+  toggleListenNotify, listenSettingsOpen, patchListenSettings, onListenRepeat, onListenIntervals, onListenDnd, onListenNum, resetListenSettings,
+  listenBlobUrls, listenPlayId, listenPlayRound, listenPlayTotal, listenAudio, listenPaused, pauseListen, clearListen,
+  resumeListen, onListenEnded, onListenPlay, trSupported, trBusyId, trPhase, trPercent, trLabel,
+  trOpenId, fmtSize, startTr, llmCfg, llmInputOpen, settingsOpen, meSubStack, meSub,
+  ME_SUB_TITLES, meSubTitle, openMeSub, resetMeSub, closeMeSub, PROVIDER_OPTIONS, llmReady, sumBusyId,
   sumStage, sumOpenId, sumCtrl, saveLlm, onLlmProvider, onLlmKey, llmTest, llmModels,
   testLlm, cancelSummary, startSummary, runAutoPipeline, tomorrowStr, homeworkToTodos, onboardFile, onboardImport,
   onboardEduLogin, obImportMsg, onOnboardFile, semForm, semErr, DEFAULT_PERIODS, openSemEdit, evenSplitSubTerms,
@@ -4689,12 +4656,11 @@ provide(APP_CTX, reactive({
   gridTop, gridH, measureNavH, measureSat, measureGridTop, onWinResize, gridColsStyle, gridBodyStyle,
   cardFit, PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine, pal, periods,
   periodSpan, courseStatus, gridStatus, nowPct, nowClock, nowLineY, undoneCount, undoneTodos,
-  doneTodos, detail, openDetail, WDN, listTotalCount, listFixedCount, listDateLabel, listGroups,
-  listBarColor, listMeta, onListItem, addForm, addErr, addWarn, addConfirmed, DURATIONS,
-  fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail, editRoutineFromDetail,
-  stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail, onDelRoutine,
-  lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove, gridUp, gridDbl,
-  anySheetOpen, syncBodyScrollLock,
+  doneTodos, detail, openDetail, WDN, addForm, addErr, addWarn, addConfirmed,
+  DURATIONS, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail,
+  editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail,
+  onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove, gridUp,
+  gridDbl, anySheetOpen, syncBodyScrollLock,
 }))
 /* ===== APP_CTX:end ===== */
 </script>
@@ -4985,7 +4951,18 @@ provide(APP_CTX, reactive({
         <!-- 待办清单（Stage 6 新增）：今天页只看今天，这一页看全部——未完成在前，已完成收在后面 -->
         <TodosPanel v-else-if="meSub === 'todos'" />
 
-        <SettingsPanel v-else />
+        <SettingsPanel v-else-if="meSub === 'settings'" />
+
+        <!-- 设置的五个子页（2026-10-12 索引页化）：设置首页只列入口，点进来才是具体项 -->
+        <SettingsAppearance v-else-if="meSub === 'settings-appearance'" />
+
+        <SettingsRemind v-else-if="meSub === 'settings-remind'" />
+
+        <SettingsRecording v-else-if="meSub === 'settings-recording'" />
+
+        <SettingsData v-else-if="meSub === 'settings-data'" />
+
+        <SettingsSystem v-else />
       </div>
     </div>
     </Transition>
@@ -5105,6 +5082,8 @@ provide(APP_CTX, reactive({
 <ConfirmClearSheet />
 
 <DeleteLectureSheet />
+
+<DayoverSheet />
 
     <!-- P12a 教务课表导入的预览确认浮层。
          为什么必须有这一步：导入是**替换**现有课表（用户：「不要追加，我只希望有一套课表」），

@@ -72,11 +72,17 @@ try {
   // 3. 确认层开着 → 只关确认层
   await page.locator('nav button', { hasText: '我的' }).click()
   await page.waitForTimeout(400)
-  /* Stage 6：「清除数据」搬进了 data-sub="settings" 二级页 → 先推入二级页 */
+  /* Stage 6：「清除数据」搬进了 data-sub="settings" 二级页 → 先推入二级页
+     2026-10-12 设置索引页化：清除数据已进一步下沉到 settings-system 子页，
+     所以现在是「索引页 → 系统与关于」两层；先推索引页，再推系统子页。 */
   if ((await page.locator('[data-sub-page]').count()) === 0) {
     await page.$eval('[data-settings-toggle]', (el) => el.click())
     await page.waitForTimeout(400)
   }
+  await page.$eval('[data-settings-index="system"]', (el) => el.click())
+  await page.waitForTimeout(400)
+  t('3pre. 系统与关于子页已推入（隐藏验证：清除入口在这一层）',
+    (await page.locator('[data-sub-page][data-sub="settings-system"]').count()) === 1)
   await page.locator('button', { hasText: '清除数据' }).first().click()
   await page.waitForTimeout(400)
   t('3a. 确认层已打开', await page.locator('text=确认清除全部数据').isVisible())
@@ -85,10 +91,24 @@ try {
   t('3b. 返回键只关确认层', !(await page.locator('text=确认清除全部数据').isVisible().catch(() => false)))
   t('3c. 没有误退出', (await exits()) === 1)
 
+  /* 3d/3e. 2026-10-12 索引页化新增的这一层：设置子页也吃返回键，且只退一层。
+     此时栈是 [settings, settings-system]，按一次 → 回设置索引页（不是直接退回「我的」页），
+     再按一次 → 才收回设置二级页。这两条守住「新增一层不会一次退穿」的预期。 */
+  await fire()
+  await page.waitForTimeout(450)
+  t('3d. 返回键从「系统与关于」子页只退一层回设置索引页',
+    (await page.locator('[data-sub-page][data-sub="settings"]').count()) === 1
+    && (await page.locator('[data-sub-page][data-sub="settings-system"]').count()) === 0
+    && (await exits()) === 1)
+  await fire()
+  await page.waitForTimeout(450)
+  t('3e. 再按返回键才收回设置二级页回「我的」页',
+    (await page.locator('[data-sub-page]').count()) === 0
+    && (await exits()) === 1
+    && (await activeTab()).includes('我的'))
+
   // 4. 表单里开着 picker → 返回键只关 picker，再按才关表单
-  //    Stage 6：学期编辑入口在索引页，先退出设置二级页
-  await page.locator('[data-sub-back]').click()
-  await page.waitForTimeout(400)
+  //    3e 已经把设置二级页整栈收回，「我的」页面上就能直接点学期入口。
   await page.$eval('[data-me-term]', (el) => el.click())
   await page.waitForTimeout(400)
   const masksBefore = await masks()

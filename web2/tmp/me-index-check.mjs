@@ -120,19 +120,53 @@ await page.waitForTimeout(300)
 await back()
 await page.waitForTimeout(300)
 
-/* 4. 设置页：内容对得上，且「外观/提醒」在「数据」前面（order-1 / order-2） */
+/* 4. 设置：2026-10-12 起设置页自身也变成「索引页 → 子页」两层。
+   原来的 data-settings-body 锚点和「设置在上、数据在下」的 CSS order 这套结构整块已删除，
+   这里整段改写成新口径：设置索引页 5 行入口（各带摘要）→ 点行进各自子页 → 返回回索引。 */
 await open('settings')
 await page.waitForTimeout(400)
 t('D1. 设置二级页', (await page.locator('[data-sub-page]').getAttribute('data-sub')) === 'settings')
-t('D2. 设置页里有设置本体（原 data-settings-body 锚点仍在）', (await page.locator('[data-sub-body] [data-settings-body]').count()) === 1)
-const setBody = (await page.locator('[data-sub-body]').innerText()).replace(/\s+/g, ' ')
-t('D3. 主题外观与数据都在这一页', setBody.includes('主题外观') && setBody.includes('导入主项目数据'))
-const vOrder = await page.evaluate(() => {
-  const secs = [...document.querySelectorAll('[data-sub-body] > section')]
-  const g = (cls) => secs.filter((s) => s.className.includes(cls))[0]
-  return { a: Math.round(g('order-1')?.getBoundingClientRect().top || 0), b: Math.round(g('order-2')?.getBoundingClientRect().top || 0) }
-})
-t('D4. 视觉顺序：设置在上、数据在下', vOrder.a > 0 && vOrder.b > vOrder.a, JSON.stringify(vOrder))
+const SINDEX = page.locator('[data-sub-page][data-sub="settings"]')
+t('D2. 设置索引页只有 5 行入口、每行带摘要（data-settings-index / data-settings-sum）',
+  (await SINDEX.locator('[data-settings-index]').count()) === 5
+  && (await SINDEX.locator('[data-settings-sum]').count()) === 5,
+  `${await SINDEX.locator('[data-settings-index]').count()} 行 / ${await SINDEX.locator('[data-settings-sum]').count()} 摘要`)
+const idxKeys = await page.evaluate(() => [...document.querySelectorAll('[data-settings-index]')].map((el) => el.getAttribute('data-settings-index')))
+t('D3. 入口顺序＝外观 / 提醒 / 录音 / 数据 / 系统，且索引页不含设置正文',
+  JSON.stringify(idxKeys) === JSON.stringify(['appearance', 'remind', 'recording', 'data', 'system'])
+  && (await page.locator('[data-settings-body]').count()) === 0
+  && !(await SINDEX.innerText()).includes('导入主项目数据'),
+  idxKeys.join(','))
+
+/* 外观：索引页 → 「外观与主题」子页（唯一主题入口） */
+await page.$eval('[data-settings-index="appearance"]', (el) => el.click())
+await page.waitForTimeout(400)
+const AP = page.locator('[data-sub-page][data-sub="settings-appearance"]')
+t('D4. 点「外观与主题」进子页：主题外观 / 主题配色各恰 1 处、色点 4 个、明暗按钮在',
+  (await AP.count()) === 1
+  && (await AP.locator('text=主题外观').count()) === 1
+  && (await AP.locator('text=主题配色').count()) === 1
+  && (await AP.locator('button[style*="background"]').count()) === 4
+  && (await AP.locator('[data-theme-toggle]').count()) === 1)
+await back() // 子页 → 设置索引
+await page.waitForTimeout(350)
+t('D5. 返回后回到设置索引页（5 行仍在，子页消失）',
+  (await page.locator('[data-sub-page][data-sub="settings"]').count()) === 1
+  && (await page.locator('[data-settings-index]').count()) === 5
+  && (await page.locator('[data-sub-page][data-sub="settings-appearance"]').count()) === 0)
+
+/* 数据：索引页 → 「数据与导入导出」子页 */
+await page.$eval('[data-settings-index="data"]', (el) => el.click())
+await page.waitForTimeout(400)
+const DATA = page.locator('[data-sub-page][data-sub="settings-data"]')
+t('D6. 「数据与导入导出」子页里有「导入主项目数据 / 导出日历」，索引页本身没有',
+  (await DATA.count()) === 1
+  && (await DATA.locator('text=导入主项目数据').count()) === 1
+  && (await DATA.locator('text=导出日历').count()) === 1
+  && (await SINDEX.count()) === 0)
+await back() // 子页 → 设置索引
+await page.waitForTimeout(350)
+t('D7. 再返回回到设置索引页', (await page.locator('[data-sub-page][data-sub="settings"]').count()) === 1)
 
 /* 5. 返回键（App 原生那条路）：先回索引，再按才回今日页，全程不误退出 */
 await fire()
@@ -143,6 +177,28 @@ await fire()
 await page.waitForTimeout(350)
 const tabNow2 = await page.evaluate(() => (document.querySelector('nav button[data-active]')?.innerText || '').trim())
 t('E2. 再按返回键 → 回今日页（不退出）', tabNow2.includes('今日') && (await exits()) === 0)
+
+/* 6. 桌面宽度冒烟。
+   这段是原 settings-fold-check.mjs 里唯一「别处没有」的断言：翻遍 tmp/ 没有别的脚本
+   在 1280 宽下跑「我的 / 设置」页（day12b-filter-check.mjs:86 是筛选、habits-check.mjs:199
+   是打卡浮层，都不碰这两页）。该文件其余部分已被 step4-check.mjs 的 B1–B12、
+   clear-data-check.mjs、dedup-button-check.mjs、m25-keepalive-check.mjs、
+   m4-summarize-ui-check.mjs 覆盖，且整份都挂在已删除的 [data-settings-body] 锚点上，
+   所以整份删除，只把这段桌面包烟搬到这里保住。 */
+await page.setViewportSize({ width: 1280, height: 900 })
+await page.waitForTimeout(400)
+await page.$eval('[data-nav="me"]', (el) => el.click())
+await page.waitForTimeout(400)
+t('G1. 桌面 1280 下「我的」索引页照常（4 个入口 + 1 行学期）',
+  (await ME.locator('[data-me-entry]').count()) === 4 && (await ME.locator('[data-me-term]').count()) === 1)
+await open('settings')
+await page.waitForTimeout(400)
+t('G2. 桌面 1280 下设置索引页 5 行正常渲染',
+  (await page.locator('[data-sub-page][data-sub="settings"]').isVisible())
+  && (await page.locator('[data-settings-index]').count()) === 5)
+await back()
+await page.waitForTimeout(300)
+
 t('F1. 全程没有页面异常', errs.length === 0, errs.slice(0, 2).join(' | '))
 
 console.log(`\n=== 我的页索引：${pass} 项通过 / ${fail} 项失败 ===`)

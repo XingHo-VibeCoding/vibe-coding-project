@@ -1,7 +1,7 @@
 /* 调休 / 特殊日期检查
    A 段：纯逻辑（清洗、唯一入口、放假/补课/只提示三种语义、老数据逐字一致）
    B 段：数据层联动（ics 导出、课前提醒排程、下次上课日）
-   C 段：浏览器端到端（今天页、周课表、学期设置里的特殊日期）
+   C 段：浏览器端到端（今天页、周课表、周课表 ＋ 选单里的特殊日期浮层）
    D 段：老数据兼容（没有 web2.dayOverrides 这个键时行为与加调休之前逐字一致）
 
    背景（用户 2026-10-08 拍板）：
@@ -426,17 +426,24 @@ async function open({ overrides, label, shot }) {
   await r.page.context().close()
 }
 
-/* --- C5 特殊日期界面：在设置页真的加一条「放假」，今日页当场就变（改完立即生效） --- */
+/* --- C5 特殊日期界面：从周课表 ＋ 选单打开浮层，真的加一条「放假」，今日页当场就变（改完立即生效） --- */
 {
-  const r = await open({ label: '设置页手动加', overrides: null })
+  const r = await open({ label: '周课表 ＋ 选单手动加', overrides: null })
   const page = r.page
-  /* 非当前页带 inert → 真实鼠标事件会被吃掉，切页一律程序化 click */
-  await page.$eval('[data-nav="me"]', (el) => el.click())
+  /* 非当前页带 inert → 真实鼠标事件会被吃掉，切页一律程序化 click。
+     2026-10-12（用户 m03868）：这一栏从「我的 → 设置」搬到**周课表页右上 ＋ 选单**，
+     因为它跟加课/加日程一样是「看课表时才想起来」的动作。 */
+  await page.$eval('[data-nav="week"]', (el) => el.click())
   await page.waitForTimeout(400)
-  await page.$eval('[data-settings-toggle]', (el) => el.click())
+  await page.$eval('[data-week-add]', (el) => el.click())
+  await page.waitForTimeout(300)
+  t('C5a. 周课表右上「＋」选单里有「特殊日期」入口',
+    await page.locator('[data-week-menu-dayover]').count() === 1)
+  await page.$eval('[data-week-menu-dayover]', (el) => el.click())
   await page.waitForTimeout(500)
-  t('C5. 「我的 → 设置」里能找到「特殊日期」这一栏',
-    await page.locator('[data-dayover-section]').count() === 1)
+  t('C5. 点「特殊日期」→ 打开浮层，且 ＋ 选单已收起',
+    await page.locator('[data-sheet-dayover]').count() === 1
+      && await page.locator('[data-week-menu]').count() === 0)
   t('C5b. 默认空态：给一句「还没有特殊日期」的说明，不留空白',
     await page.locator('[data-dayover-empty]').count() === 1)
 
@@ -447,8 +454,10 @@ async function open({ overrides, label, shot }) {
     await page.locator('[data-dayover-row="' + TODAY + '"]').count() === 1,
     String(await page.locator('[data-dayover-row]').count()))
 
-  await page.$eval('[data-sub-back]', (el) => el.click())
+  await page.$eval('[data-sheet-mask]', (el) => el.click())
   await page.waitForTimeout(400)
+  await page.$eval('[data-nav="today"]', (el) => el.click())
+  await page.waitForTimeout(500)
   const txt = await r.todayText()
   t('C5d. **加完不用点保存，回今日页当场就变**（今天那门课不见了 + 挂出「放假」标）',
     txt.indexOf(WD_NAME) < 0 && /放假/.test(txt),
@@ -462,13 +471,15 @@ async function open({ overrides, label, shot }) {
 {
   const swapTo = (NATURAL_WD % 7) + 1
   const r = await open({
-    label: '设置页改补课',
+    label: '选单里改补课',
     overrides: [{ date: TODAY, kind: 'off', note: '先设成放假' }],
   })
   const page = r.page
-  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.$eval('[data-nav="week"]', (el) => el.click())
   await page.waitForTimeout(400)
-  await page.$eval('[data-settings-toggle]', (el) => el.click())
+  await page.$eval('[data-week-add]', (el) => el.click())
+  await page.waitForTimeout(300)
+  await page.$eval('[data-week-menu-dayover]', (el) => el.click())
   await page.waitForTimeout(500)
   await page.$eval('[data-dayover-kind="' + TODAY + ':swap"]', (el) => el.click())
   await page.waitForTimeout(300)
@@ -478,11 +489,13 @@ async function open({ overrides, label, shot }) {
   t('C6b. 还没选周几时，默认就是这一天的真实星期（不会空着让人猜）',
     await page.locator('[data-dayover-wd="' + TODAY + ':' + NATURAL_WD + '"]').count() === 1)
   /* 这一栏所有控件（日期 / 三种 kind / 七个星期钮 / 说明 / 删除）都在选中「补课」时才齐，截图留档 */
-  await page.locator('[data-dayover-section]').screenshot({ path: 'tmp/dayover-settings.png' })
+  await page.locator('[data-sheet-dayover]').screenshot({ path: 'tmp/dayover-settings.png' })
   await page.$eval('[data-dayover-wd="' + TODAY + ':' + swapTo + '"]', (el) => el.click())
   await page.waitForTimeout(300)
-  await page.$eval('[data-sub-back]', (el) => el.click())
+  await page.$eval('[data-sheet-mask]', (el) => el.click())
   await page.waitForTimeout(400)
+  await page.$eval('[data-nav="today"]', (el) => el.click())
+  await page.waitForTimeout(500)
   const txt = await r.todayText()
   t('C6c. **选完周几，今日页按那天的课表上**（原课不见、换成被补那天的课）',
     txt.indexOf(WD_NAME) < 0 && txt.indexOf(SWAP_NAME[swapTo]) >= 0,
@@ -494,21 +507,25 @@ async function open({ overrides, label, shot }) {
 /* --- C7 删除那条覆盖 → 课回来（可逆，别让人不敢用） --- */
 {
   const r = await open({
-    label: '设置页删除',
+    label: '选单里删除',
     overrides: [{ date: TODAY, kind: 'off', note: '待删除' }],
   })
   const page = r.page
-  await page.$eval('[data-nav="me"]', (el) => el.click())
+  await page.$eval('[data-nav="week"]', (el) => el.click())
   await page.waitForTimeout(400)
-  await page.$eval('[data-settings-toggle]', (el) => el.click())
+  await page.$eval('[data-week-add]', (el) => el.click())
+  await page.waitForTimeout(300)
+  await page.$eval('[data-week-menu-dayover]', (el) => el.click())
   await page.waitForTimeout(500)
   await page.$eval('[data-dayover-del="' + TODAY + '"]', (el) => el.click())
   await page.waitForTimeout(300)
   t('C7. 点「删除」→ 那一行消失、回到空态',
     await page.locator('[data-dayover-row]').count() === 0
       && await page.locator('[data-dayover-empty]').count() === 1)
-  await page.$eval('[data-sub-back]', (el) => el.click())
+  await page.$eval('[data-sheet-mask]', (el) => el.click())
   await page.waitForTimeout(400)
+  await page.$eval('[data-nav="today"]', (el) => el.click())
+  await page.waitForTimeout(500)
   const txt = await r.todayText()
   t('C7b. **删掉之后课就回来了**（可逆）', txt.indexOf(WD_NAME) >= 0, txt.slice(0, 200))
   t('C7c. 零 pageerror', r.errors.length === 0, JSON.stringify(r.errors))

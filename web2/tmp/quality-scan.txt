@@ -5,7 +5,7 @@
   [today] 0 处问题 
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
   [week] 无问题
-  [week-list] 无问题
+  [week-menu] 无问题
   [me] 无问题
   [me-open] 无问题
   [sheet-evt] 0 处问题 
@@ -25,7 +25,7 @@
   [today] 0 处问题 
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
   [week] 无问题
-  [week-list] 无问题
+  [week-menu] 无问题
   [me] 无问题
   [me-open] 无问题
   [sheet-evt] 0 处问题 
@@ -45,7 +45,7 @@
   [today] 0 处问题 
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
   [week] 无问题
-  [week-list] 无问题
+  [week-menu] 无问题
   [me] 无问题
   [me-open] 无问题
   [sheet-evt] 0 处问题 
@@ -66,7 +66,7 @@
   [today] 0 处问题 
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）3 处：24×24 button.-m-1.5.flex.h-6 / 24×24 button.-m-1.5.flex.h-6 / 57×26 管理 ›
   [week] 无问题
-  [week-list] 无问题
+  [week-menu] 无问题
   [me] 无问题
   [me-open] 无问题
   [sheet-evt] 0 处问题 
@@ -82,4 +82,4 @@
       · 触控目标 24–32px（达 WCAG AA，未达 44px 建议，未计入问题）4 处：46×28 40分 / 46×28 45分 / 45×28 60分 / 45×28 90分
 
 ========================================================================
-合计：0 处问题；截图 14 张（tmp/qa-today-light-360x640.png, tmp/qa-week-light-360x640.png, tmp/qa-week-list-light-360x640.png, tmp/qa-me-light-360x640.png, tmp/qa-me-open-light-360x640.png, tmp/qa-sheet-evt-light-360x640.png, tmp/qa-sheet-todo-light-360x640.png, tmp/qa-habit-sheet-light-360x640.png, tmp/qa-sheet-review-light-360x640.png, tmp/qa-add-pick-light-360x640.png, tmp/qa-sheet-add-light-360x640.png, tmp/qa-today-dark-360x640.png, tmp/qa-week-dark-360x640.png, tmp/qa-week-list-dark-360x640.png）
+合计：0 处问题；截图 14 张（tmp/qa-today-light-360x640.png, tmp/qa-week-light-360x640.png, tmp/qa-week-menu-light-360x640.png, tmp/qa-me-light-360x640.png, tmp/qa-me-open-light-360x640.png, tmp/qa-sheet-evt-light-360x640.png, tmp/qa-sheet-todo-light-360x640.png, tmp/qa-habit-sheet-light-360x640.png, tmp/qa-sheet-review-light-360x640.png, tmp/qa-add-pick-light-360x640.png, tmp/qa-sheet-add-light-360x640.png, tmp/qa-today-dark-360x640.png, tmp/qa-week-dark-360x640.png, tmp/qa-week-menu-dark-360x640.png）

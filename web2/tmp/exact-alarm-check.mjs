@@ -116,6 +116,9 @@ async function openMeSettings(page) {
     await tg.click()
     await page.waitForTimeout(300)
   }
+  /* 2026-10-12 设置改成两层导航：精确提醒那一块搬进了「提醒」子页，先进去再断言 */
+  await page.locator('[data-settings-index="remind"]').click()
+  await page.waitForTimeout(350)
 }
 
 /* ===== A. 没允许 → 出现提示、点按钮能去授权、允许后消失并重排 ===== */

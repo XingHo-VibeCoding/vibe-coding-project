@@ -1,8 +1,10 @@
 /* Stage 8 自检：课表页「去掉重复问候卡 + ＋ 选单」。
-   ① 课表页顶部只剩周次切换 + 右上 ＋；问候卡收起、网格拿回整屏（旧分段控件下线）
-   ② ＋ 打开选单：手动加课 / 加日程 / 拍课表识别 / 其他日程（识别项的旧锚点 data-mine-rec 跟着搬进来）
+   ① 课表页顶部只剩周次切换 + 右上 ＋；问候卡滑出视口（2026-10-12 起随今日页横向平移离场）
+      、网格拿回整屏（旧分段控件下线）
+   ② ＋ 打开选单：手动加课 / 加日程 / 拍课表识别 / 特殊日期
+      （2026-10-12 用户 m04810：删掉「其他日程」，那是个重复入口；识别项的旧锚点 data-mine-rec 跟着搬进来）
    ③ 选单的收起时机：选中任一项 / 点别处 / 按返回键（返回键只收选单，不切页、不误退出）
-   ④ 四个入口各自真的干活；其他日程子视图能来回
+   ④ 四个入口各自真的干活；课表页不再有第二层视图
    纪律：切 tab / 点页内元素一律程序化 click（非当前页带 inert，真实鼠标事件会被吃） */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
@@ -94,20 +96,23 @@ const H = await page.evaluate(() => {
   }
   return {
     wrapH: +wrap.getBoundingClientRect().height.toFixed(1),
+    wrapRight: +wrap.getBoundingClientRect().right.toFixed(1),
     headerNaturalH: +hdr.getBoundingClientRect().height.toFixed(1),
     mainTop: +main.getBoundingClientRect().top.toFixed(1),
     gap: +(n.top - g.bottom).toFixed(1),
     greetVisible,
   }
 })
-t('A4 问候卡收起、且课表页从顶端开始', H.wrapH <= 2 && H.mainTop <= 2, `可见高 ${H.wrapH}px（自然高 ${H.headerNaturalH}px）/ mainTop ${H.mainTop}px`)
+/* 2026-10-12：头卡改为随今日页横向平移离场（不再竖向塌缩给课表腾空间），
+   所以「课表页看不到问候卡」的判据从「浮层高塌到 0」改成「浮层整体滑到视口左边之外」。 */
+t('A4 问候卡滑出视口左侧、且课表页从顶端开始', H.wrapRight <= 2 && H.mainTop <= 2, `浮层右缘 ${H.wrapRight}px（此时高 ${H.wrapH}px，自然高 ${H.headerNaturalH}px）/ mainTop ${H.mainTop}px`)
 t('A5 课表页看不到今日页那句问候语（命中测试）', H.greetVisible === false, `greetVisible=${H.greetVisible}`)
 t('A6 网格拿回整屏（与底部导航间隙 ≤14px）', H.gap <= 14, `间隙 ${H.gap}px`)
 
 /* ---- B ＋ 选单 ---- */
 await openMenu()
 t('B1 点 ＋ 弹出选单，四项文案与顺序正确',
-  JSON.stringify(await menuItems()) === JSON.stringify(['手动加课', '加日程', '拍课表识别', '其他日程']),
+  JSON.stringify(await menuItems()) === JSON.stringify(['手动加课', '加日程', '拍课表识别', '特殊日期']),
   JSON.stringify(await menuItems()))
 t('B2 aria-expanded 跟着变',
   (await page.locator('[data-week-add]').getAttribute('aria-expanded')) === 'true')
@@ -161,20 +166,22 @@ await page.$eval('[data-mine-rec-cancel]', (el) => el.click())
 await page.waitForTimeout(500)
 t('C6 取消后回课表页，＋ 仍在', await page.locator('[data-week-add]').isVisible())
 
+/* 2026-10-12（用户 m04810）：选单去掉「其他日程」——课表页不再有第二层视图，
+   跨周总览是重复入口（待办在今日页/待办清单都有，独立日程翻周可见）。
+   所以这里不再测「切视图」，改成守：选单恰四项、点空白处收起、点完任一项选单必收。 */
 await openMenu()
-await page.$eval('[data-week-sub-list]', (el) => el.click())
-await page.waitForTimeout(600)
-t('C7 其他日程 → 切到清单视图（网格让位、返回按钮出现）',
-  (await count('[data-list-page]')) === 1 && (await count('[data-grid]')) === 0 && (await count('[data-week-sub-week]')) === 1)
-await openMenu()
-t('C8 清单视图里 ＋ 仍在，但选单不再列「其他日程」',
-  (await count('[data-week-menu]')) === 1 &&
-  JSON.stringify(await menuItems()) === JSON.stringify(['手动加课', '加日程', '拍课表识别']),
+t('C7 选单恰 4 项（其他日程已删）',
+  JSON.stringify(await menuItems()) === JSON.stringify(['手动加课', '加日程', '拍课表识别', '特殊日期']),
   JSON.stringify(await menuItems()))
-await page.$eval('[data-week-sub-week]', (el) => el.click())
-await page.waitForTimeout(600)
-t('C9 返回周课表：网格回来、清单让位',
-  (await count('[data-grid]')) === 1 && (await count('[data-list-page]')) === 0)
+await page.$eval('[data-week-menu-dayover]', (el) => el.click())
+await page.waitForTimeout(400)
+t('C8 特殊日期 → 打开特殊日期浮层，且选单已收起',
+  (await count('[data-sheet-dayover]')) === 1 && (await count('[data-week-menu]')) === 0)
+await fire()
+await page.waitForTimeout(350)
+t('C9 关掉浮层后回到课表页：网格在、＋ 在、滚动仍锁',
+  (await count('[data-sheet-dayover]')) === 0 && (await count('[data-grid]')) === 1
+  && (await count('[data-week-add]')) === 1 && (await page.evaluate(() => document.body.style.overflow)) === 'hidden')
 
 t('D1 全程无页面异常', errs.length === 0, errs.join(' | ').slice(0, 200))
 

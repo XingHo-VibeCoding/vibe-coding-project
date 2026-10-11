@@ -22,11 +22,13 @@ async function openMine(seed) {
   await page.waitForTimeout(700)
   await page.locator('text=我的').last().click()
   await page.waitForTimeout(400)
-  /* 2026-10-02 减法：「清理重复课程」收进了默认收起的「设置」折叠区 → 先展开 */
-  if ((await page.locator('[data-settings-body]').count()) === 0) {
-    await page.locator('[data-settings-toggle]').click()
-    await page.waitForTimeout(350)
-  }
+  /* 2026-10-12 设置索引页化：老的「设置折叠区」[data-settings-body] 已删除。
+     新路径：设置入口 [data-settings-toggle] → 设置索引页 → 「系统与关于」子页，
+     [data-dedup-entry]（清理重复课程）在 settings-system 子页里。 */
+  await page.locator('[data-settings-toggle]').click()
+  await page.waitForTimeout(350)
+  await page.$eval('[data-settings-index="system"]', (el) => el.click())
+  await page.waitForTimeout(350)
   return page
 }
 
@@ -53,8 +55,15 @@ async function openMine(seed) {
   await page.waitForTimeout(500)
   const after = await page.evaluate(() => localStorage.getItem('web2.added') || '')
   t('D4. 一键清理后 web2.added 只剩 1 条', JSON.parse(after).length === 1, after.slice(0, 100))
-  t('D5. 提示已清理', (await page.locator('text=已清理 1 门重复课程').count()) === 1)
   t('D6. 清理后入口消失', (await page.locator('[data-dedup-entry]').count()) === 0)
+  /* D5：回执文案（importMsg）只在「数据与导入导出」子页渲染（SettingsData.vue 的 [data-import-msg]），
+     而按钮在「系统与关于」子页 —— 2026-10-12 索引页化后两者分家，所以要先退回索引再进数据子页才看得到。
+     回执本身没丢，只是换了渲染位置。 */
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(350)
+  await page.$eval('[data-settings-index="data"]', (el) => el.click())
+  await page.waitForTimeout(350)
+  t('D5. 提示已清理', (await page.locator('[data-import-msg]', { hasText: '已清理 1 门重复课程' }).count()) === 1)
   await page.context().close()
 }
 

@@ -33,6 +33,8 @@ const goWeek = async () => { await page.locator('nav button', { hasText: '周课
 const goMe = async () => { await page.locator('nav button', { hasText: '我的' }).click(); await page.waitForTimeout(450) }
 const openSub = async (k) => { await page.$eval(`[data-me-entry="${k}"]`, (el) => el.click()); await page.waitForTimeout(400) }
 const backSub = async () => { await page.locator('[data-sub-back]').click(); await page.waitForTimeout(400) }
+/* 设置子页（外观 / 数据…）→ 设置索引页：压栈式导航，退一层 */
+const backSubSettings = async () => { await page.locator('[data-sub-back]').click(); await page.waitForTimeout(400) }
 
 /* ============ ① 拍课表识别：我的 → 课表页右上「＋」 ============ */
 console.log('\n--- ① 拍课表识别归位 ---')
@@ -59,12 +61,16 @@ const box = await plus.boundingBox()
 t('A4. ＋ 热区 ≥44×44', !!box && box.width >= 44 && box.height >= 44, box && `${Math.round(box.width)}×${Math.round(box.height)}`)
 t('A5. ＋ 有无障碍名（aria-label）', (await plus.getAttribute('aria-label') || '').includes('拍课表识别'))
 await openWeekMenu()
-await page.locator('[data-week-sub-list]').click()
-await page.waitForTimeout(350)
-t('A6. 切到「其他日程」子视图时 ＋ 仍在（它是这行的固定成员，两视图共用同一颗）',
-  (await page.locator('[data-week-add]').count()) === 1)
-await page.locator('[data-week-sub-week]').click()
-await page.waitForTimeout(350)
+/* 2026-10-12（用户 m04810）：＋ 选单去掉「其他日程」（跨周总览是重复入口，子视图整块删了），
+   于是这里不再测「切视图后 ＋ 仍在」，改成守选单剩四项、且选单就地收起后 ＋ 依然健在。 */
+const menuTexts = (await page.locator('[data-week-menu] button').allInnerTexts()).map((s) => s.trim())
+t('A6. ＋ 选单恰 4 项（其他日程已删）',
+  JSON.stringify(menuTexts) === JSON.stringify(['手动加课', '加日程', '拍课表识别', '特殊日期']),
+  JSON.stringify(menuTexts))
+await page.$eval('[data-week-add]', (el) => el.click())
+await page.waitForTimeout(300)
+t('A6b. 收起选单后 ＋ 仍在、网格未动',
+  (await page.locator('[data-week-add]').count()) === 1 && (await page.locator('[data-grid]').count()) === 1)
 
 // 进识别流程 → 取消 → 回到周课表视图
 await openWeekMenu()
@@ -79,20 +85,34 @@ t('A8. 取消后回到应用，课表页 ＋ 仍在', (await page.locator('[data
 /* ============ ② 主题入口只剩一处；设置内容搬进二级页 ============ */
 console.log('\n--- ② 主题 / 数据入口 ---')
 await goMe()
-t('B1. 索引页没有常显的「主题配色」', (await ME.locator('text=主题配色').count()) === 0)
-t('B2. 索引页没有设置正文（data-settings-body 不在 DOM）', (await page.locator('[data-settings-body]').count()) === 0)
+t('B1. 索引页不再有常显的「主题配色」正文', (await ME.locator('text=主题配色').count()) === 0)
+t('B2. 索引页不再有设置正文（data-settings-body 已随 2026-10-12 索引页改版删除）',
+  (await page.locator('[data-settings-body]').count()) === 0)
 await openSub('settings')
 const SUB = page.locator('[data-sub-page][data-sub="settings"]')
-t('B3. 数据类入口在设置二级页里、且在设置正文之外（导入主项目数据 / 导出日历）',
-  (await SUB.locator('text=导入主项目数据').count()) === 1
-  && (await SUB.locator('text=导出日历').count()) === 1
-  && (await page.locator('[data-settings-body]').locator('text=导出日历').count()) === 0)
-const body = page.locator('[data-settings-body]')
-t('B4. 设置正文里「主题外观」恰 1 处', (await body.locator('text=主题外观').count()) === 1)
-t('B5. 设置正文里「主题配色」也恰 1 处（唯一主题入口）', (await body.locator('text=主题配色').count()) === 1)
-const dots = body.locator('button[style*="background"]')
+t('B3. 设置索引页只有 5 行入口、每行带摘要（data-settings-sum）',
+  (await SUB.locator('[data-settings-index]').count()) === 5
+  && (await SUB.locator('[data-settings-sum]').count()) === 5)
+
+/* 数据类入口：索引页 → 「数据与导入导出」子页 */
+await page.$eval('[data-settings-index="data"]', (el) => el.click())
+await page.waitForTimeout(400)
+const DATA = page.locator('[data-sub-page][data-sub="settings-data"]')
+t('B4. 数据子页里有「导入主项目数据 / 导出日历」，索引页本身没有',
+  (await DATA.locator('text=导入主项目数据').count()) === 1
+  && (await DATA.locator('text=导出日历').count()) === 1
+  && (await page.locator('[data-settings-index]').locator('text=导出日历').count()) === 0)
+await backSubSettings()
+
+/* 外观类入口：索引页 → 「外观与主题」子页（唯一主题入口） */
+await page.$eval('[data-settings-index="appearance"]', (el) => el.click())
+await page.waitForTimeout(400)
+const AP = page.locator('[data-sub-page][data-sub="settings-appearance"]')
+t('B5. 外观子页里「主题外观」恰 1 处、「主题配色」也恰 1 处（唯一主题入口）',
+  (await AP.locator('text=主题外观').count()) === 1 && (await AP.locator('text=主题配色').count()) === 1)
+const dots = AP.locator('button[style*="background"]')
 t('B6. 配色色点 4 个', (await dots.count()) === 4, await dots.count())
-t('B7. 明暗切换按钮在（切深色/切浅色）', (await body.locator('[data-theme-toggle]').count()) === 1)
+t('B7. 明暗切换按钮在（切深色/切浅色）', (await AP.locator('[data-theme-toggle]').count()) === 1)
 
 // 真换肤：点第 2 个色点 → dataset.accent 变
 const before = await page.evaluate(() => document.documentElement.dataset.accent)
@@ -103,18 +123,22 @@ t('B8. 点第 2 个色点真的换肤并落盘', afterAccent.ds !== before && af
 
 // 真换主题：点明暗按钮 → html.dark 变 + 文案变
 const darkBefore = await page.evaluate(() => document.documentElement.classList.contains('dark'))
-const labelBefore = (await body.locator('[data-theme-toggle]').innerText()).trim()
-await body.locator('[data-theme-toggle]').click()
+const labelBefore = (await AP.locator('[data-theme-toggle]').innerText()).trim()
+await AP.locator('[data-theme-toggle]').click()
 await page.waitForTimeout(250)
 const themeAfter = await page.evaluate(() => ({ dark: document.documentElement.classList.contains('dark'), ls: localStorage.getItem('web2.theme') }))
-const labelAfter = (await body.locator('[data-theme-toggle]').innerText()).trim()
+const labelAfter = (await AP.locator('[data-theme-toggle]').innerText()).trim()
 t('B9. 点明暗按钮真的切主题并落盘', themeAfter.dark !== darkBefore && themeAfter.ls, JSON.stringify(themeAfter))
 t('B10. 按钮文案跟着变（切深色 ↔ 切浅色）', labelAfter !== labelBefore, `${labelBefore} → ${labelAfter}`)
-await body.locator('[data-theme-toggle]').click() // 切回来，后面的断言用原主题
+await AP.locator('[data-theme-toggle]').click() // 切回来，后面的断言用原主题
 await page.waitForTimeout(200)
 
-await backSub() // 返回索引
-t('B11. 返回索引后二级页消失、4 个入口仍在',
+await backSubSettings() // 子页 → 设置索引
+t('B11. 返回索引后子页消失、5 行入口仍在',
+  (await page.locator('[data-sub-page][data-sub="settings"]').count()) === 1
+  && (await page.locator('[data-settings-index]').count()) === 5)
+await backSub() // 索引 → 我的页
+t('B12. 再返回 → 回「我的」页、二级页消失、4 个入口仍在',
   (await page.locator('[data-sub-page]').count()) === 0
   && (await ME.locator('[data-me-entry]').count()) === 4)
 
@@ -129,11 +153,17 @@ const blocks = await page.evaluate(() => {
 })
 console.log('   顶层块：', JSON.stringify(blocks, null, 0))
 const entryKeys = await page.$$eval('[data-page="me"] [data-me-entry]', (els) => els.map((e) => e.getAttribute('data-me-entry')))
-t('C1. 第一块是学期索引行（含 data-me-term）',
+t('C1. 学期索引行（data-me-term）在第一个 section 里',
   (await page.evaluate(() => {
     const me = document.querySelector('[data-page="me"]')
-    return !!me.children[0] && !!me.children[0].querySelector('[data-me-term]')
+    const sec = me.querySelector('section')
+    return !!sec && !!sec.querySelector('[data-me-term]')
   })))
+t('C1b. 我的页分「我的数据 / 应用」两组（两个 h2 小标题）',
+  (await page.evaluate(() => {
+    const me = document.querySelector('[data-page="me"]')
+    return [...me.querySelectorAll('h2')].map((h) => h.innerText.replace(/\s+/g, ' ').trim()).join('|')
+  })).includes('我的数据'))
 t('C2. 4 个入口齐全且顺序固定：录音 → 练耳 → 待办 → 设置',
   JSON.stringify(entryKeys) === JSON.stringify(['lectures', 'listen', 'todos', 'settings']), entryKeys.join(','))
 t('C3. 设置入口排在最后', entryKeys[entryKeys.length - 1] === 'settings')

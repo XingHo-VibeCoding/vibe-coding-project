@@ -32,14 +32,15 @@ try {
   const row = page.locator('li', { hasText: '长按删除我' })
 
   // ---- A. 自建下拉 ----
-  /* 2026-10-02 减法：「课堂纪要」收进了默认收起的「设置」折叠区 → 先展开外层 */
-  if ((await page.locator('[data-settings-body]').count()) === 0) {
-    await page.locator('[data-settings-toggle]').click()
-    await page.waitForTimeout(350)
-  }
-  /* 作用域限定在设置折叠区内部：折叠头的副标题里也有「课堂纪要」四个字（关键词列表），
-     不限定就撞 strict mode。 */
-  await page.locator('[data-settings-body]').getByRole('button', { name: /课堂纪要/ }).click() // 展开纪要服务
+  /* 2026-10-12 设置索引页化：老「设置折叠区」[data-settings-body] 已删除，改为压栈式二级页。
+     新路径：设置入口 [data-settings-toggle]（= 索引页）→ [data-settings-index="recording"] 子页，
+     「课堂纪要」展开区在 settings-recording 子页里。 */
+  await page.locator('[data-settings-toggle]').click()
+  await page.waitForTimeout(350)
+  await page.$eval('[data-settings-index="recording"]', (el) => el.click())
+  await page.waitForTimeout(350)
+  /* 作用域限定在设置子页正文内部：避免与其它同名文案撞 strict mode。 */
+  await page.locator('[data-sub-body]').getByRole('button', { name: /课堂纪要/ }).click() // 展开纪要服务
   await page.waitForTimeout(200)
   /* 等下拉面板真正离场：面板有 0.16s 离场动效，headless 下这个动效实际耗时明显更长，
      固定 sleep(300) 会在断言时读到「面板还在 DOM 里」而假红（2026-10-01 实测）。
@@ -71,12 +72,15 @@ try {
   // 外点关闭：再展开，点设置区标题（面板外）
   await page.locator('[data-dd="model"] > button').click()
   await page.waitForTimeout(200)
-  await page.locator('[data-settings-body]').getByText('课堂纪要', { exact: true }).first().click()
+  await page.locator('[data-sub-body]').getByText('课堂纪要', { exact: true }).first().click()
   await ddClosed('model')
   t('A7. 点外面收起面板', (await page.locator('[data-dd="model"] ul').count()) === 0)
 
   // ---- B. 长按删除 ----
-  /* Stage 6：录音场次列表搬进「我的 → 录音历史」二级页 → 先返回索引再推入 lectures */
+  /* Stage 6：录音场次列表在「我的 → 录音历史」二级页。2026-10-12 后设置是压栈两层，
+     要连退两次（录音子页 → 设置索引 → 我的页）才能回到索引页找 lectures 入口。 */
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(300)
   await page.locator('[data-sub-back]').click()
   await page.waitForTimeout(300)
   await page.$eval('[data-me-entry="lectures"]', (el) => el.click())

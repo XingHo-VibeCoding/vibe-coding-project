@@ -30,7 +30,7 @@ ok('依次是 今日/周课表/我的', JSON.stringify(names) === JSON.stringify
 ok('旧的「日程」「打卡」tab 已消失', !names.some(t => /日程|打卡/.test(t)))
 ok('「今日」上的未完成徽标还在', /\d/.test(labels[0]))
 
-console.log('\n[B] 课表页：周课表 / 日程清单 分段')
+console.log('\n[B] 课表页：周次切换 + ＋ 选单')
 await page.locator('nav button', { hasText: '周课表' }).click()
 await page.waitForTimeout(500)
 /* Stage 8：旧的 [data-week-sub] 分段控件已整条移除，顶部改成「周次切换 + ＋ 选单入口」。
@@ -40,21 +40,26 @@ ok('顶部是周次切换 + ＋ 选单入口（旧分段控件已移除）',
   && await page.locator('[data-week-add]').count() === 1
   && await page.locator('[data-week-sub]').count() === 0)
 ok('默认停在「周课表」', await page.locator('[data-week-grid], [data-week-label]').count() > 0)
-const listVisibleBefore = await page.locator('[data-list-page]').isVisible().catch(() => false)
-ok('默认不显示日程清单', !listVisibleBefore)
-/* [data-week-sub-list] 现在只在 ＋ 选单里出现，先点 ＋ 开选单再点该项 */
+/* 2026-10-12（用户 m04810）：课表页不再有「其他日程」子视图 ——
+   待办在今日页与「我的 → 待办清单」都有，独立日程翻周就能看到，跨周总览是重复入口。
+   所以这里改成守「不存在」：子视图的锚点都该消失，网格恒在、滚动恒锁。 */
+ok('「其他日程」子视图已删除（无 data-list-page / data-week-sub-list / data-week-sub-week）',
+  await page.locator('[data-list-page]').count() === 0
+  && await page.locator('[data-week-sub-list]').count() === 0
+  && await page.locator('[data-week-sub-week]').count() === 0)
+/* ＋ 选单：旧五项去掉「其他日程」后应剩四项，且顺序固定 */
 await page.$eval('[data-week-add]', (el) => el.click())
 await page.waitForTimeout(300)
-await page.locator('[data-week-sub-list]').click()
-await page.waitForTimeout(400)
-ok('切到「日程清单」后清单出现', await page.locator('[data-list-page]').isVisible())
-ok('切到清单后周次切换收起', !(await page.locator('[data-week-label]').isVisible().catch(() => false)))
-const canScroll = await page.evaluate(() => getComputedStyle(document.body).overflow !== 'hidden')
-ok('清单页能上下滚动（body 未锁）', canScroll)
-await page.locator('[data-week-sub-week]').click()
-await page.waitForTimeout(400)
-ok('切回「周课表」恢复网格', await page.locator('[data-week-label]').isVisible())
-ok('切回后重新锁滚动', await page.evaluate(() => getComputedStyle(document.body).overflow === 'hidden'))
+const items = await page.locator('[data-week-menu] button').allInnerTexts()
+ok('＋ 选单里恰 4 项：手动加课 / 加日程 / 拍课表识别 / 特殊日期',
+  JSON.stringify(items.map((t) => t.trim())) === JSON.stringify(['手动加课', '加日程', '拍课表识别', '特殊日期']),
+  JSON.stringify(items.map((t) => t.trim())))
+await page.$eval('[data-week-add]', (el) => el.click())
+await page.waitForTimeout(300)
+ok('选单收起后：网格恒在 + 滚动锁恒在（不再有「清单页解锁」这条分支）',
+  await page.locator('[data-week-menu]').count() === 0
+  && await page.locator('[data-grid]').count() === 1
+  && await page.evaluate(() => getComputedStyle(document.body).overflow === 'hidden'))
 
 console.log('\n[C] 今日页打卡入口 → 浮层')
 await page.locator('nav button', { hasText: '今日' }).click()

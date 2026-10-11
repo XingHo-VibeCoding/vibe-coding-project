@@ -319,7 +319,9 @@ async function openAddPick(p) {
 const STATES = [
   { id: 'today', scope: null, open: async (p) => { await tab(p, '今日') } },
   { id: 'week', scope: null, open: async (p) => { await tab(p, '周课表') } },
-  { id: 'week-list', scope: null, open: async (p) => { await tab(p, '周课表'); await p.locator('[data-week-add]').first().click(); await p.waitForTimeout(300); await p.locator('[data-week-sub-list]').first().click(); await p.waitForTimeout(420) } },
+  /* 2026-10-12（用户 m04810）：课表页「其他日程」子视图已删（跨周总览是重复入口），
+     week-list 场景改成「＋ 选单开着」的定格 —— 选单是这条线上唯一的浮层，值得扫。 */
+  { id: 'week-menu', scope: null, open: async (p) => { await tab(p, '周课表'); await p.locator('[data-week-add]').first().click(); await p.waitForTimeout(420) } },
   { id: 'me', scope: null, open: async (p) => { await tab(p, '我的') } },
   {
     id: 'me-open', scope: null, open: async (p) => {
@@ -372,7 +374,7 @@ let problems = 0
 const shots = []
 /* SHOT_ALL=1 时把「要出报告对照」的几个状态都存图（含 0 问题的）；默认只存有问题的前 14 张 */
 const SHOT_ALL = process.env.SHOT_ALL === '1'
-const SHOT_IDS = ['today', 'week', 'week-list', 'me', 'me-open', 'sheet-evt', 'sheet-review', 'habit-sheet']
+const SHOT_IDS = ['today', 'week', 'week-menu', 'me', 'me-open', 'sheet-evt', 'sheet-review', 'habit-sheet']
 async function shoot(page, st, theme, vp) {
   if (SHOT_ALL ? !SHOT_IDS.includes(st.id) : shots.length >= 14) return
   const png = `tmp/qa-${st.id}-${theme}-${vp.tag}.png`

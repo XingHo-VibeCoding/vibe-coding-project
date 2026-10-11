@@ -69,23 +69,17 @@ const menu = await page.evaluate(() => ({
 }))
 console.log('MENU ' + JSON.stringify(menu))
 
-await page.$eval('[data-week-sub-list]', (el) => el.click())
+/* 2026-10-12（用户 m04810）：选单去掉「其他日程」，这段改成截「特殊日期浮层」——
+   课表页不再有第二层视图，原来这组 list/back 截图已无对应物。 */
+await page.$eval('[data-week-menu-dayover]', (el) => el.click())
 await page.waitForTimeout(600)
-await page.screenshot({ path: 'tmp/stage8-week-list.png' })
-const list = await page.evaluate(() => ({
-  listPage: document.querySelectorAll('[data-list-page]').length,
-  weekBack: !!document.querySelector('[data-week-sub-week]'),
+await page.screenshot({ path: 'tmp/stage8-week-dayover.png' })
+const dayover = await page.evaluate(() => ({
+  sheet: document.querySelectorAll('[data-sheet-dayover]').length,
   menu: document.querySelectorAll('[data-week-menu]').length,
-}))
-console.log('LIST ' + JSON.stringify(list))
-
-await page.$eval('[data-week-sub-week]', (el) => el.click())
-await page.waitForTimeout(600)
-const back = await page.evaluate(() => ({
   grid: document.querySelectorAll('[data-grid]').length,
-  listPage: document.querySelectorAll('[data-list-page]').length,
 }))
-console.log('BACK ' + JSON.stringify(back))
+console.log('DAYOVER ' + JSON.stringify(dayover))
 
 /* 顺带看一眼今日页：头部要照常回来 */
 await page.$eval('[data-nav="today"]', (el) => el.click())

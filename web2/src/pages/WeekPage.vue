@@ -11,14 +11,12 @@ const {
   isAligned,
   weekSubTerm,
   weekDayMarks,
-  weekSub,
-  setWeekSub,
   weekMenuOpen,
   toggleWeekMenu,
   menuAddCourse,
   menuAddEvent,
   menuScan,
-  menuOpenList,
+  menuDayover,
   semester,
   events,
   recActiveId,
@@ -43,12 +41,6 @@ const {
   nowClock,
   nowLineY,
   openDetail,
-  listTotalCount,
-  listFixedCount,
-  listGroups,
-  listBarColor,
-  listMeta,
-  onListItem,
   gridDown,
   gridMove,
   gridUp,
@@ -59,10 +51,13 @@ const {
 <template>
       <!-- Stage 8（用户 m12154 拍的版）：顶部只留周次切换 + 右上 ＋ 选单。
            原来占一整条分段位的「周课表 / 其他日程」并进 ＋ 选单（手动加课 / 加日程 / 拍课表识别 / 其他日程），
-           与今日页重复的问候卡在课表页也不再出现（头部整体只在别的页显示）→ 网格拿回整屏。 -->
+           与今日页重复的问候卡在课表页也不再出现（头部整体只在别的页显示）→ 网格拿回整屏。
+           2026-10-12：用户 m04853/m04885 把「其他日程」整块删了 —— 待办在今日页与「我的 → 待办清单」
+           都有、独立日程在周课表里翻到那一周就看得到，单独一个跨周总览视图是重复入口。
+           于是这里不再有 weekSub 二选一，课表页永远只渲染周课表。 -->
       <div class="relative mb-3 flex items-stretch gap-2">
-        <!-- 周次切换（周课表视图）/ 回周课表（其他日程视图） -->
-        <section v-if="weekSub === 'week'" class="flex flex-1 items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
+        <!-- 周次切换 -->
+        <section class="flex flex-1 items-center justify-between rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
           <button
             data-week-prev
             class="flex h-9 w-9 items-center justify-center rounded-xl text-ink-dim transition active:bg-soft-2"
@@ -86,26 +81,14 @@ const {
             <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
           </button>
         </section>
-        <section v-else class="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-2 py-2 shadow-sm">
-          <button
-            data-week-sub-week
-            type="button"
-            class="flex items-center gap-1 rounded-xl px-2 py-1.5 text-sm font-medium text-primary-600 transition active:bg-soft-2"
-            @click="setWeekSub('week')"
-          >
-            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
-            周课表
-          </button>
-          <p class="flex-1 text-sm font-semibold text-ink">其他日程</p>
-        </section>
 
-        <!-- 右上「＋」：加课 / 加日程 / 拍课表识别 / 其他日程 都在选单里
+        <!-- 右上「＋」：加课 / 加日程 / 拍课表识别 / 特殊日期 都在选单里
              （data-week-add 是它的旧锚点，data-mine-rec 跟着识别那一项搬进选单） -->
         <button
           data-week-add
           type="button"
           title="添加"
-          aria-label="添加：加课 / 加日程 / 拍课表识别 / 其他日程"
+          aria-label="添加：加课 / 加日程 / 拍课表识别 / 特殊日期"
           aria-haspopup="menu"
           :aria-expanded="weekMenuOpen ? 'true' : 'false'"
           class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-line bg-card text-primary-600 shadow-sm transition active:scale-95"
@@ -120,8 +103,7 @@ const {
           v-if="weekMenuOpen"
           data-week-menu
           class="absolute right-0 top-[52px] z-40 w-44 overflow-hidden rounded-2xl border border-line bg-card py-1 shadow-xl"
-        >
-          <button
+        >          <button
             data-week-menu-course
             type="button"
             class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-soft"
@@ -150,21 +132,20 @@ const {
             拍课表识别
           </button>
           <button
-            v-if="weekSub === 'week'"
-            data-week-sub-list
+            data-week-menu-dayover
             type="button"
-            class="flex w-full items-center gap-2 px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-soft"
-            @click="menuOpenList"
+            class="flex w-full items-center gap-2 border-t border-line px-3.5 py-2.5 text-left text-sm text-ink transition active:bg-soft"
+            @click="menuDayover"
           >
-            <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 5.5h9M3.5 8h9M3.5 10.5h6" /></svg>
-            其他日程
+            <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5A1.5 1.5 0 013.5 3h9A1.5 1.5 0 0114 4.5v7a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5z" /><path d="M2 6.5h12M5.5 3v2M10.5 3v2M5.5 9.5l1.5 1.5 3-3" /></svg>
+            特殊日期
           </button>
         </div>
       </div>
 
       <!-- 节次网格：行 = 节次、列 = 星期、课程 = 格子 —— 一屏看完，不用上下左右滑。
            课程卡与格子共用同一套坐标系，所以不存在「平行线对不齐」这回事。 -->
-      <section v-if="weekSub === 'week'" class="mt-3 overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
+      <section class="mt-3 overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
         <!-- 表头：星期 + 日期 -->
         <div class="grid border-b border-line" :style="gridColsStyle">
           <div class="py-1.5"></div>
@@ -322,83 +303,4 @@ const {
           </article>
         </div>
       </section>
-    
-      <!-- 其他日程（原「日程」页并入课表页，2026-10-03 方案 C Step 1；同日删掉课程/循环日程两组） -->
-      <div v-if="weekSub === 'list'" class="mt-1 space-y-4">
-  <section data-list-page>
-    <div class="mb-2 flex items-baseline justify-between px-1">
-      <h2 class="text-sm font-semibold text-ink">其他日程</h2>
-      <span class="text-xs text-ink-dim">{{ listTotalCount }} 项</span>
-    </div>
-
-    <!-- 课表里看得到的固定安排（课程 / 循环日程）不重复列在这里，给一行去课表的指引 -->
-    <button
-      v-if="listFixedCount"
-      type="button"
-      data-list-week-hint
-      class="mb-2 flex w-full items-center justify-between rounded-2xl border border-dashed border-line bg-card/60 px-3.5 py-2.5 text-left transition active:bg-soft"
-      @click="setWeekSub('week')"
-    >
-      <span class="min-w-0 truncate text-xs text-ink-dim">还有 {{ listFixedCount }} 项固定安排在周课表里（不在这里重复）</span>
-      <span class="ml-2 shrink-0 text-xs font-medium text-primary-600">去周课表 ›</span>
-    </button>
-
-    <!-- 空态：本来就没有 -->
-    <p
-      v-if="!listGroups.length"
-      data-list-empty
-      class="rounded-2xl border border-dashed border-line bg-card/60 p-5 text-center text-sm text-ink-dim"
-    >
-      还没有任何日程，去周课表长按空白处加一条
-    </p>
-
-    <!-- 分组列表 -->
-    <div v-for="g in listGroups" :key="g.key" :data-list-group="g.key" class="mb-4">
-      <p class="mb-1.5 px-1 text-xs font-semibold text-ink-dim">{{ g.title }} · {{ g.items.length }}</p>
-      <div class="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
-        <div
-          v-for="it in g.items"
-          :key="g.key + '-' + it.id"
-          data-list-item
-              :data-item-type="g.key"
-              class="flex items-center gap-3 px-3.5 py-3"
-            >
-              <!-- 待办：左侧直接给勾选圆圈（点圆圈才算打勾，不包整行） -->
-              <button
-                v-if="g.key === 'todo'"
-                type="button"
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 transition active:scale-90"
-                :class="it.done ? 'border-primary-500 bg-primary-500 text-white' : 'border-ink-dim/30 text-transparent'"
-                :aria-label="it.done ? '取消完成' : '标记完成'"
-                @click="toggleTodo(it.id)"
-              >
-                <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              </button>
-
-              <!-- 主体：点开详情（待办也点开，但不含勾选动作） -->
-              <button type="button" class="flex min-w-0 flex-1 items-center gap-3 text-left" @click="onListItem(it, g.key)">
-                <span class="h-9 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: listBarColor(it, g.key) }"></span>
-                <span class="min-w-0 flex-1">
-                  <span class="flex items-center gap-1.5">
-                    <svg
-                      v-if="g.key === 'routine'"
-                      data-routine-mark
-                      viewBox="0 0 16 16"
-                      class="h-3.5 w-3.5 shrink-0 text-ink-dim"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.5"
-                      stroke-linecap="round"
-                    ><path d="M3 8a5 5 0 105-5M3 8V5M3 8h3" /></svg>
-                    <span class="truncate text-sm" :class="g.key === 'todo' && it.done ? 'text-ink-dim line-through' : 'text-ink'">{{ entryName(it) }}</span>
-                  </span>
-                  <span class="mt-0.5 block truncate text-[11px] text-ink-dim">{{ listMeta(it, g.key) }}</span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-    
-      </div>
 </template>

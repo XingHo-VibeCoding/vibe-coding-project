@@ -139,6 +139,9 @@ const openAsk = async (page) => {
   await p2.waitForTimeout(300)
   await p2.locator('[data-me-entry="settings"]').click()
   await p2.waitForTimeout(400)
+  /* 2026-10-12 两层导航：日精进历史入口搬进了「设置 → 提醒」子页 */
+  await p2.locator('[data-settings-index="remind"]').click()
+  await p2.waitForTimeout(350)
   await p2.locator('[data-review-history]').click()
   await p2.waitForTimeout(400)
   const snap2 = await p2.locator('[data-account-history-item="snapshot"]').count()

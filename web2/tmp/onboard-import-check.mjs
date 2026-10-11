@@ -53,6 +53,9 @@ try {
   await page.waitForTimeout(300)
   await page.$eval('[data-me-entry="settings"]', (el) => el.click())
   await page.waitForTimeout(300)
+  /* Stage 6 两层导航：设置索引页 → 「数据与导入导出」子页，[data-import-msg] 在子页里 */
+  await page.$eval('[data-settings-index="data"]', (el) => el.click())
+  await page.waitForTimeout(350)
   const okMsg = page.locator('[data-import-msg]')
   t('8. 设置二级页显示导入成功提示', (await okMsg.isVisible().catch(() => false)) && (await okMsg.innerText().catch(() => '')).includes('导入成功：测试学期'))
 } finally {

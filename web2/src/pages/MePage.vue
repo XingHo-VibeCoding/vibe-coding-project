@@ -18,8 +18,11 @@ const {
 </script>
 
 <template>
-      <!-- Stage 6：这一屏只有「1 行学期 + 4 个入口」——功能都搬进各自的全屏二级页，
-           索引页不再随功能增加而变长（设计三原则第一条：与当前任务无关的界面元素绝不出现）。 -->
+      <!-- Stage 6 之后，2026-10-12 又收了一轮：把入口按「这是谁的数据」分成两组。
+           改组原因是顶部一个学期条单独一张卡、底下四个入口挤一张卡，
+           看着像「学期」和「录音/练耳/待办/设置」是同级的东西 —— 其实前者是数据本身，
+           后者是拿数据的四个工具；分成「我的数据 / 应用」两组之后层级一眼能看出来。 -->
+      <h2 class="mb-2 px-1 text-sm font-semibold text-ink">我的数据 <span class="text-xs font-normal text-ink-dim">· 可导出带走</span></h2>
       <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
         <button
           type="button"
@@ -33,9 +36,7 @@ const {
           </span>
           <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
         </button>
-      </section>
 
-      <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
         <button type="button" data-me-entry="lectures" data-me-lectures class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-soft" @click="openMeSub('lectures')">
           <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="1.5" width="4" height="8" rx="2" /><path d="M3.5 7.5a4.5 4.5 0 009 0M8 12v2.5M5.5 14.5h5" /></svg>
@@ -68,14 +69,17 @@ const {
           </span>
           <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
         </button>
+      </section>
 
+      <h2 class="mb-2 mt-4 px-1 text-sm font-semibold text-ink">应用</h2>
+      <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
         <button type="button" data-me-entry="settings" data-settings-toggle class="flex w-full items-center gap-3.5 p-4 text-left transition active:bg-soft" @click="openMeSub('settings')">
           <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
             <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2" /><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" /></svg>
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">设置</span>
-            <span class="block text-[11px] text-ink-dim">主题外观 · 提醒 · 课堂纪要 · 数据</span>
+            <span class="block text-[11px] text-ink-dim">外观、提醒、录音与数据都在这里</span>
           </span>
           <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
         </button>

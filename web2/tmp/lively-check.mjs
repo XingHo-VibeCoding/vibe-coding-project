@@ -49,10 +49,24 @@ async function open(opts = {}) {
 }
 const tab = (page, name) => page.locator('nav button').filter({ hasText: name })
 
+/* 进度带是否「肉眼可见」。2026-10-12 切页改版把它改成常驻 DOM（App.vue:4820 只挂 v-if="termInfo"、
+   不再带 tab 条件），别的 tab 上头卡整层被 translateX(-tabIndex*100%) 平移到屏幕左侧之外
+   （实测周课表 left=-354、我的 left=-744，盒与视口无交集）。
+   ⚠ 不能用 Playwright 的 isVisible()：它只判「有非空盒 + 没被 display/visibility 藏」，
+   不看元素是否落在视口内 —— 实测三个 tab 上它都返回 true，判据会失效。
+   所以这里自己判「盒与视口有交集」；元素不存在/零尺寸同样算不可见，两种情形都通过。 */
+const ribbonShown = (page) => page.evaluate(() => {
+  const el = document.querySelector('[data-term-ribbon]')
+  if (!el) return false
+  const r = el.getBoundingClientRect()
+  if (!r.width || !r.height) return false
+  return r.right > 0 && r.left < window.innerWidth && r.bottom > 0 && r.top < window.innerHeight
+})
+
 /* ============ A. 学期进度带（今日页） ============ */
 const A = await open()
 const pa = A.page
-t('A1. 今日页出现学期进度带', (await pa.locator('[data-term-ribbon]').count()) === 1)
+t('A1. 今日页出现学期进度带', (await pa.locator('[data-term-ribbon]').count()) === 1 && (await ribbonShown(pa)))
 const ribbonTxt = flat(await pa.locator('[data-term-ribbon]').innerText())
 t('A2. 文案 = 学期进度 · 第 N / 16 周', /学期进度 · 第 \d+ \/ 16 周/.test(ribbonTxt), ribbonTxt)
 t('A3. 一周一格，共 16 格', (await pa.locator('[data-term-w]').count()) === 16)
@@ -64,11 +78,14 @@ const wantLeft = `距期末 ${Math.max(0, Math.ceil((new Date(MONDAY + 'T00:00:0
 t('A5. 距期末天数与学期起止算法一致', flat(await pa.locator('[data-term-left]').innerText()) === wantLeft,
   flat(await pa.locator('[data-term-left]').innerText()) + ' vs ' + wantLeft)
 await tab(pa, '周课表').click()
-await pa.waitForTimeout(400)
-t('A6. 周课表页不出现进度带（那是紧凑头部）', (await pa.locator('[data-term-ribbon]').count()) === 0)
+await pa.waitForTimeout(600)
+/* 2026-10-12 切页改版：进度带不再带 tab 条件、常驻 DOM（App.vue:4820 只挂 v-if="termInfo"），
+   别的 tab 上头卡整层被平移到屏幕外（见上方 ribbonShown 注释）。
+   判据从「DOM 计数 0」改成「盒与视口无交集」，即肉眼确实不出现。 */
+t('A6. 周课表页看不到进度带（常驻 DOM，但随头卡平移出屏）', !(await ribbonShown(pa)))
 await tab(pa, '我的').click()
-await pa.waitForTimeout(400)
-t('A7. 我的页不出现进度带', (await pa.locator('[data-term-ribbon]').count()) === 0)
+await pa.waitForTimeout(600)
+t('A7. 我的页看不到进度带', !(await ribbonShown(pa)))
 t('A8. 全程无报错', A.errors.length === 0, A.errors.join(' | '))
 await A.ctx.close()
 
@@ -138,6 +155,11 @@ t('D1. 默认关（web2.theme.auto 没被写过）', (await pd.evaluate(() => lo
 await tab(pd, '我的').click()
 await pd.waitForTimeout(400)
 await pd.locator('[data-settings-toggle]').click()
+await pd.waitForTimeout(400)
+/* 2026-10-12 索引页改版：点 [data-settings-toggle] 先进「设置索引页」，
+   还要再点 [data-settings-index="appearance"] 进「外观与主题」子页，data-theme-auto 在子页里
+   （SettingsAppearance.vue:69）。 */
+await pd.locator('[data-settings-index="appearance"]').click()
 await pd.waitForTimeout(400)
 t('D2. 设置里有「跟着时间自动换」开关', (await pd.locator('[data-theme-auto]').count()) === 1)
 const h = now.getHours()

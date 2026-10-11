@@ -17,9 +17,11 @@ const shot = async (name) => { await page.screenshot({ path: `tmp/${name}.png` }
 
 await shot('step1-today')                                  // 今日页：3 个 tab
 await page.locator('nav button', { hasText: '周课表' }).click(); await page.waitForTimeout(500)
-await shot('step1-week')                                   // 课表子视图 + 分段控件
-await page.locator('[data-week-sub-list]').click(); await page.waitForTimeout(500)
-await shot('step1-list')                                   // 日程清单子视图
+await shot('step1-week')                                   // 课表页（周次切换 + ＋）
+/* 2026-10-12（用户 m04810）：第二张从「日程清单子视图」改成「＋ 选单开着」——
+   子视图已删，选单是课表页唯一的一层浮层。 */
+await page.locator('[data-week-add]').click(); await page.waitForTimeout(500)
+await shot('step1-week-menu')                              // ＋ 选单（手动加课/加日程/拍课表识别/特殊日期）
 await page.locator('nav button', { hasText: '今日' }).click(); await page.waitForTimeout(500)
 await page.locator('[data-today-habit-more]').first().click(); await page.waitForTimeout(600)
 await shot('step1-habit-sheet')                            // 打卡浮层

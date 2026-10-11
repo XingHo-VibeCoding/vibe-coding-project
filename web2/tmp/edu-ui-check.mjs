@@ -209,6 +209,9 @@ await page.waitForSelector('[data-nav="me"]', { timeout: 8000 })
 await page.$eval('[data-nav="me"]', (el) => el.click())
 await page.waitForSelector('[data-me-entry="settings"]', { state: 'visible', timeout: 8000 })
 await page.$eval('[data-me-entry="settings"]', (el) => el.click())
+/* Stage 6 两层导航：设置索引页 → 「数据与导入导出」子页，[data-edu-file] 在子页里 */
+await page.waitForSelector('[data-settings-index="data"]', { state: 'visible', timeout: 8000 })
+await page.$eval('[data-settings-index="data"]', (el) => el.click())
 await page.waitForSelector('[data-edu-file]', { state: 'attached', timeout: 8000 })
 await page.waitForTimeout(300)
 

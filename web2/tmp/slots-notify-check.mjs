@@ -61,11 +61,17 @@ function watchErrors(page) {
     await tg.click()
     await page.waitForTimeout(400)
   }
+  /* 2026-10-12 设置改成两层导航：状态框 / 精确提醒都在「提醒」子页里，先进去再断言 */
+  await page.locator('[data-settings-index="remind"]').click()
+  await page.waitForTimeout(350)
   t('A1. 没有 StatusFrame 插件 → 设置里不出现「常驻状态框」那一行', (await page.locator('[data-frame-row]').count()) === 0)
   t('A2. 没有 LocalNotifications 插件 → 精确提醒那一块整块不出现（#10 老壳分支）', (await page.locator('[data-exact-row]').count()) === 0)
   t('A3. 设置页仍然完整（关于/清除数据这些照常在）', (await page.locator('[data-settings-toggle]').count()) === 1)
   /* 其余功能照常：切页签能切、今日页有内容。
-     Stage 6：设置是 fixed 二级覆盖层，切页签前先返回索引，否则真实点击会被覆盖层拦下。 */
+     Stage 6：设置是 fixed 二级覆盖层，切页签前先退回「我的」页，否则真实点击会被覆盖层拦下。
+     两层导航后要退两层：remind 子页 → 设置索引页 → 我的页。 */
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(300)
   await page.locator('[data-sub-back]').click()
   await page.waitForTimeout(300)
   await page.locator('nav button', { hasText: '周课表' }).click()
@@ -222,6 +228,9 @@ function bridgeScript() {
     await tg2.click()
     await page.waitForTimeout(400)
   }
+  /* 2026-10-12 两层导航：复盘提醒时间在「提醒」子页里，先进去再点 */
+  await page.locator('[data-settings-index="remind"]').click()
+  await page.waitForTimeout(350)
   await page.locator('[data-review-at="23:00"]').click()
   await page.waitForTimeout(600)
   await page.locator('[data-review-at="22:00"]').click()
