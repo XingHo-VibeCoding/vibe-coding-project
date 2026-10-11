@@ -322,6 +322,49 @@ web2 (App.vue watch / visibilitychange)
 - **自检口径连带改动**：删 `web2/tmp/list-page-check.mjs`（整份围绕已删视图）；`step1-check` B 组、`step4-check` A6、`step5-check` D5–D7、`week-menu-check` B1/C7–C9 全部由「切子视图」改为「守它不存在 + 选单恰 4 项」；`quality-scan.mjs` 的 `week-list` 截图场景换成 `week-menu`；`step1-shot` / `stage8-shot` 的截图锚点同步。另有两处**陈旧计数**在同一批里修掉：`step5-check` C1 的浮层数 8 → **9**（`DayoverSheet.vue` 是本批新增的第 9 个外壳使用者），`week-menu-check` A4 的「课表页看不到问候卡」判据由「裁剪盒高 ≤ 2」改为「浮层右缘 `right <= 2`」（头卡 2026-10-12 已改成随今日页**横向平移**离场，竖向高度本来就是满的）。
 - **负向验证**：把 `App.vue` 的选单项临时改回 5 项 → `week-menu-check` B1 / C7 立即 FAIL（输出 `["手动加课","加日程","拍课表识别","其他日程"]`），改回即 22/0。
 
+### 2.9 云同步接进 App（P7，2026-10-12）
+
+**一句话**：设置 → 数据里一张卡，三颗按钮（上传 / 从云端取回 / 清空云端），用「同步串」当身份，**手动整份同步**。
+
+**分层（与前三个云函数同一条边界）**：
+
+| 层 | 文件 | 管什么 |
+|---|---|---|
+| 接口层 | `cloudfunctions/sync/index.js`（283 行） | HTTP 方法分发 / 串→uid / 参数与体积校验 / 冲突判定 / 错误码 / 响应组装 |
+| 数据访问层 | `cloudfunctions/sync/db.js`（116 行） | 环境变量（钥匙）/ PostgREST 端点与请求头 / 超时 / HTTP 错误码翻译 |
+| 错误文案 | `cloudfunctions/sync/errors.js`（9174B） | 三份 `errors.js` 里**唯一不是逐字节副本的那一份**——比 `write`/`list` 那对 8992B 多了 sync 专属文案 |
+| 前端数据层 | `web2/src/data/sync.js`（246 行） | 白名单 / 整份收集与落盘 / `callSync` / 三个动作 |
+| 前端界面 | `web2/src/pages/sub/settings/SettingsData.vue`（393 行） | 串输入与保存 / 三颗按钮 / 冲突面板 / 二次确认 / 回执 |
+
+**三个关键数字**：
+
+- `MAX_DOC_CHARS = 90000`（`sync/index.js:52`）—— 撞**网关**撞出来的：实测 **100,081 字节的 body 能进**（HTTP 200），**120,081 字节被网关自己挡在函数外**（HTTP 413 `EXCEED_MAX_PAYLOAD_SIZE`，报文里没有我们的 `ok`/`kind` ⇒ 请求根本没跑到 node）。前端 `SYNC_MAX_DOC_CHARS` 必须同值，否则前端先一步用不同阈值报错。
+- `MIN_PASS = 6` / `MAX_PASS = 128`（`sync/index.js:54-55`）—— 6 字符下限只挡「123」这种，真安全靠用户自己起长串（串是唯一凭据）。
+- `SYNC_DOC_VERSION = 1`（`sync/index.js:40`）—— doc 里自带的形状版本，将来换形状靠它分流；与接口版本无关。
+
+**`owner_uid` 的算法（`sync/index.js:126-131`）**：
+`crypto.createHmac('sha256', WRITE_TOKEN).update('sched-sync-v1|' + pass, 'utf8').digest('hex')`
+
+- 服务端**不存 pass 本身**，只存算出来的 64 位 hex；库被看到也爆不出串（HMAC 的钥匙 `WRITE_TOKEN` 只在云函数环境变量里）。
+- ⚠️ 换 `WRITE_TOKEN` ⇒ 同串算出不同 uid ⇒ **旧数据取不回**（本地不受影响，重新上传即可）⇒ 它属「装上就不该动」的配置。
+- 只回前 8 位（`shortUid()`）给前端显示，拿不到也拼不出别人的 uid。
+
+**冲突判定（`index.js:180-201`）**：`cur.doc_rev > baseRev` → 409（**`kind:'input'`**，带 `cloudRev` + `cloudUpdatedAt`）；否则 upsert、`doc_rev = baseRev + 1`。`force:true` 时用 `baseRev:-1` 绕过比较。**新设备 baseRev 缺省按 0**，不会静默覆盖云端。
+
+**upsert 为什么用 `Prefer: resolution=merge-duplicates`（`db.js:13-15`）**：写用「先查再决定 insert / update」的话，两次请求之间失败会留下「查到了但没写成」的中间态，调用方以为成功了。merge-duplicates 让服务端一次搞定，主键（`owner_uid`）冲突就覆盖、没有就插入 —— 语义正好是「把这一份存成现在这样」。
+
+**前端侧两个必须同值的常量**：`SYNC_MAX_DOC_CHARS`（与后端 90000 对齐）、`SYNC_MIN_PASS`（与后端 6 对齐）。
+
+**为什么整份而不是逐条 CRUD**：逐条要发几百个请求，中途断网就得到半份数据 —— 半份比没有更坏；整份 PUT 是原子的（要么旧版要么新版）。
+
+**表**：`sync_docs`（`owner_uid` 主键 / `doc` jsonb / `doc_rev` / `updated_at`，**没有 `created_at`**）。DDL 已补进 `db/schema.sql` 第 4 节（2026-10-12；**对着线上真实库用 PostgREST 的 OpenAPI 描述逐列核对过**：`required: ["owner_uid","doc","doc_rev","updated_at"]`、`owner_uid` 是 `character varying` 主键、`doc` 是 `jsonb`、`doc_rev` 是 `int64`、`updated_at` 是 `timestamp with time zone`）。
+
+**契约**：`docs/api-contract.md` §6c（三条路由 / 鉴权 / 白名单六键 / 冲突 / 错误码表，全部对线上环境实测过）。
+
+**验证**：`web2/tmp/sync-check.mjs` **69 过 / 0 挂**（stub `window.fetch` 逐条断言请求体与回执，13 组 A–M）；**负向验证**两组咬住（`web2.llm` 加进白名单 → 66/3；下载不做删除 → 68/1）。后端另在线上环境逐条实测（上传 / 下载 / 409 / 短路串 / 超大 doc / 405 / 清空）。
+
+**未做（用户未要求）**：实时后台同步、自动合并、云端录音备份、多版本历史回滚（每行只留最新一版）。
+
 ---
 
 ## 三、数据对象及字段
@@ -607,6 +650,7 @@ web2 (App.vue watch / visibilitychange)
 | **教务密码存系统密钥库（P12b 后续，2026-10-08）** | **新建壳仓 `scripts/native/SecureStorePlugin.kt`**（`@CapacitorPlugin(name="SecureStore")`）+ **新建 `web2/src/data/secureStore.js`**（网页侧唯一出口）；`patch-android.js` 的 kt 清单与 `MAIN_TPL` 的 `registerPlugin` 各加一处 | **为什么加**：升级前密码明文躺在 `localStorage`（App 私有目录、别的 App 读不到，但确实是明文）——用户要「系统密钥库级」。做法：`AndroidKeyStore` 里生成 AES-256 密钥（别名 `web2.secure.v1`），`AES/GCM/NoPadding` 加密，落盘格式 `base64(iv):base64(密文)`，存进 SharedPreferences `web2_secure`；**私钥永不出系统**，应用只能「用」不能「读」。**刻意不设 `setUserAuthenticationRequired(true)`**：那会要求每次读密码都过生物识别，而这里的用途是「打开 App 自动登录」，加了指纹会把自动登录变成手动。三个方法 `set/get/remove`；**`get` 三态必须分得开**：`{value:null}`=从没存过（首次登录，不是错误）、`{value:"…"}`=读到了、`reject`=存过但解不开（换设备/清过应用数据）——静默返回空会让用户以为「没记住」而不是「密码丢了」。网页侧 `secureStore.js` 按 `window.Capacitor.Plugins.SecureStore` 是否存在判定环境（同 `recorder.js` 范式，便于测试注入假插件）。**储存分工**：`eduLogin.js` 只管「非机密」（学号/记住开关/上次学年学期），密码走 `secretSet('eduPassword', …)`，`localStorage` 里**再也不出现 password 字段**。**老数据自动搬家**：`loadEduAccountAsync()` 发现密钥库空而老 `localStorage` 有密码 → 搬进密钥库并从 `localStorage` 抹掉，用户无感、不用重输。**不勾「记住」= 删密钥库旧值**（否则下次还会自动登录，开关形同虚设）。写密钥库失败时**绝不退回明文**，如实返回 `secretError`。浏览器（无插件）如实退回老办法并在界面标注。自检 `web2/tmp/secure-store-check.mjs`（29/0，假插件可造「解不开」态） |
 | **每日复盘（五期 Day 20）** | **新建 `web2/src/data/review.js`**（纯逻辑，**不 import 任何模块**，`notify.js` 反向 import 它） | 键 `web2.review`（存档数组）/ `web2.review.set`（`{enabled,at}`）；本机数据、不进导出。纯逻辑导出：`newRecord` / `summarize`（日精进模板，先数据后四题）/ `moodOf` / `sanitizeRecord` / `sanitizeStats` / `upsertReview`（同日覆盖）/ `findReview` / `loadReviews` / `saveReviews` / `sanitizeSettings` / `loadSettings` / `saveSettings` / `noticeItem` / `noticeDate`；渠道常量 `REVIEW_CHANNEL='review-reminder'`、批次标记 `REVIEW_TAG='web2-review'`。字段定义见 §3.7 |
 | **调休 / 特殊日期（P14，2026-10-08；2026-10-12 入口搬到周课表页）** | `web2/src/data/store.js` 新增 dayOverrides 一节 + **新建 `web2/src/data/holidays.js`**（纯数据层，无第三方依赖，只 `fetch` jsDelivr）；界面在 **`web2/src/sheets/DayoverSheet.vue`**（浮层），入口是周课表页右上 ＋ 选单里的 `data-week-menu-dayover` 一项 | 键 `web2.dayOverrides`（覆盖表数组）/ `web2.holidayCache`（抓来的原始结果 `{fetchedAt, byYear:{}}`）；本机数据、**不进导出**（跟着学期走，换学期该重来）。口径与三个 kind 见 §3.8；为什么抓不到就不调休见 §3.8 末。**入口搬迁理由**：设置改索引页后，调休这栏不再有地方放；且它改的是「课在周几上」，与周课表同源，放这里更近 |
+| **云同步（P7，2026-10-12）** | **新建 `web2/src/data/sync.js`**（数据层：白名单六键 / 整份收集与替换 / `callSync` / 上传·取回·清空）+ `web2/src/pages/sub/settings/SettingsData.vue`（界面卡） | 键 `web2.sync`（**只存本机的同步配置**：`{pass, rev, at, uid}`）——**云端那份叫 `sync_docs`，是云表不是本机键**。白名单：`web2.data` / `web2.added` / `web2.courseOv` / `web2.todos` / `web2.events` / `web2.dayOverrides`；**绝不上云**：`web2.llm`（API Key）/ `web2.eduAccount` / `web2.lectures`（大件）。整份送、不做逐条 CRUD；下载是**替换**（云端没有的键直接删本机那份）。细节见 §2.9 与 `docs/api-contract.md` §6c |
 
 **约定**：本机数据（练耳/录音/打卡/通知/LLM 配置/复盘）一律**独立键 + 不进导出**——这类数据是「这台设备上的生命记录」，跟着备份走会在换设备导入时被意外覆盖（口径同 §3.6 的 `ui`）。
 
@@ -645,6 +689,7 @@ flowchart TD
     C -->|课前 15 分钟| U
     X -->|JSON 备份| F[本地文件]
     F -->|导入：先校验后写入| S
+    S -.->|"P7 手动云同步（可选）"| Y["sync.js → POST/GET/DELETE /api/sync"]
 ```
 
 若编辑器不渲染上面的图，等价的文字版：
@@ -660,21 +705,25 @@ flowchart TD
         localStorage（本地存储，关浏览器不丢）
                 │
                 ├─→ views.js ──→ 周视图 / 今日视图 / 结算 ──→ 用户看
-                └─→ ics.js ──┬─→ .ics 文件 ──→ 手机系统日历 ──→ 课前 15 分钟提醒
-                             └─→ JSON 文件（备份 / 换设备）
-                                   ↑
-                          导入：先校验 → 再写入 store.js
+                ├─→ ics.js ──┬─→ .ics 文件 ──→ 手机系统日历 ──→ 课前 15 分钟提醒
+                │             └─→ JSON 文件（备份 / 换设备）
+                │                   ↑
+                │            导入：先校验 → 再写入 store.js
+                └-→ sync.js ──→ /api/sync（P7 云同步，**手动**触发；白名单六键的原文）
+                                     ↕  sync 云函数 ──→ sync_docs 表（一行 = 一份快照）
 ```
 
 ### 5.2 一句话回答「数据从哪来、到哪去」
 
-**数据只有一个来源——你自己手动录入；只有一个落脚点——这台设备的浏览器本地存储；只有两个出口——渲染成屏幕上的视图，以及导出成系统日历（.ics）和备份文件（JSON）。** 全程不经过任何服务器。
+**数据只有一个来源——你自己手动录入；只有一个落脚点——这台设备的浏览器本地存储；只有两个出口——渲染成屏幕上的视图，以及导出成系统日历（.ics）和备份文件（JSON）。** 默认路线全程不经过任何服务器。
+
+**2026-10-12 P7 增补**：另有**一条可选出口** —— 云同步（`/api/sync`）。它**只在用户点「上传到云」时**把白名单六键的原文送上去，**不是后台自动同步**；数据本体仍以本机 localStorage 为准，云端只是「手动存档的一份」。所以上面那句「只有一个落脚点」仍然成立：云那份是**副本**，不是主库。
 
 ### 5.3 数据不共享的三个边界（重要）
 
-1. **本地 `file://` 打开 与 线上托管** = 两个不同的源 → 数据互不相通，靠 JSON 导出/导入迁移。
-2. **换托管平台（如 GitHub Pages → Cloudflare Pages）= 换域名** → localStorage 按域名隔离，**数据不会自动跟随**，必须导出再导入。
-3. **手机与电脑 = 两台设备** → 各自的浏览器各自存储，一期不做云同步（用户决策），迁移靠 JSON。
+1. **本地 `file://` 打开 与 线上托管** = 两个不同的源 → 数据互不相通，靠 JSON 导出/导入迁移（或 P7 云同步）。
+2. **换托管平台（如 GitHub Pages → Cloudflare Pages）= 换域名** → localStorage 按域名隔离，**数据不会自动跟随**，必须导出再导入（或走云同步）。
+3. **手机与电脑 = 两台设备** → 各自的浏览器各自存储。~~一期不做云同步（用户决策），迁移靠 JSON。~~ **2026-10-12 P7 落地后**：可以手动云同步 —— 两台设备输入**同一个同步串**，各自点「上传到云」/「从云端取回」即可互通；**仍然是手动**（不点不同步），JSON 导出/导入这条兜底保留。
 
 ---
 
@@ -726,6 +775,16 @@ flowchart TD
 ### 7.3 三类错误提示（Day 23）
 
 云端所有失败响应统一成 `{ ok:false, kind, message, status }`，`kind` 取 `input`（你填错了，自己改）/ `network`（没送到，可重试）/ `server`（对方坏了，重试没用）。定义与文案只有一处：`cloudfunctions/write/errors.js`，`cloudfunctions/list/errors.js` 是它的逐字节副本（CloudBase 按目录打包，两个函数不能互相 require，用 SHA256 校验两份一致）。**绝不把 Node 的英文异常原文漏给使用者**，也不再用 `String(err)` 兜底（会变 `[object Object]`）。完整口径与验证方法见 `docs/api-contract.md` 第 6、6b 节。
+
+> **2026-10-12 P7 补**：`sync` 云函数也走同一套 `{ok,kind,message,status}`，但它有**第三份** `errors.js`（`cloudfunctions/sync/errors.js`，9174B）——**这一份不是逐字节副本**，比 `write`/`list` 那对 8992B 多了 sync 专属文案（体积超限、冲突、方法不支持）。所以「两份必须 SHA256 一致」这条纪律**只对 `write`/`list` 那对成立**，加 `sync` 时别误以为要三份全同。sync 的错误码表见 `docs/api-contract.md` §6c。
+
+### 7.4 云同步的身份不是环境变量而是「同步串」（P7）
+
+P7 的鉴权**不引入账号体系**，也**不新增环境变量**：复用 `write`/`list`/`sync` 三个函数**同一把** `WRITE_TOKEN`，把用户自定的「同步串」经 HMAC 派成 `owner_uid`（`sync/index.js:126-131`）。因此：
+
+- **`WRITE_TOKEN` 的分量变了**：它不只是「写接口口令」，还是同步身份 HMAC 的钥匙 —— **换掉它，所有同步串算出的 uid 全变，旧数据全部取不回**。这一条在 §2.9 与 `docs/api-contract.md` §6c 都写明了，属「装上就不该动」的配置。
+- **不新增机密**：串只存用户本机（`web2.sync`），服务端只落 64 位 hex，仓库里没有新密钥、`.env.example` 无需新增占位符。
+- 若将来真要换成 CloudBase 匿名登录 + 真正的 `owner_uid`（`docs/api-contract.md` §6 早先写的升级路径），`db.js` 的读写接口（`getDoc`/`putDoc`/`deleteDoc`）与整个前端**都不用动**，只需换掉 `sync/index.js` 里 `ownerUid()` 的实现。
 
 ---
 
@@ -831,9 +890,16 @@ flowchart TD
 
 2026-09-25 新增界面偏好键（主题，§3.5）。这次是**全新的独立键**，不是给已有表加字段：旧数据里没有它，`getTheme()` 读不到就回落 `'default'`；学期 / 日程 / 待办三张表的读写完全不受影响，属于纯增量，不需要升级函数。同时它不进备份（`exportAll` / `importAll` 均不含 ui），备份文件的 `schema_version` 校验也不受影响。
 
-### 9.4 为将来接云同步预留的位置
+### 9.4 云同步（P7，2026-10-12 已落地）——与当年预留位置的关系
 
-云同步接入时，**只改 `store.js`**：把「读写 localStorage」换成「读写云端 + 本地缓存」，其余文件（rules / views / ics / app）不动。这是「数据层唯一闸门」设计的目的，也是方案二期不重构的底气。
+当年这条写的是：「云同步接入时，**只改 `store.js`**：把读写 localStorage 换成读写云端 + 本地缓存」。**实际落地走了另一条更轻的路**，理由记在这里：
+
+- **没有改 `store.js` 的读写职责**。`store.js` 仍是本机数据的唯一闸门；云同步是它**旁边**的一层（`web2/src/data/sync.js`），干的是「把白名单键的**原文**打包送上云 / 取回来写回 localStorage」。这样本机逻辑一行没动，离线可用性也没被牵连。
+- **为什么不做「云端 + 本地缓存」的实时同步**：那需要冲突合并、断线重连、本地缓存失效策略一整套，代价远超收益。用户拍板**手动整份同步** —— 想看云端就点一次，不会有后台悄悄改数据。
+- **为什么是「整份」不是「逐条」**：前端本来就是整份 JSON 模型（导出/导入就是整份），逐条 CRUD 要发几百个请求、中途断网得半份数据（半份比没有更坏）。
+- 当年的判断「数据模型与导出功能为一期已有基础，后续接入不需重构」**基本成立**：`web2.data` 的导出文本被原样搬到云端再原样搬回来，没有动 `schema_version`、没有写旧数据升级方案。唯一的模型层动作是**补了一张云表** `sync_docs`（一行 = 一份快照），业务表一张没动。
+
+细节见 §2.9 与 `docs/api-contract.md` §6c。
 
 ---
 
@@ -849,7 +915,7 @@ flowchart TD
 | 提醒提前量从 15 分钟改成其他 | `PRD.md`（F9/A9）、`ics.js` | 若已导出过 .ics，需重新导出 |
 | 换前端框架 | `index.html`、`js/*`、`TECH_DESIGN.md` 第一节 | 数据模型与 rules.js 可复用 |
 | 换托管平台 | `TECH_DESIGN.md` 第八、九节；**代码不用改** | 但用户需做一次 JSON 迁移 |
-| 接云同步（二期） | `store.js`、`TECH_DESIGN.md`、设计方案分期章节 | 只动数据层 |
+| 接云同步（P7，2026-10-12 已落地） | 后端：`cloudfunctions/sync/`（index/db/errors）、`db/schema.sql`（`sync_docs` 表）、`cloudbaserc.json` + `.example.json`（`sync` 函数与 `/api/sync` 路由）、`docs/api-contract.md` §6c；前端：`web2/src/data/sync.js`、`web2/src/pages/sub/settings/SettingsData.vue`；验证 `web2/tmp/sync-check.mjs`；文档 §2.9 / §9.4、`PRD.md` F21 + A16、设计方案第五节 | **不动 `store.js`、不动业务表、不升 `schema_version`**——云同步是 `store.js` 旁边的一层，传的是白名单键的原文。改白名单（`SYNC_KEYS`）或体积上限时，**前后端两个常量必须同值**（`SYNC_MAX_DOC_CHARS` ↔ `MAX_DOC_CHARS`、`SYNC_MIN_PASS` ↔ `MIN_PASS`） |
 | 接 AI 课表识别（后段） | 新增 `js/ai/`、`store.js`（新增录入入口）、`.gitignore`（确认 key 不进库）、`TECH_DESIGN.md` 第七节 | 只多一个录入入口，不推翻数据模型。**桩版已于 Day 9 前置落地（见 §2 分层原则下的补记）**，接真接口时：换掉 `Ai.recognizeRaw`、`index.html` 无需再动、确认弹窗自动变成真数据 |
 | 改规则（如周次只支持三档 → 支持自定义） | `rules.js`、`PRD.md`、`research.md`（待核实项） | 直接影响风险表里 🔴 级的课表规则解析 |
 | 改节次时间的展示/排布（如行高、节次轴样式） | `css/style.css` 的 `--period-row-h` 与 `.axis-row`、`views.js` 的 `periodAxisHtml()` | 行高是轴与课程格子共用的变量，**改一处即可**；改排布规则只动 `Rules.courseRows()` |

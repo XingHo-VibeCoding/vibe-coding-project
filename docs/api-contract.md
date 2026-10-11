@@ -247,6 +247,58 @@
 
 ---
 
+## 6c. 云同步接口 `/api/sync`（P7，Day 28）
+
+**与写接口的根本差别**：`/api/create|update|delete` 是**逐条 CRUD**，同步一份课表要发几百个请求，中途断网就得到半份数据 —— **半份比没有更坏**。所以同步走**整份文档**：一次请求要么写进旧版、要么写进新版，是原子的。
+
+**三条路由指向同一个 `sync` 云函数**（`cloudbase`/网关按方法分发，不依赖路径透传）：
+
+| 方法 | 路径 | 干什么 | 成功回执 |
+|------|------|--------|----------|
+| `POST` | `/api/sync` | 整份上传（首次即新建） | `{ok:true,action:"upload",uid:"前8位",rev:N,updated_at:"…"}` |
+| `GET` | `/api/sync?pass=…` | 下载（云端没有 → `found:false`，**不是 404**） | `{ok:true,action:"download",uid,found,doc,rev,updated_at}` |
+| `DELETE` | `/api/sync?pass=…` | 清空云端这一份（**本机数据不受影响**） | `{ok:true,action:"delete",uid,deleted:true/false}` |
+
+`POST {"action":"delete"}` 等价于 `DELETE`（浏览器「简单请求」发不出 DELETE 时用）。
+
+**鉴权 = 同步串派 `owner_uid`**（用户 2026-10-12 拍板）：用户在设置里自己定一个**同步串**（≥6 字符），**只存本机**；请求带 `pass`（`body.pass` → `?pass=` → `X-Sync-Pass` 头三选一）；服务端算
+`owner_uid = HMAC-SHA256(WRITE_TOKEN, "sched-sync-v1|" + pass)` 当主键。
+
+- 为什么不比对「口令相等」：同步不需要一次性口令，需要的是「两台设备输入同一串就看到同一份数据」—— 同串必须算出同值，这正是 HMAC 的作用。
+- 为什么拿 `WRITE_TOKEN` 当 HMAC 钥匙（而不是裸 sha256）：`uid` 会落库，万一库被人看到，裸 sha256 能对着短口令离线爆破，加服务端才有的钥匙就爆不出来。
+- ⚠️ 代价（如实记）：换掉 `WRITE_TOKEN`，同一串算出的 `uid` 就变了，**旧数据取不回**（本地数据不受影响，重新上传即可）。`WRITE_TOKEN` 属「装上就不该动」的配置。
+- 强度：**串是唯一凭据**，串弱了被猜到就能读走这一份数据 —— 用户已知悉并接受；6 字符下限只挡「123」这种。
+
+**同步范围（白名单，硬编码在 `web2/src/data/sync.js` 的 `SYNC_KEYS`）**：只有六把本机键 ——
+`web2.data`（导入的整份课表导出文本）/ `web2.added` / `web2.courseOv` / `web2.todos` / `web2.events` / `web2.dayOverrides`。
+**绝不同步**：`web2.llm`（含 DeepSeek API Key）、`web2.eduAccount`（教务账号）、`web2.notify`、`web2.lectures`（录音是大件，留在本机）。白名单是**默认拒绝**：将来新增本机键默认不同步，要同步得显式加进来。
+
+**冲突判定**：请求带 `baseRev`（= 本机记住的、上次同步到的云端版本）。云端 `doc_rev <= baseRev` → 正常写入、`rev+1`；`doc_rev > baseRev` → **409 拒绝**，界面摆「取回云端 / 用本机覆盖云端」让用户选。**新设备不传 `baseRev` 按 0 算，绝不静默冲掉云端。** 覆盖走 `force:true` + `baseRev:-1`。
+
+**错误码表（2026-10-12 对线上环境逐条实测）**
+
+| 场景 | HTTP | `kind` | `message`（人话，逐字实测） |
+|------|------|--------|------|
+| 缺同步串 | 401 | `input` | `缺少同步串：请带 {"pass":"…"} 请求体，或 ?pass= 查询参数，或 X-Sync-Pass 请求头` |
+| 串太短（<6） | 400 | `input` | `同步串太短（至少 6 个字符）：短串容易被猜到，猜到就能读走这一份数据` |
+| doc 太大（>90000 字符） | 400 | `input` | `这一份数据太大（100051 个字符，上限 90000）：同步只带课表和待办，录音音频这类大件请留在本机` |
+| 版本冲突 | 409 | `input` | `云端那份比本机新（云端 rev 1，本机基于 rev 0）：先看看要哪一份 —— 想用云端的就下载，想用本机的就选「覆盖云端」。`（带 `cloudRev` / `cloudUpdatedAt`） |
+| 方法不支持 | 405 | `input` | `不支持的方法：PUT（本接口只用 GET（下载）/ POST（上传）/ DELETE（清空））` |
+| 云端没有这份 | 200 | — | 不是错误：`{ok:true,action:"download",found:false,doc:null,rev:0}` |
+| 连不上（前端侧） | — | `network` | `连不上同步服务：检查一下网络。本机数据没有动。` |
+
+> **`doc` 上限为什么是 90000 而不是更大**：真正的天花板不在函数里，在 **CloudBase 网关**。实测 **100,081 字节的 body 能进**（HTTP 200），**120,081 字节被网关自己挡在函数之外**（HTTP 413 `EXCEED_MAX_PAYLOAD_SIZE`，报文里没有我们的 `ok`/`kind`，说明请求根本没跑到 node 里）。所以按网关定上限、留余量取 90,000 字符 —— 超了也能给用户「录音请留在本机」的人话，而不是网关那句英文。
+> **另一个前端侧的坑**：`sync.js` 里的 `SYNC_MAX_DOC_CHARS` 必须与后端 `MAX_DOC_CHARS` 同值，否则前端会先一步用不同阈值报错。
+
+**替换语义（下载时）**：`applyLocalDoc` 遍历白名单，云端没有/为空的键**直接 `removeItem`** —— 不是合并。理由：含糊合并会留下「本机有、云端没有」的鬼数据，下次上传又带回去。
+
+**落地位置**：`cloudfunctions/sync/index.js`（接口层：方法分发 / 串→uid / 体积校验 / 冲突判定 / 错误码）+ `cloudfunctions/sync/db.js`（数据访问层：PostgREST 读写 `sync_docs` 表）+ `cloudfunctions/sync/errors.js`（**注意：这是第三份 `errors.js`，与 `write`/`list` 那两份 8992B 的副本不同**——它多了 sync 专属文案，9174B；三份的关系不是「逐字节副本」，只有 `write`/`list` 是一对）；前端 `web2/src/data/sync.js` + `web2/src/pages/sub/settings/SettingsData.vue`。
+**表**：`sync_docs`（`owner_uid` 主键 / `doc` jsonb / `doc_rev` / `updated_at`，**没有 `created_at`**），DDL 见 `db/schema.sql` 第 4 节（2026-10-12 补，已对线上真实库逐列核对）。
+
+**前端不做的**：不做实时后台同步（**手动**上传/取回），不做自动合并（冲突让人选）。
+
+---
+
 ## 7. 前端删除的二次确认（Day 22 检查台）
 
 「删除比新增更容易出事」，所以确认要放在**最靠近动作**的地方，而不是离得老远的设置页。
@@ -324,6 +376,7 @@ Uncaught (in promise) TypeError: Cannot set properties of null (setting 'textCon
 
 ---
 
-*最后更新：2026-10-08（Day 24，修检查台失败提示 Bug：见第 9 节；页面已重新部署到静态托管）*
+*最后更新：2026-10-12（P7 云同步接口上线：新增第 6c 节，含三条路由、同步串派 owner_uid、白名单六键、冲突判定与逐条实测的错误码表；`db/schema.sql` 补 `sync_docs` 建表）*
+*2026-10-08（Day 24，修检查台失败提示 Bug：见第 9 节；页面已重新部署到静态托管）*
 *2026-10-05（Day 22，写闭环上线：`write` 云函数 + `/api/create`、`/api/update`、`/api/delete` 三条网关路由已公网验收；`/api/favorite` 因业务上不存在而移除；本次不涉及类型白名单与表结构变化，函数白名单与 `db/schema.sql` 无需同步）*
 *同日复核补充：① `PUT`/`DELETE` 的「id 不存在 → 中文 404」文案按实现写准（第 4、5、6 节）；② `table` 白名单此前漏写了 `semesters`，已补（第 3 节，与 `cloudfunctions/write/index.js` 的 `TABLES` 一致）；③ 新增第 7 节「前端删除的二次确认」（检查台已实测）与第 8 节「数据库 select 前后对比验证法」（附脚本与实测数字）。*

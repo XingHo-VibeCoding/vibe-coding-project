@@ -85,7 +85,29 @@ CREATE INDEX IF NOT EXISTS idx_todos_due_date ON todos (due_date);
 CREATE INDEX IF NOT EXISTS idx_todos_done_due ON todos (done, due_date);
 
 -- ------------------------------------------------------------
--- 4. 注释（PG 只能用 COMMENT ON，逐字段写清楚，控制台里点开表就能看到）
+-- 4. sync_docs：云同步文档（P7，Day 28）—— 一行 = 一台设备组的一整份快照
+-- ------------------------------------------------------------
+-- 与上面三张表的关系：**不是**逐条 CRUD 的第四张业务表，而是「整份课表+待办的存档」。
+-- 每行属于一个 owner_uid（= HMAC-SHA256(WRITE_TOKEN, "sched-sync-v1|" + 同步串)），
+-- 整份上传即覆盖这一行；doc 里塞的是前端 localStorage 白名单六键的原文。
+--
+-- 为什么建表脚本里原来没有它：P7 的 WIP 提交（7d17cd0）只写了云函数，漏了建表脚本；
+-- 2026-10-12 补上，并**对着线上真实库逐列核对过**（select=* 有列、select=<列> 逐个 200，
+-- sync_docs.created_at 明确报 42703 does not exist ⇒ 本表**没有** created_at）。
+--
+-- 为什么主键是 owner_uid 而不是自增 id：一台设备组永远只有一行，主键就是身份本身；
+-- 云函数用 PostgREST 的 Prefer: resolution=merge-duplicates 做 upsert（见 cloudfunctions/sync/db.js），
+-- 冲突即覆盖，语义正好是「把这一份存成现在这样」。
+CREATE TABLE IF NOT EXISTS sync_docs (
+  owner_uid  VARCHAR(64)   NOT NULL,
+  doc        JSONB         NOT NULL,
+  doc_rev    INTEGER       NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT sync_docs_pkey PRIMARY KEY (owner_uid)
+);
+
+-- ------------------------------------------------------------
+-- 5. 注释（PG 只能用 COMMENT ON，逐字段写清楚，控制台里点开表就能看到）
 -- ------------------------------------------------------------
 COMMENT ON TABLE semesters IS '学期（周次换算的锚点）';
 COMMENT ON COLUMN semesters.id           IS '学期 id，形如 sem_1735689600000';
@@ -123,3 +145,9 @@ COMMENT ON COLUMN todos.done_at    IS '完成时间（供后续复盘用）';
 COMMENT ON COLUMN todos.source     IS '来源：manual / lecture / review（一期固定 manual，为二期录音纪要与五期复盘预留）';
 COMMENT ON COLUMN todos.created_at IS '创建时间';
 COMMENT ON COLUMN todos.updated_at IS '最后更新时间（由应用层写入）';
+
+COMMENT ON TABLE sync_docs IS '云同步文档（P7）：一行 = 一个同步串对应的一整份课表+待办快照';
+COMMENT ON COLUMN sync_docs.owner_uid  IS '同步身份 = HMAC-SHA256(WRITE_TOKEN, "sched-sync-v1|" + 同步串)；同串必算出同值，换 WRITE_TOKEN 会变（旧数据取不回，本地不受影响）';
+COMMENT ON COLUMN sync_docs.doc        IS '一整份数据 {version,app,exported_at,keys}；keys 里是前端 localStorage 白名单键的**原文**（不解析再序列化，避免丢格式）';
+COMMENT ON COLUMN sync_docs.doc_rev    IS '版本号，每次成功上传 +1；前端靠 baseRev 与它比对判冲突（云端 rev > baseRev → 409，让用户选）';
+COMMENT ON COLUMN sync_docs.updated_at IS '最后上传时间；由云函数写入（本表没有 created_at）';
