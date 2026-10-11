@@ -13,6 +13,10 @@ const APP_VERSION = `v${verMaj}.${verMin}`
 
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
+  /* 相对路径引用（TECH_DESIGN §8.2 的老约定）：根目录部署与子目录部署都能用。
+     2026-10-12 打开：此前没设 base ⇒ dist/index.html 引用 /assets/...（绝对路径），
+     只能放根目录；要发到 CloudBase 静态托管的 /app/ 子目录会 404 白屏。 */
+  base: './',
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },

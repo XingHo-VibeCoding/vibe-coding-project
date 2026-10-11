@@ -1,0 +1,15 @@
+import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
+const URL = 'https://vibecoding-test-d5fqmhbb955e19dd-1499011319.tcloudbaseapp.com/app/'
+const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' })
+const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
+const r = await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 })
+console.log('status:', r.status(), 'url:', page.url())
+console.log('title:', await page.title())
+console.log('--- 全部可点元素 ---')
+const els = await page.evaluate(() => [...document.querySelectorAll('a,button,[onclick],input[type=submit]')].map(e => ({ tag: e.tagName, text: (e.textContent || '').trim().slice(0, 40), href: e.getAttribute('href') || '', onclick: (e.getAttribute('onclick') || '').slice(0, 80) })))
+console.log(JSON.stringify(els, null, 1))
+console.log('--- body 文本前 600 ---')
+console.log((await page.evaluate(() => document.body.innerText)).slice(0, 600))
+console.log('--- body HTML 前 1500 ---')
+console.log((await page.content()).slice(0, 1500))
+await browser.close()
