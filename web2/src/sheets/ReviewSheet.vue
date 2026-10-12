@@ -35,6 +35,16 @@ const {
   patternLine,
   patternSrc,
   markPatternSeen,
+  usageLineText,
+  usageOpen,
+  usageState,
+  usageCats,
+  usageSlots,
+  usageNote,
+  usageSlotH,
+  toggleUsage,
+  openUsagePermission,
+  formatMs,
 } = toRefs(app)
 
 /* P4：账卡真的摆到台面上时才去问 AI 那句人话。
@@ -180,6 +190,75 @@ const saveDraft = () => {
             <p v-if="!accountToday.baseline.enough" data-account-baseline class="mt-2 text-[11px] text-ink-dim">
               基线建立中 {{ accountToday.baseline.kept }} / {{ accountToday.baseline.need }} 天 · 攒够才说「比平时多还是少」
             </p>
+
+            <!-- 手机使用时间（六期 P6）：副栏**默认折叠**，一行摘要，需要对照时点开。
+                 设计稿 §1.2/§1.8 —— 只画分布条、不列清单打分；沟通类单列；无授权就如实说「未开启」。
+                 这里**不拦人**：没权限只是一个可选的小功能没开，不是错误（§1.9 可选、降级、不催）。 -->
+            <div class="mt-2.5 border-t border-line pt-2.5" data-usage-block>
+              <button
+                type="button"
+                data-usage-toggle
+                class="flex w-full items-center justify-between py-1 text-left"
+                @click="toggleUsage"
+              >
+                <span data-usage-line class="text-[11px] text-ink-dim">{{ usageLineText }}</span>
+                <span class="text-[11px] text-ink-dim">{{ usageOpen ? '▾' : '▸' }}</span>
+              </button>
+
+              <div v-if="usageOpen" data-usage-panel class="mt-2">
+                <!-- 没权限 / 非 App 环境：说清楚 + 给一条能走的路，不反复催 -->
+                <template v-if="!usageState.granted">
+                  <p data-usage-note class="text-[11px] text-ink-dim">{{ usageLineText }}</p>
+                  <p v-if="usageState.supported" class="mt-0.5 text-[11px] text-ink-dim">
+                    要开「使用情况访问权限」才有数（只能你手动开，App 开不了）
+                  </p>
+                  <button
+                    v-if="usageState.supported"
+                    type="button"
+                    data-usage-grant
+                    class="mt-1.5 rounded-full bg-soft-2 px-2.5 py-1 text-[11px] text-ink"
+                    @click="openUsagePermission"
+                  >去开启</button>
+                </template>
+
+                <!-- 有数据：四类分布条（沟通单列）+ 分时段形状 + 8 天基线 -->
+                <template v-else>
+                  <div class="flex h-2 w-full overflow-hidden rounded-full bg-soft-2" data-usage-bar>
+                    <span
+                      v-for="c in usageCats"
+                      :key="c.key"
+                      :data-usage-cat="c.key"
+                      :class="c.tone"
+                      :style="{ width: c.pct + '%' }"
+                    ></span>
+                  </div>
+                  <div class="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-1">
+                    <span
+                      v-for="c in usageCats"
+                      :key="c.key"
+                      :data-usage-legend="c.key"
+                      class="flex items-center gap-1 text-[11px] text-ink-dim"
+                    >
+                      <span class="h-1.5 w-1.5 rounded-full" :class="c.tone"></span>
+                      {{ c.label }} {{ formatMs(c.ms) }}
+                    </span>
+                    <span v-if="!usageCats.length" class="text-[11px] text-ink-dim">今天还没怎么碰手机</span>
+                  </div>
+                  <p data-usage-note class="mt-1.5 text-[11px] text-ink-dim">{{ usageNote }}</p>
+                  <!-- 分时段：只画形状，口径如实标在下面（按最后使用时刻归桶，不是逐条事件） -->
+                  <div class="mt-1.5 flex items-end gap-0.5" data-usage-hours>
+                    <span
+                      v-for="(s, i) in usageSlots"
+                      :key="i"
+                      class="flex-1 rounded-sm bg-primary-200"
+                      :style="{ height: usageSlotH(s.ms) }"
+                      :title="s.label"
+                    ></span>
+                  </div>
+                  <p class="mt-0.5 text-[10px] text-ink-dim">按最后使用时刻归的 3 小时段</p>
+                </template>
+              </div>
+            </div>
           </div>
 
           <p data-review-q class="mt-4 text-sm font-semibold">{{ QUESTIONS[reviewSheet.step].title }}</p>

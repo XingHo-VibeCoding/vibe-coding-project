@@ -367,6 +367,47 @@ web2 (App.vue watch / visibilitychange)
 
 ---
 
+### 2.10 手机使用时间栏（P6，2026-10-13）
+
+**分层**：原生桥（壳仓 `scripts/native/UsageStatsPlugin.kt`）→ 数据层（`web2/src/data/usageStats.js` 274 行）→ 展示层（`web2/src/sheets/ReviewSheet.vue` 的账卡副栏，状态在 `web2/src/App.vue`）。
+
+**原生桥 `UsageStatsPlugin.kt`**（`@CapacitorPlugin(name = "UsageStats")`，四个 `@PluginMethod`）：
+
+| 方法 | 入参 | 回什么 |
+|---|---|---|
+| `available` | — | `{granted: Boolean}` |
+| `openSettings` | — | `{ok: true}`（跳 `Settings.ACTION_USAGE_ACCESS_SETTINGS`）；失败 `call.reject` |
+| `today` | — | `{granted, start, end, totalMs, byCategory:[{key,ms}], byHour:[24]}` |
+| `ranged` | `start` / `end`（毫秒） | 同 `today`；缺参或 `end <= start` 时 `call.reject("缺少时间窗：…")` |
+
+**权限判定**：`AppOpsManager` + `OPSTR = "android:get_usage_stats"`；API 29+ 用 `unsafeCheckOpNoThrow(OPSTR, Process.myUid(), packageName)`，否则 `checkOpNoThrow`，判 `MODE_ALLOWED`，异常吞成 `false`（**没权限是正常状态，不是异常**）。
+
+**数据源**：`UsageStatsManager.queryUsageStats(INTERVAL_DAILY, start, end)`。同一包名可能返回多条，按包名合并 `totalTimeInForeground`（`lastTimeUsed` 取最大）。
+
+**隐私落点 = 私有函数 `categoryOf(pm, pkg): String`**：先查 40+ 条 `EXACT` 表（微信/QQ/钉钉/飞书/短信/电话 → `comm`；学习通/易班/知乎/中国大学MOOC/Coursera → `study`；抖音/B站/快手/腾讯视频/爱奇艺/网易云/QQ音乐/王者荣耀/原神等 → `fun`），未命中退 `ApplicationInfo.category` 映射（2→comm，1/3/4/5→fun），最后 `other`。**返回给 JS 的只有类别 key，包名在这个函数内就被丢弃。**
+
+**web 侧再收一道闸**：`normalizeCats(v)` **只取 `key` 与 `ms`**，其余字段（含 `pkg` / `appName`）一律不落进返回值、不落盘、不进 DOM。**两道闸任一道单独坏了还有另一道拦着** —— 这条在自检里是硬断言（C1）。
+
+**时区**：`dayWindow(dateKey)` 用 `new Date(y, mo-1, da)` 造**本地**日 00:00，`end = start + 24*3600*1000`。**不能用 UTC**，否则「今天」会错开 8 小时。
+
+**分时段口径（如实标注）**：`byHour` 是把每个包的**最后一次使用时刻**用 `Calendar.HOUR_OF_DAY` 归桶（24 桶）。拿不到逐条 `UsageEvents`（要另一个更重的权限），所以界面上明写「**按最后使用时刻归的 3 小时段**」，不装精确。展示时折成 8 个 3 小时段，柱高按当天最大值归一（1..18px，全 0 给 1px）。
+
+**基线**：`usageBaseline(book, 8)` 只数**有授权的天**；不满 8 天时界面写「基线建立中（N/8 天）」，**不下「比平时多/少」的结论**（设计稿 §1.7）。
+
+**权限三态（`usageLineText`）**：① 无插件（浏览器）→「手机 · 仅 App 内可用」，**不给**「去开启」；② 有插件未授权 →「手机 · 未开启」，给**一次**「去开启」；③ 已授权 →「手机 NhNm」。
+
+**无权限时清今天**：`refreshUsage()` 在未授权时会 `upsertUsageDay(…, {granted:false, totalMs:0})` 把今天那条抹掉 —— 否则昨天开的权限今天关了，界面会拿旧数字骗人。`upsertUsageDay` 的 `same` 判定包含 `granted`，所以权限状态变化也算「有变化」。
+
+**不上云**：`web2.usage` **不在** `web2/src/data/sync.js` 的 `SYNC_KEYS` 六键白名单里。自检 G 组直接断言这两条（键不在名单 **且** 名单仍是 6 键），将来谁手滑加进去会立刻红。
+
+**Android 侧配置**（`scripts/patch-android.js` 四处）：kt 落地清单加 `UsageStatsPlugin.kt`；`MAIN_TPL` 的 `registerPlugin(UsageStatsPlugin.class);` **必须排在 `super.onCreate` 之前**；日志文案补上插件名；`AndroidManifest.xml` 补 `android.permission.PACKAGE_USAGE_STATS` + `tools:ignore="ProtectedPermissions"`，根标签补 `xmlns:tools`（都有 `indexOf(...) === -1` 守卫，可重复跑）。
+
+**验证**：`web2/tmp/usage-stats-check.mjs` **42 过 / 0 挂**（纯逻辑 + 假插件：环境三态 / 读一天 / 隐私 / 存档 / 展示 / 基线 / 白名单 / 抛错如实上抛）；`web2/tmp/usage-ui-check.mjs` **27 过 / 0 挂**（playwright 走 `dist` + 假插件注入：A 默认折叠 / B 展开 / C 无权限 / D 无插件 / E 隐私 / F 幂等 / Z 无报错）。**负向验证**两组咬住（`normalizeCats` 原样返回带包名 → 38/4；无权限不清今天 → 26/1）。原生 `gradlew assembleDebug` → **BUILD SUCCESSFUL**。
+
+**未做（须真机）**：手动去系统里开「使用情况访问」权限（侧载包 `installerPackageName = null`，Android 13+ 可能落在「受限设置」里锁灰）。
+
+---
+
 ## 三、数据对象及字段
 
 存储键命名：`sched.v1.<表名>`。数据模型沿用设计方案第三节，只落地一期所需字段。
