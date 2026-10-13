@@ -149,6 +149,21 @@ const {
               <p class="mt-1 text-xs text-ink-dim">选主项目导出的 JSON 备份，或教务导出的课表 Excel（.xlsx）</p>
             </button>
             <p v-if="obImportMsg" class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">{{ obImportMsg }}</p>
+
+            <!-- 「先看看示例」出口（2026-10-13 补，Day 27 外行试用卡点修复）：
+                 原来这一页把「先用示例数据逛逛」删掉了（见 :126 注释），示例入口只剩「我的」页；
+                 但引导层是 fixed inset-0 z-40 铺满全屏、把底部导航整个盖住，点不到「我的」页
+                 ⇒ 陌生人打开公网链接后无路可走，只能先交出真实信息（填学期 / 登教务 / 导文件）。
+                 实测（tmp/day27-selftest.mjs）：点底部「我的」3 秒超时、命中层是引导层内层 div。
+                 现在补回这条路：示例数据本来就跑在引导层背后（store.js buildMock），
+                 所以这里不需要写任何数据，直接 finishOnboarding() 关掉引导层即可。 -->
+            <button
+              class="mt-5 w-full rounded-2xl px-4 py-3 text-center text-sm text-ink-dim underline underline-offset-4 transition active:scale-[0.98]"
+              data-ob-choice-demo
+              @click="finishOnboarding"
+            >
+              先随便看看（示例数据，之后随时能换）
+            </button>
           </div>
 
           <!-- 第 2 步的引导子页：没配 AI Key 时落这里（第一次用的人都没有 Key）。
