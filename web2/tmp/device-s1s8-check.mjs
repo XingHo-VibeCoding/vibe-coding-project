@@ -41,7 +41,10 @@ function skipped(id, what, why) {
   console.log(`  [SKIP] ${id} ${what} — ${why}`)
 }
 
-const adbOut = (args) => { try { return execFileSync(ADB, args, { encoding: 'utf8' }).trim() } catch { return '' } }
+// maxBuffer 必须放大：`dumpsys notification --noredact` 在本机真机上 ~1.3 MB，
+// 默认 1 MB 会让 execFileSync 抛 ENOBUFS，被 catch 吞成空串，S4c 就变成假 FAIL
+// （2026-10-13 真机首跑就是这么挂的：adb 侧明明有通知、有「开始录音」action）。
+const adbOut = (args) => { try { return execFileSync(ADB, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim() } catch { return '' } }
 const devices = adbOut(['devices']).split('\n').slice(1).map(l => l.trim()).filter(l => l.endsWith('device'))
 const DEVICE = devices.length > 0
 
@@ -50,6 +53,7 @@ console.log(`  设备: ${DEVICE ? devices.join(', ') : '（无 adb 设备）'}`)
 
 // ---------- 起会话 ----------
 let browser, page, mode
+let appUrl = null   // 真机模式下记下不带 ?t= 的原始页面地址，收尾时 reload 回去
 if (DEVICE) {
   mode = 'device'
   try {
@@ -63,7 +67,16 @@ if (DEVICE) {
   page = null
   for (const c of browser.contexts()) for (const p of c.pages()) page = p
   if (!page) { console.log('9222 上没找到页面'); process.exit(2) }
-  console.log('  模式: device（真实 WebView）+ 已连 9222 | url=' + page.url())
+  // 真机首跑（2026-10-13 21:08）5 个 FAIL 里有 4 个是「时辰不对」造成的假 FAIL：
+  // 那天晚上课全上完了，「接下来」只剩一条折叠行 ⇒ [data-today-item] 一条都没有（S2a/S3a 挂），
+  // 课表页也没有「正在上的那节课」⇒ [data-week-rec-now] 不存在（S4b 挂）。
+  // 所以真机模式也走同一个 ?t= 时间后门，把钟点钉在「正在上高等数学」的 10:30 再断言。
+  // ?t= 只冻结钟点、不冻日期（见 App.vue:3900），也不动任何数据，跑完再 reload 回真实时间。
+  const T = process.env.S1S8_T || '10:30'
+  appUrl = page.url().split('?')[0]
+  await page.goto(appUrl + '?t=' + T, { waitUntil: 'domcontentloaded' }).catch(() => {})
+  await page.waitForTimeout(2600)
+  console.log('  模式: device（真实 WebView）+ 已连 9222 | url=' + page.url() + `（时间后门 ?t=${T}）`)
 } else {
   mode = 'fallback'
   const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
@@ -307,22 +320,30 @@ console.log('\n=== S4 三个录音入口 ===')
   // 真机：真点一次开始录音，验「停止并保存」出现，再停掉，不留垃圾
   if (mode === 'device' && e1.ok) {
     await go('today')
+    // 注意：要点的必须是里面那颗 [data-today-rec-start] 按钮。
+    // [data-today-rec] 只是包住「录音区」的容器 div（App.vue:4864-4865），点它没有任何 handler，
+    // 首跑就是这么假挂的（点了容器 → 没进录音态 → S4d FAIL）。
     const before = await page.evaluate(() => document.querySelector('[data-today-rec]')?.innerText.trim() || '')
-    await page.locator('[data-today-rec]').first().click().catch(() => {})
-    await page.waitForTimeout(2600)
-    const rec = await page.evaluate(() => ({
-      stop: !!document.querySelector('[data-today-rec-stop]'),
-      banner: !!document.querySelector('[data-rec-banner]'),
-      txt: document.querySelector('[data-today-rec]')?.innerText.trim().slice(0, 20) || '',
-    }))
-    ok('S4d', '真点①后进入录音态（出现「停止并保存」/常驻小条）', rec.stop || rec.banner,
-      `stop=${rec.stop} banner=${rec.banner} 顶卡文案「${rec.txt}」（点前「${before}」）`)
-    if (rec.stop) {
-      await page.locator('[data-today-rec-stop]').first().click().catch(() => {})
-      await page.waitForTimeout(2000)
-      // 停录会弹确认或直接保存；能收拾干净就行
-      const still = await page.evaluate(() => !!document.querySelector('[data-today-rec-stop]'))
-      ok('S4e', '停录后退出录音态（不残留）', !still, still ? '还在录音态' : '已退出，测试场次已自动落库/丢弃')
+    const hasStart = await page.evaluate(() => !!document.querySelector('[data-today-rec-start]'))
+    if (!hasStart) {
+      skipped('S4d', '真点录音钮进录音态', '此刻顶卡没有录音钮（当前没有正在上的课，recEntryOn=false）')
+    } else {
+      await page.locator('[data-today-rec-start]').first().click().catch(() => {})
+      await page.waitForTimeout(2600)
+      const rec = await page.evaluate(() => ({
+        stop: !!document.querySelector('[data-today-rec-stop]'),
+        banner: !!document.querySelector('[data-rec-banner]'),
+        txt: document.querySelector('[data-today-rec]')?.innerText.trim().slice(0, 20) || '',
+      }))
+      ok('S4d', '真点①后进入录音态（出现「停止并保存」/常驻小条）', rec.stop || rec.banner,
+        `stop=${rec.stop} banner=${rec.banner} 顶卡文案「${rec.txt}」（点前「${before}」）`)
+      if (rec.stop) {
+        await page.locator('[data-today-rec-stop]').first().click().catch(() => {})
+        await page.waitForTimeout(2600)
+        // 停录会弹确认或直接保存；能收拾干净就行
+        const still = await page.evaluate(() => !!document.querySelector('[data-today-rec-stop]'))
+        ok('S4e', '停录后退出录音态（不残留）', !still, still ? '还在录音态' : '已退出，测试场次已自动落库/丢弃')
+      }
     }
     await shoot('s4-recording')
   } else if (mode === 'fallback' && e1.ok) {
@@ -523,6 +544,13 @@ console.log('\n=== S8 网格与长页面 ===')
 // ================= Z 错误 =================
 console.log('\n=== Z 全程错误 ===')
 ok('Z1', '全程无 pageerror / console.error', errs.length === 0, errs.length ? errs.slice(0, 3).join(' | ') : '干净')
+
+// 真机模式收尾：把页面 reload 回不带 ?t= 的真实时间，别把测试用的冻结钟点留给用户
+if (mode === 'device') {
+  await page.goto(appUrl || page.url().split('?')[0], { waitUntil: 'domcontentloaded' }).catch(() => {})
+  await page.waitForTimeout(1500)
+  console.log('  已把真机页面 reload 回真实时间：' + page.url())
+}
 
 // ================= 汇总 =================
 const total = pass + fail + skip
