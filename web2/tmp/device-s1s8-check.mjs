@@ -153,6 +153,20 @@ const shoot = async (name) => {
     } catch { /* 截图失败不该中断检查 */ }
   }
 }
+// 真机 CDP 上 playwright 的「可操作性」检查会失效：按钮只要贴近视口底部/被 BottomSheet 的
+// 进场动画推着（例如 [data-todo-submit] 在 top 726 / vh 794），locator.click() 会一直等
+// 「stable」到 8–30s 超时，但元素本身完全可点。实机验证：evaluate 里原生 .click() 一次就成。
+// 所以真机分支统一走这个「按锚点直接派发 click」的通道，桌面替身仍用真实鼠标点击。
+const tap = async (sel, idx = 0) => {
+  const n = await page.evaluate(([s, i]) => {
+    const els = document.querySelectorAll(s)
+    if (els.length <= i) return 0
+    els[i].click()
+    return els.length
+  }, [sel, idx])
+  await page.waitForTimeout(500)
+  return n
+}
 const go = async (tabKey) => {
   await page.evaluate(async (k) => {
     const b = document.querySelector(`nav [data-nav="${k}"]`)
@@ -263,18 +277,35 @@ console.log('\n=== S3 手指点「接下来」某一行 → 进课程详情 ==='
   if (!r) ok('S3a', '有可点的行', false, '找不到 [data-today-item]')
   else {
     ok('S3a', '行进详情前触区高度 ≥44px', r.h >= 44, `rect h=${r.h}（top ${r.top} / bottom ${r.bottom}）`)
-    // 用 elementFromPoint 竖扫，确认真实可点跨度（不被上层裁掉）
+    // 用 elementFromPoint 竖扫，确认真实落在**本行**上的连续跨度。
+    // 判据语义：这一条守的是「课行的可点区不被别的层吃掉」。相邻的「已过 / 展开全部」控制行各带
+    // after:-inset-y-[9px] 的扩触区（设计如此，让 20px 高的细控制条也好点），它会盖住课行最上几像素。
+    // 因此判据取**最长连续命中段**（不是总命中数）：手指要的是一块连着的 44px 落点。
+    // 扫描上界用 y < floor(bottom)：y <= floor(bottom) 会把下边界那个「盒子外」像素算进来，
+    // 那是父容器的像素、永远不属于本行（白扣 1px）。
     const scan = await page.evaluate(() => {
-      const el = document.querySelector('[data-today-item]')
-      const b = el.getBoundingClientRect()
-      let hit = 0
-      for (let y = Math.ceil(b.top); y <= Math.floor(b.bottom); y++) {
-        const t = document.elementFromPoint(Math.round(b.left + b.width / 2), y)
-        if (t && (el.contains(t) || t === el)) hit++
-      }
-      return { hit, span: Math.round(b.bottom - b.top) }
+      const rows = [...document.querySelectorAll('[data-today-item]')]
+      let best = 0, bestIdx = -1, lost = []
+      const detail = []
+      rows.forEach((el, i) => {
+        const b = el.getBoundingClientRect()
+        let run = 0, localBest = 0
+        for (let y = Math.ceil(b.top); y < Math.floor(b.bottom); y++) {
+          const t = document.elementFromPoint(Math.round(b.left + b.width / 2), y)
+          const inRow = !!(t && (el.contains(t) || t === el))
+          if (inRow) { run++; if (run > localBest) localBest = run } else {
+            run = 0
+            const owner = t ? (t.closest('[data-today-past-fold]') ? 'fold(已过)' : t.closest('[data-today-expand]') ? 'expand(展开)' : t.tagName + '.' + String(t.className).slice(0, 34)) : 'null'
+            if (!lost.includes(owner)) lost.push(owner)
+          }
+        }
+        detail.push(localBest)
+        if (localBest > best) { best = localBest; bestIdx = i }
+      })
+      return { best, bestIdx, count: rows.length, detail, lost }
     })
-    ok('S3b', '真实可点跨度 ≥44px（不被上层裁掉）', scan.hit >= 44, `竖扫命中 ${scan.hit}px / 几何高 ${scan.span}px`)
+    ok('S3b', '最长连续可点段 ≥44px（不被上层遮罩裁掉）', scan.best >= 44,
+      `第 ${scan.bestIdx} 行最长连续 ${scan.best}px / 共 ${scan.count} 行 ${JSON.stringify(scan.detail)}px / 占位=${JSON.stringify(scan.lost)}`)
     await page.locator('[data-today-item]').first().click({ force: false }).catch(() => {})
     await page.waitForTimeout(700)
     const detail = await page.evaluate(() => {
@@ -355,6 +386,18 @@ console.log('\n=== S4 三个录音入口 ===')
 console.log('\n=== S5「我的」页：一屏 + 二级页返回链 ===')
 {
   await go('me')
+  // 先把「我的」页的二级页栈清干净：meSubStack 是**栈**，可能被上一步（或上一次跑、或某个深链，
+  // 比如「生成纪要缺配置」会把栈铺成 ['settings','settings-recording']）留在非空状态。
+  // 不清的话 S5d 点一次「返回」只会弹一层、data-sub 仍非 null ⇒ 假 FAIL（2026-10-13 真机撞到过：
+  // 上一轮探针把栈留在 settings-recording，S5c 显示 data-sub=settings-recording、S5d 显示 data-sub=settings）。
+  for (let i = 0; i < 6; i++) {
+    const inSub = await page.evaluate(() => !!document.querySelector('[data-sub-page]'))
+    if (!inSub) break
+    await page.locator('[data-sub-back]').first().click().catch(() => {})
+    await page.waitForTimeout(500)
+  }
+  const cleaned = await page.evaluate(() => !!document.querySelector('[data-sub-page]'))
+  if (cleaned) console.log('    ⚠ 二级页栈未能清空（S5d 可能受影响）')
   const me = await page.evaluate(() => {
     const entries = [...document.querySelectorAll('[data-me-entry]')].map(e => e.getAttribute('data-me-entry'))
     const term = document.querySelector('[data-me-term]')?.innerText.replace(/\n/g, ' | ') || null
@@ -364,9 +407,9 @@ console.log('\n=== S5「我的」页：一屏 + 二级页返回链 ===')
   ok('S5a', '「我的」页有一行学期 + 四个入口', !!me.term && me.entries.length === 4, `entries=${JSON.stringify(me.entries)}`)
   ok('S5b', '「我的」页不显示今日页问候卡', !(await heroVisible()), `问候卡在视口内=${await heroVisible()}`)
 
-  // 进第一个入口 → 二级页全屏
+  // 进第一个入口 → 二级页全屏（真机 CDP 上必须走 evaluate click，见 tap 注释）
   const entryKey = me.entries[0]
-  await page.locator(`[data-me-entry="${entryKey}"]`).first().click().catch(() => {})
+  await tap(`[data-me-entry="${entryKey}"]`)
   await page.waitForTimeout(700)
   const sub1 = await page.evaluate(() => {
     const s = document.querySelector('[data-sub-page]')
@@ -406,29 +449,122 @@ console.log('\n=== S5「我的」页：一屏 + 二级页返回链 ===')
 console.log('\n=== S6 待办清单页：勾选就地生效 ===')
 {
   await go('me')
-  await page.locator('[data-me-entry="todos"]').first().click().catch(() => {})
-  await page.waitForTimeout(800)
-  const before = await page.evaluate(() => {
+  await tap('[data-me-entry="todos"]')
+  await page.waitForTimeout(700)
+
+  // 真机（或用户真数据）里「一条待办都没有」是**合法状态**，不该判 FAIL。
+  // 所以这一组自给自足：没条目就先经 UI 真建一条，验完再删掉，不留痕迹
+  // （顺带把「＋ 添加待办 → 填标题 → 添加」这条主路径也真跑了一遍）。
+  //
+  // ⚠ 选择器一律「锚点优先、文案兜底」：真机跑的是**已装 APK 里打包的那份产物**，
+  // 不是我刚 build 出来的 dist —— 新加的 data-* 锚点要等下次出包才在机上。用文案兜底
+  // 才能让同一个脚本在「旧包 + 新源码」下都跑得动。
+  const TMP = '自动化检查用（会自己删）'
+  const has = (s) => page.evaluate((x) => document.querySelectorAll(x).length, s)
+  let provisioned = false
+  let before = await page.evaluate(() => {
     const cbs = [...document.querySelectorAll('[data-todo-all-check]')]
     return { n: cbs.length, count: document.querySelector('[data-todos-count]')?.innerText.trim() || null }
   })
-  console.log(`    待办 ${before.n} 条 | 「${before.count}」`)
-  ok('S6a', '待办清单页有条目与计数', before.n > 0, `${before.n} 条，计数「${before.count}」`)
+  if (before.n === 0) {
+    console.log('    清单是空的 —— 先经 UI 建一条临时待办（验完删）')
+    // 「＋ 添加待办」：新包有 data-todo-add，旧包/兜底用文案找
+    if ((await has('[data-todo-add]')) > 0) await tap('[data-todo-add]')
+    else {
+      await page.evaluate(() => {
+        const b = [...document.querySelectorAll('button')].find((x) => x.innerText.includes('添加待办'))
+        if (b) b.click()
+      })
+      await page.waitForTimeout(600)
+    }
+    // 填标题：优先锚点，其次浮层里唯一的文本 input
+    await page.evaluate((t) => {
+      const el = document.querySelector('[data-todo-title]') || document.querySelector('[data-sheet-todo] input')
+      if (!el) return
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+      setter.call(el, t)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }, TMP)
+    await page.waitForTimeout(400)
+    // 提交：锚点优先，其次浮层里写「添加」的按钮（真机 CDP 上必须走 evaluate click，见 tap 注释）
+    if ((await has('[data-todo-submit]')) > 0) await tap('[data-todo-submit]')
+    else {
+      await page.evaluate(() => {
+        const s = document.querySelector('[data-sheet-todo]') || document
+        const b = [...s.querySelectorAll('button')].find((x) => x.innerText.trim() === '添加')
+        if (b) b.click()
+      })
+      await page.waitForTimeout(800)
+    }
+    before = await page.evaluate(() => {
+      const cbs = [...document.querySelectorAll('[data-todo-all-check]')]
+      return { n: cbs.length, count: document.querySelector('[data-todos-count]')?.innerText.trim() || null }
+    })
+    provisioned = before.n > 0
+  }
+  console.log(`    待办 ${before.n} 条 | 「${before.count}」${provisioned ? '（含 1 条临时）' : ''}`)
+  ok('S6a', '待办清单页有条目与计数（空清单会自动建一条临时待办）', before.n > 0,
+    `${before.n} 条，计数「${before.count}」${provisioned ? '（临时建的）' : ''}`)
+
   if (before.n > 0) {
     const firstId = await page.evaluate(() => document.querySelector('[data-todo-all-check]')?.getAttribute('data-todo-all-check'))
-    await page.locator(`[data-todo-all-check="${firstId}"]`).first().click().catch(() => {})
-    await page.waitForTimeout(700)
+    await tap(`[data-todo-all-check="${firstId}"]`)
+    await page.waitForTimeout(500)
     const after = await page.evaluate(() => ({ count: document.querySelector('[data-todos-count]')?.innerText.trim() || null }))
     ok('S6b', '勾选/取消就地生效（计数变化）', after.count !== before.count, `「${before.count}」→「${after.count}」`)
     // 还原，别改动真实数据
-    await page.locator(`[data-todo-all-check="${firstId}"]`).first().click().catch(() => {})
-    await page.waitForTimeout(600)
+    await tap(`[data-todo-all-check="${firstId}"]`)
+    await page.waitForTimeout(500)
     const restored = await page.evaluate(() => document.querySelector('[data-todos-count]')?.innerText.trim() || null)
     ok('S6c', '再点一次还原（不计入改动）', restored === before.count, `「${before.count}」→「${restored}」`)
+  } else {
+    skipped('S6b', '勾选/取消就地生效', '清单仍为空（连临时待办都没建出来）')
+    skipped('S6c', '再点一次还原', '同上')
   }
   await shoot('s6-todos')
-  await page.locator('[data-sub-back]').first().click().catch(() => {})
-  await page.waitForTimeout(600)
+
+  // 清理：把临时待办删掉。点**标题文字**进编辑（点勾选框只会切完成态，不开浮层），
+  // 再在浮层里点两次「删除」（第二次是确认）。
+  if (provisioned) {
+    const hasTitle = (await has('[data-todo-title-id]')) > 0
+    if (hasTitle) {
+      const tid = await page.evaluate(() => {
+        const s = [...document.querySelectorAll('[data-todo-title-id]')].find((e) => e.innerText.includes('自动化检查用'))
+        return s ? s.getAttribute('data-todo-title-id') : null
+      })
+      await tap(`[data-todo-title-id="${tid}"]`)
+    } else {
+      // 旧包没有标题锚点：按文案找那一行标题 span
+      await page.evaluate((t) => {
+        const el = [...document.querySelectorAll('span,div')].find((e) => e.innerText.trim() === t && e.children.length === 0)
+        if (el) el.click()
+      }, TMP)
+      await page.waitForTimeout(700)
+    }
+    const delSel = (await has('[data-todo-delete]')) > 0 ? '[data-todo-delete]' : null
+    if ((await has('[data-sheet-todo]')) > 0) {
+      if (delSel) { await tap(delSel); await page.waitForTimeout(400); await tap(delSel) }
+      else {
+        await page.evaluate(() => {
+          const s = document.querySelector('[data-sheet-todo]') || document
+          const b = [...s.querySelectorAll('button')].find((x) => x.innerText.includes('删除'))
+          if (b) b.click()
+        })
+        await page.waitForTimeout(500)
+        await page.evaluate(() => {
+          const s = document.querySelector('[data-sheet-todo]') || document
+          const b = [...s.querySelectorAll('button')].find((x) => x.innerText.includes('确认'))
+          if (b) b.click()
+        })
+      }
+      await page.waitForTimeout(800)
+    }
+    const left = await page.evaluate(() => [...document.querySelectorAll('[data-todo-all-check]')].length)
+    console.log(`    清理后剩 ${left} 条${left === 0 ? '（临时待办已删掉）' : '（⚠ 可能没删干净）'}`)
+    ok('S6d', '清理：临时待办已删掉（不留痕）', left === 0, `剩 ${left} 条`)
+  }
+  if ((await has('[data-sub-back]')) > 0) await tap('[data-sub-back]')
+  await page.waitForTimeout(500)
 }
 
 // ================= S7 课表页 ＋ 选单 =================
@@ -444,9 +580,9 @@ console.log('\n=== S7 课表页：顶部只有周次条 + ＋，选单四/五项
   console.log(`    周次条「${top.label}」`)
   ok('S7a', '顶部只有「‹ 第 N 周 / 共 M 周 ›」+ ＋', !!top.label && top.hasAdd, `label="${top.label}" hasAdd=${top.hasAdd}`)
   ok('S7b', '课表页不显示今日页问候卡', !(await heroVisible()), `问候卡在视口内=${await heroVisible()}`)
-  // 开选单
-  await page.locator('[data-week-add]').first().click().catch(() => {})
-  await page.waitForTimeout(600)
+  // 开选单（真机 CDP 上必须走 evaluate click，见 tap 注释）
+  await tap('[data-week-add]')
+  await page.waitForTimeout(700)
   const menu = await page.evaluate(() => {
     const m = document.querySelector('[data-week-menu]')
     if (!m) return null
@@ -465,8 +601,8 @@ console.log('\n=== S7 课表页：顶部只有周次条 + ＋，选单四/五项
   await shoot('s7-week')
   // 返回键收选单（真机专属：替身里没有 backButton 监听）
   if (canSysBack) {
-    await page.locator('[data-week-add]').first().click().catch(() => {})
-    await page.waitForTimeout(500)
+    await tap('[data-week-add]')
+    await page.waitForTimeout(600)
     await sysBack()
     const backGrid = await page.evaluate(() => ({ menu: !!document.querySelector('[data-week-menu]'), grid: !!document.querySelector('[data-grid]') }))
     ok('S7f', '按返回键收选单且仍在网格', !backGrid.menu && backGrid.grid, `menu=${backGrid.menu} grid=${backGrid.grid}`)

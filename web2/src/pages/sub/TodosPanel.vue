@@ -29,7 +29,7 @@ const {
                 :data-todo-all-check="t.id"
                 @click="toggleTodo(t.id)"
               />
-              <span class="min-w-0 flex-1 truncate text-sm" @click.stop="openTodoEdit(t)">{{ t.title }}</span>
+              <span class="min-w-0 flex-1 truncate text-sm" :data-todo-title-id="t.id" @click.stop="openTodoEdit(t)">{{ t.title }}</span>
               <span class="shrink-0 text-[11px] text-primary-600">{{ t.due }}</span>
             </div>
           </section>
@@ -56,6 +56,7 @@ const {
           </section>
 
           <button
+            data-todo-add
             class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-3 text-sm font-medium text-ink-dim transition active:bg-soft"
             @click="openTodoAdd"
           >

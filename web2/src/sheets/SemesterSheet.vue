@@ -10,12 +10,33 @@ const app = useApp()
 const {
   openDateField,
   openTimeField,
+  openNumberField,
   semForm,
   semErr,
   DEFAULT_PERIODS,
   saveSemEdit,
   evenSplitSubTerms,
 } = toRefs(app)
+
+/* 数字字段一律走自做滚轮（2026-10-13 用户口径：全项目不用原生 <input type="number">）。
+   总周数在引导页第 1 步就是滚轮，这里原本还是原生数字框，属同一概念的漏网。
+   注意：`toRefs(app)` 把函数也包成 ref，**script 正文里**必须 `.value`（模板里才自动解包）。 */
+function pickTotalWeeks() {
+  openNumberField.value({
+    value: semForm.value.total_weeks, min: 1, max: 30, step: 1, unit: '周',
+    title: '总周数', onDone: (v) => { semForm.value.total_weeks = v },
+  })
+}
+/* 小学期周次：上界随总周数收窄，避免选到比学期还大的周 */
+function pickSubTerm(i, key) {
+  const st = semForm.value.subTerms[i]
+  const tw = Number(semForm.value.total_weeks) || 30
+  openNumberField.value({
+    value: st[key], min: 1, max: tw, step: 1, unit: '周',
+    title: `第 ${i + 1} 段${key === 'from' ? '开始' : '结束'}周`,
+    onDone: (v) => { st[key] = v },
+  })
+}
 </script>
 
 <template>
@@ -45,14 +66,12 @@ const {
         </label>
         <label class="block">
           <span class="mb-1 block text-xs text-ink-dim">总周数（1–30）</span>
-          <input
-            v-model.number="semForm.total_weeks"
-            type="number"
-            min="1"
-            max="30"
-            step="1"
-            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm tabular-nums outline-none focus:border-primary-400"
-          />
+          <button
+            type="button"
+            data-sem-total-weeks
+            class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-left text-sm tabular-nums transition active:scale-[0.99]"
+            @click="pickTotalWeeks"
+          >{{ semForm.total_weeks }} 周</button>
         </label>
       </div>
 
@@ -63,6 +82,7 @@ const {
         <PeriodsEditor
           v-model="semForm.periods"
           :open-time="openTimeField"
+          :open-number="openNumberField"
           :fallback="DEFAULT_PERIODS"
           @error="(m) => (semErr = m)"
         />
@@ -83,21 +103,19 @@ const {
             maxlength="4"
             class="w-16 rounded-xl border border-line bg-canvas px-2.5 py-2 text-center text-sm outline-none focus:border-primary-400"
           />
-          <input
-            v-model.number="st.from"
+          <button
+            type="button"
             :data-subterm-from="i"
-            type="number"
-            min="1"
-            class="w-16 rounded-xl border border-line bg-canvas px-2.5 py-2 text-center text-sm tabular-nums outline-none focus:border-primary-400"
-          />
+            class="w-16 rounded-xl border border-line bg-canvas px-2.5 py-2 text-center text-sm tabular-nums transition active:scale-[0.98]"
+            @click="pickSubTerm(i, 'from')"
+          >{{ st.from }}</button>
           <span class="text-xs text-ink-dim">–</span>
-          <input
-            v-model.number="st.to"
+          <button
+            type="button"
             :data-subterm-to="i"
-            type="number"
-            min="1"
-            class="w-16 rounded-xl border border-line bg-canvas px-2.5 py-2 text-center text-sm tabular-nums outline-none focus:border-primary-400"
-          />
+            class="w-16 rounded-xl border border-line bg-canvas px-2.5 py-2 text-center text-sm tabular-nums transition active:scale-[0.98]"
+            @click="pickSubTerm(i, 'to')"
+          >{{ st.to }}</button>
           <span class="text-[11px] text-ink-dim">周</span>
         </div>
         <button

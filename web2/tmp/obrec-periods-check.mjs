@@ -106,8 +106,13 @@ await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ?
   const sem = await page.evaluate(() => localStorage.getItem('web2.data') || '')
   t('3d. 学期节次表已存用户设置（含 09:50）', sem.includes('"09:50"'))
   // 周视图时间轴只显示整点刻度 + 节次徽标（课程按时间定位），时间跟随体现为学期的 periods
-  const nav = await page.locator('text=周课表').first().isVisible()
-  t('3e. 已落在周视图', nav)
+  /* 落页断言用 nav 上的当前 tab —— 旧写法 `text=周课表` 是导航按钮文字，永远可见，等于没断。
+     2026-10-13 用户改口径：三条引导完成路径一律落**今日页**（原为周课表页）。 */
+  const activeTab = await page.evaluate(() => {
+    const b = document.querySelector('nav button[data-active]')
+    return b ? (b.innerText || '').trim() : ''
+  })
+  t('3e. 已落在今日页（导航当前 tab = 今日）', activeTab.includes('今日'), activeTab)
   const card = await page.locator('article', { hasText: '高等数学' }).count()
   t('3f. 周视图渲染出课程卡', card > 0)
   await ctx.close()

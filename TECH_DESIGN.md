@@ -408,6 +408,39 @@ web2 (App.vue watch / visibilitychange)
 
 ---
 
+### 2.11 全项目不用原生表单控件（2026-10-13，用户 m11022 / m11655）
+
+**起因**：教务核对页的「开学时间」是 `<input type="date">`，用户点开看到的是**手机系统日历**，跟项目自己的月历长得不一样（用户原话：「而且还是系统日历，不是之前自己做的日历 ui」）。同类漏网全仓共 10 处，用户拍板**一次换干净**（含小学期），原生 `<select>` 与 `type="file"` 保留。
+
+**复用既有基建，不新造轮子**：三件套在 `web2/src/App.vue:509-520` —— `openDateField(opt)` / `openTimeField(opt)` / `openNumberField(opt)`，opt 形状 `{ value, restrictMonday?, min?, max?, step?, unit?, title?, onDone }`；渲染在 `web2/src/sheets/PickerSheet.vue`（日期走 `MonthCalendar`，数字走 `NumberWheel`，时间走 `TimeWheel`）。
+
+**唯一的基建改动**：`PickerSheet.vue` 的遮罩与面板 `z-index` 由 `z-40`/`z-50` 抬到 **`z-[90]`**。原因：教务核对页 `web2/src/App.vue:5216` 是 `fixed inset-0 z-[70]`，是当时最高层；从它里面点「开学时间」，原来的 z-40/50 会被整个盖住 —— 这正是用户报的那个 bug 的**第二层原因**（第一层是字段用错了控件）。同时给两颗按钮补锚点 `data-picker-cancel` / `data-picker-ok` 供自检驱动。
+
+**改动的 10 处**：
+
+| # | 位置 | 文件 | 原控件 | 现走 |
+|---|---|---|---|---|
+| 1 | 教务核对页「开学时间」 | `web2/src/App.vue` | `input[type=date]` | `openDateField`（`restrictMonday` 语义由 `eduPickStart` 内部归一，见下） |
+| 2 | 教务核对页「本学期周数」 | `web2/src/App.vue` | `input[type=number]` | `openNumberField({min:1,max:30,unit:'周'})` |
+| 3 | 学期设置「总周数」 | `web2/src/sheets/SemesterSheet.vue` | `input[type=number]` | `openNumberField` |
+| 4–5 | 学期设置小学期「起 / 止」周 | `web2/src/sheets/SemesterSheet.vue` | 两处 `input[type=number]` | `openNumberField`（**上界随总周数收窄**：`max = Number(semForm.total_weeks) || 30`，避免选到比学期还大的周） |
+| 6 | 节次编辑器段内「每节时长」 | `web2/src/components/PeriodsEditor.vue` | `input[type=number]` | `props.openNumber`（`min:10,max:180,step:5`） |
+| 7 | 节次编辑器段内「课间时长」 | `web2/src/components/PeriodsEditor.vue` | `input[type=number]` | `props.openNumber`（`min:0,max:120,step:5`） |
+| 8–9 | 练耳设置「勿扰开始 / 结束」 | `web2/src/pages/sub/ListenPanel.vue` | 两处 `input[type=time]` | `openTimeField` |
+| 10 | 练耳设置「短槽上限 / 最短空档」 | `web2/src/pages/sub/ListenPanel.vue` | 两处 `input[type=number]` | `openNumberField`（`min:1,max:120,unit:'分钟'`） |
+
+**顺带修掉的一个真 bug（改日期匹配不到）**：`web2/src/sheets/DayoverSheet.vue` 原 `<input type="date" :value="ov.date" @change="(e) => patchDayOverride(ov.date, { date: e.target.value })">`。`patchDayOverride(date, patch)`（`web2/src/App.vue:582-595`）是**按旧 `date` 当 key** 在数组里 `map` 匹配的。换 `openDateField` 后必须把**旧 date 闭包带进来**：`openDateField({ value: ov.date, onDone: (v) => { if (!v || v === ov.date) return; patchDayOverride(ov.date, { date: v }) } })`（见 `DayoverSheet.vue` 的 `pickDayoverDate`）。日期显示也从原生自带格式改成自己写的 `dayoverLabel(date)`（用 `WEEKDAY_CN` 拼「10 月 13 日 周二」）。
+
+**`toRefs` 的函数陷阱（本次踩到，必记）**：`web2/src/pages/sub/ListenPanel.vue` / `SemesterSheet.vue` / `DayoverSheet.vue` 都用 `const { ... } = toRefs(app)` 接出绑定。**`toRefs` 把函数也包成 ref**：在 `<script setup>` 正文里调用必须写 **`.value`**（`openTimeField.value({...})`），**模板里**才自动解包。漏了 `openDateField({...})` 这种写法 ⇒ 运行期 `TypeError: ee is not a function`，**编译期不报、`gen-app-ctx --check` 也不报**（它只检查绑定名在不在名单里）。实测负向验证：把 `ListenPanel.vue` 的 `openTimeField.value({ value: cur ...` 改回 `openTimeField({ value: cur ...` → `listen-ui-check` 的 `M11` 在 `page.waitForSelector('[data-picker-mask]')` 3s 超时 FAIL；还原后 92/0。
+
+**为什么不能在 `</script>` 顶部解构成普通函数**：那会让「搬运纪律」失效（组件 markup 与绑定名逐字照搬，靠 `toRefs` 按原名接出），改一处就要动 `mk-component.mjs` 生成的名单。
+
+**验证**：`periods-editor-ui-check` **38/38**（A7b 断言 `[data-seg-dur="1"]` 的 `tagName === 'BUTTON'`，改值走「点开 → 点 `[data-wheel-val="50"]` → 点 `[data-picker-ok]`」）；`listen-ui-check` **92/0**（M10–M15 全覆盖，含「恢复默认后入口回显默认值」）；`subterm-check` **22/0**；`dayover-check` **56/0**；`status-frame-check` **63/0**（B21 改勿扰改成点滚轮）；回归 `onboard-choice-check` **37/0**、`step5-check` **28/0**、`obrec-periods-check` **14/14**、`rec-dedup-check` **9/9**、`recognize-ui-check` **30/30**、`event-smart-check` **64/0**、`hero-collapse-check` **28/0**、`today-shell-check` **17/0**、`week-fit-check` **19/19**、`me-nest-check` **27/0**、`day27-fix-check` **11/0**；`gen-app-ctx --check` **859 绑定 ✓ 最新**；`quality-scan` **0 处问题**（14 张截图）。
+
+**未换（拍板保留）**：`<select>` 6 处（识别结果核对 / 格子补课 —— 出戏感轻）、`input[type=file]` 各处（选文件本就该用系统选择器）、`inputmode="numeric"` 的自由文本输入（练耳复习间隔 `1,2,4,7,15,30` 这类需要手打逗号串的）。
+
+---
+
 ## 三、数据对象及字段
 
 存储键命名：`sched.v1.<表名>`。数据模型沿用设计方案第三节，只落地一期所需字段。

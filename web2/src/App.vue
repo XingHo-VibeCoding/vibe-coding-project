@@ -745,6 +745,40 @@ function mondayOfToday() {
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
   return fmtDateYMD(d)
 }
+/* 教务核对页的两个字段：**必须**走项目自己的弹层，不用原生 <input type="date">。
+   2026-10-13 用户报「变成系统日历、不是之前自己做的日历 ui」——
+   原生控件在手机上长得跟 App 完全两样，而且它自己一套确认/清除交互。
+   口径与引导页第 1 步逐字一致：任意日期可点，内部归一到所在周周一。 */
+function eduPickStart() {
+  openDateField({
+    value: eduNewFirstMonday.value,
+    onDone: (v) => {
+      if (!v) return
+      const d = new Date(v + 'T00:00:00')
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // 回到所在周周一
+      eduNewFirstMonday.value = fmtDateYMD(d)
+      eduMsg.value = ''
+      eduMsgBad.value = false
+    },
+  })
+}
+function eduPickWeeks() {
+  openNumberField({
+    value: eduNewWeeks.value, min: 1, max: 30, step: 1, unit: '周', title: '本学期周数',
+    onDone: (v) => {
+      eduNewWeeks.value = v
+      eduMsg.value = ''
+      eduMsgBad.value = false
+    },
+  })
+}
+/* 开学时间的摘要文案（对齐引导页 obStartHint 的口径） */
+const eduStartHint = computed(() => {
+  const v = eduNewFirstMonday.value
+  if (!v) return '开学那天随便选，第 1 周从那周的周一起算'
+  const d = new Date(v + 'T00:00:00')
+  return `✓ ${d.getMonth() + 1} 月 ${d.getDate()} 日（周一）开学`
+})
 /* 预览对象统一在这里补「要不要先建学期」（示例态 = 本机还没有 web2.data） */
 function eduPreviewOf(r, semesterName) {
   if (source.value !== 'mock') return r
@@ -834,11 +868,12 @@ function confirmEduImport() {
   eduMsg.value = `已换成教务课表：${p.courses.length} 门课，清掉 ${r.removedAdded} 门手动加的课，待办和日程没动`
   closeEduPreview()
   /* 从第一次使用页一路走过来的：数据已经在库里了，引导层该收掉了。
-     落到课表页，让他马上看到自己刚导入的课。从设置页进来时 eduFromOnboard 恒为假，不触发。 */
+     落到**今日页**（2026-10-13 用户改口径，原为课表页）：他刚装好课表，先看「今天有什么」。
+     从设置页进来时 eduFromOnboard 恒为假，不触发。 */
   if (eduFromOnboard.value) {
     eduFromOnboard.value = false
     importMsg.value = eduMsg.value
-    tab.value = 'week'
+    tab.value = 'today'
     finishOnboarding()
   }
 }
@@ -902,7 +937,10 @@ async function openEduLogin() {
   /* 机密（密码）在系统密钥库里，读它是异步的；非机密那几项仍是同步的 localStorage。
      先把界面开出来（用非机密项填），密码读回来再补上——否则点开浮层要等一次原生调用，
      慢的时候会像「点了没反应」。 */
-  eduFromOnboard.value = false
+  /* ⚠ 这里**不能**清 eduFromOnboard：引导页那条路是 onboardEduLogin() 先置位、再调本函数，
+     在这儿清零会把标记当场抹掉，于是 confirmEduImport() 里的 if 永不成立 ——
+     表现就是「课表已经导进去了，引导层却不关、页面不切」（2026-10-13 用户报的 bug）。
+     标记只在「用户主动关掉登录浮层、这次不导了」时清（见 closeEduLogin）。 */
   const saved = loadEduAccount()
   const d = termFromSemester(semester.value) || defaultTerm()
   eduLoginUser.value = saved.username || ''
@@ -3136,8 +3174,8 @@ function obSubmit() {
   weekAll.value = r.data.courses
   events.value = r.data.events
   todos.value = r.data.todos.map((t) => ({ ...t }))
-  importMsg.value = `已创建学期「${r.data.semester.name}」：在周视图长按或双击空白处添加课程`
-  tab.value = 'week'
+  importMsg.value = `已创建学期「${r.data.semester.name}」：在周课表页长按或双击空白处添加课程`
+  tab.value = 'today'
   finishOnboarding()
 }
 
@@ -3523,12 +3561,15 @@ function recImport() {
   }
   reloadDataset()
   finishOnboarding()
-  tab.value = 'week'
+  /* 落**今日页**（2026-10-13 用户改口径，与另两条引导完成路径一致）：
+     刚导入完课表，先看「今天有什么」。下面的提示因此要**点名周课表页**，
+     否则用户站在今日页会找不到「空白处」。 */
+  tab.value = 'today'
   importMsg.value = `课表识别已导入 ${ok} 门课`
     + (dup ? `，${dup} 门重复已跳过` : '')
-    + (badName ? `，${badName} 门因课程名没填被跳过（可在周视图手动补）` : '')
+    + (badName ? `，${badName} 门因课程名没填被跳过（可在周课表页手动补）` : '')
     + (badSec ? `，${badSec} 门因节次超出当前节次表被跳过（去学期卡片改节次表后重新识别）` : '')
-    + (ok && !dup && !badName && !badSec ? '：双击或长按课表空白处还能继续加课' : '')
+    + (ok && !dup && !badName && !badSec ? '：在周课表页双击或长按空白处还能继续加课' : '')
 }
 
 /* ---------------- 主题（浅色 / 深色） ---------------- */
@@ -4720,69 +4761,70 @@ provide(APP_CTX, reactive({
   onImportFile, onClearImport, eduPreview, eduBusy, eduMsg, eduMsgBad, eduConfirming, eduSnapshot,
   eduLoginOpen, eduLoginUser, eduLoginPw, eduLoginRemember, eduLoginShowPw, eduLoginBusy, eduLoginStage, eduLoginMsg,
   eduLoginMsgBad, eduSecretReady, eduTermXnm, eduTermXqm, eduKeepAllTerms, eduNewFirstMonday, eduNewWeeks, eduFromOnboard,
-  mondayOfToday, eduPreviewOf, closeEduPreview, onEduFile, confirmEduImport, onRestoreEduSnapshot, EDU_STAGE_LABELS, EDU_TERM_LABELS,
-  EDU_ORD_LABELS, eduTermCountsText, termFromSemester, openEduLogin, closeEduLogin, onEduLogin, notifySettings, notifyPerm,
-  notifyOk, notifyTesting, notifyMsg, notifyMsgBad, exactAlarm, exactAsking, exactMsg, exactMsgBad,
-  exactHint, refreshExactAlarm, onAskExactAlarm, goMeTab, applyNotifySchedule, toggleNotify, setNotifyLead, onTestNotify,
-  initNotify, frameSettings, frameIsApp, frameMarksToday, refreshFrameMarks, unmarkListenDone, frameMarkedClips, frameMsg,
-  frameMsgBad, setFrameMsg, frameToast, frameToastTimer, showFrameToast, frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop,
-  frameTodayItems, frameTomorrowFirst, pushFrameNow, applyFrameActions, frameDrainErr, drainFrameActions, initFrame, toggleFrame,
-  onFrameVisible, ONBOARD_KEY, onboarding, onboardStep, OB_STEP_LABELS, onboardStepNo, finishOnboarding, confirmClear,
-  doClearData, habits, habitInput, habitName, habitToday, reloadHabits, addHabitConfirm, removeHabitConfirm,
-  habitDelId, habitDelTimer, onHabitDelete, toggleHabit, habitsAllDoneToday, undoAllHabitsToday, habitGrace, habitWeekBase,
-  habitViewDays, habitWeekLabel, shiftHabitWeek, habitTodayDone, onHabitCell, habitCellState, HABIT_CELL_CLS, habitTodayText,
-  lectures, recActiveId, recElapsed, recMsg, recMsgBad, playingId, recTicker, audioEl,
-  recSupported, refreshLectures, setRecMsg, fmtDur, fmtLecDate, lecStatusLabel, defaultLecTitle, entryName,
-  tickRec, startRec, AUTO_STOP_GRACE_MIN, finalizeRecording, stopRec, onVisibleCheckAutoStop, reconcileKeepAlive, playLec,
-  onPlayFail, delLecId, pressActiveId, pressTimer, pressPos, delLec, startLecPress, moveLecPress,
-  cancelLecPress, doDeleteLecture, listenClips, listenSettings, listenMsg, listenMsgBad, listenOpen, listenIsApp,
-  setListenMsg, refreshListen, initListen, listenDayKey, applyListenSchedule, reviewSheet, reviewHistory, reviewSettings,
-  reviewMsg, reviewMsgBad, REVIEW_AT_CHOICES, WD_LABELS, todayReview, reviewStepTotal, weekdayLabelOf, refreshReviews,
-  setReviewMsg, moodLabelOf, initReview, reviewStatsNow, openReview, closeReview, reviewSetAnswer, reviewNext,
-  reviewBack, reviewFinish, toggleReviewNotify, setReviewAt, applyReviewSchedule, dailyBook, todayDaily, dailyBaseline,
-  snapshotToday, dailyLineOf, accountToday, accountHistory, reasonBook, saveReasonBook, reasonCallout, reasonAskedToday,
-  patternDays, weekdayGapList, topGap, patternTell, patternAi, patternLine, patternSrc, askPatternLine,
-  noteReason, sayReasonBack, muteCurrentReason, markPatternSeen, usageBook, usageToday, usageRow, usageCats,
-  usageSlots, usageBase, usageOpen, usageState, usageLineText, usageNote, refreshUsage, toggleUsage,
-  openUsagePermission, usageSlotMax, usageSlotH, reviewFocusText, reviewAddTodo, isSameDay, listenSuggestions, listenDue,
-  listenTodayAll, listenStageLabel, onListenPick, listenAutoMark, toggleListenNotify, listenSettingsOpen, patchListenSettings, onListenRepeat,
-  onListenIntervals, onListenDnd, onListenNum, resetListenSettings, listenBlobUrls, listenPlayId, listenPlayRound, listenPlayTotal,
-  listenAudio, listenPaused, pauseListen, clearListen, resumeListen, onListenEnded, onListenPlay, trSupported,
-  trBusyId, trPhase, trPercent, trLabel, trOpenId, fmtSize, startTr, llmCfg,
-  llmInputOpen, settingsOpen, meSubStack, meSub, ME_SUB_TITLES, meSubTitle, openMeSub, resetMeSub,
-  closeMeSub, PROVIDER_OPTIONS, llmReady, sumBusyId, sumStage, sumOpenId, sumCtrl, saveLlm,
-  onLlmProvider, onLlmKey, llmTest, llmModels, testLlm, cancelSummary, startSummary, runAutoPipeline,
-  tomorrowStr, homeworkToTodos, onboardFile, onboardImport, onboardEduLogin, obImportMsg, onOnboardFile, semForm,
-  semErr, DEFAULT_PERIODS, openSemEdit, evenSplitSubTerms, saveSemEdit, defaultTermName, fmtDateYMD, obForm,
-  obErr, goObForm, obPageDir, goObPeriods, backObForm, obStepDir, obAiFrom, obAiErr,
-  gotoAiCfg, onObAiKey, obAiTest, obAiDone, obAiBack, obPickStart, obStartHint, obPickWeeks,
-  SEG_NAMES, segName, obTimeSummary, obPickDur, obPickGap, obGlobal, obReperiod, obSegGroups,
-  obPickPeriodStart, obPickPeriodEnd, obAddPeriod, obRemovePeriod, obSubmit, obRecFile, obRecBusy, obRecErr,
-  recPreview, WEEKDAY_LABELS, WEEK_RULE_LABELS, recSelectedCount, obPeriods, obSegView, recFromMine, minePeriods,
-  recPeriods, recSegView, mineRecStart, mineRecCancel, goObRec, recBackForm, obManualAdd, obRecClick,
-  onObRecFile, recSecOptions, recTimeRange, recRemove, recGrid, recCols, recRows, recRowIdx,
-  recColsStyle, recGridStyle, recOverlapNote, palOf, recItemHot, recPressCell, recCellDown, recCellUp,
-  recCell, recCellErr, openRecAdd, openRecEdit, recCellWhere, recCellWhen, submitRecCell, delRecCell,
-  recBack, recImport, THEME_KEY, theme, isDark, applyTheme, toggleTheme, ACCENTS,
-  ACCENT_KEY, savedAccent, accent, applyAccent, setAccent, AUTO_THEME_KEY, autoTheme, AUTO_SLOTS,
-  autoSlot, autoSlotName, autoApplied, applyAutoTheme, setAutoTheme, todos, doneCount, toggleTodo,
-  TODO_FILTERS, todoFilter, shownTodos, setTodoFilter, todoForm, todoErr, openTodoAdd, openTodoEdit,
-  submitTodo, deleteTodoNow, confirmDelTodo, confirmDelTodoTimer, onDeleteTodo, evtForm, evtErr, evtWarn,
-  evtConfirmed, openEventAdd, submitEvent, submitEvents, onExportBack, onExportIcs, today, todayIdx,
-  todayStr, todayEffWd, todayMark, todayCourses, todayRoutineCount, termInfo, conflictPool, tParam,
-  nowTime, GREET_CUTE, greetingText, state, currentCourse, headerCourseText, nextTodayId, minUntil,
-  rowMeta, LIVE_PREVIEW, todayPast, todayLive, todayExpanded, pastOpen, pastSpan, livePreview,
-  hiddenCount, rowsShown, REVIEW_FROM, heroCourse, allTodayCoursesDone, heroMode, heroSubline, heroTitle,
-  recEntryOn, heroSub, dateText, weekDay, DAY_START, DAY_END, weekOffset, weekNo,
-  monday, weekDays, weekSubTerm, weekVisible, weekDayMarks, weekCols, gridRows, gridRowOfIdx,
-  gridCourses, WEEK_CHROME, winH, navH, satPx, gridTop, gridH, measureNavH,
-  measureSat, measureGridTop, onWinResize, gridColsStyle, gridBodyStyle, cardFit, PALETTES, hashName,
-  hexA, ROUTINE_PAL, isRoutine, pal, periods, periodSpan, courseStatus, gridStatus,
-  nowPct, nowClock, nowLineY, undoneCount, undoneTodos, doneTodos, detail, openDetail,
-  WDN, addForm, addErr, addWarn, addConfirmed, DURATIONS, fmtTime, clampStart,
-  openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail, editRoutineFromDetail, stepStart, submitAdd,
-  removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail, onDelRoutine, lpTimer, lpFrom,
-  cellAt, firePick, gridDown, gridMove, gridUp, gridDbl, anySheetOpen, syncBodyScrollLock,
+  mondayOfToday, eduPickStart, eduPickWeeks, eduStartHint, eduPreviewOf, closeEduPreview, onEduFile, confirmEduImport,
+  onRestoreEduSnapshot, EDU_STAGE_LABELS, EDU_TERM_LABELS, EDU_ORD_LABELS, eduTermCountsText, termFromSemester, openEduLogin, closeEduLogin,
+  onEduLogin, notifySettings, notifyPerm, notifyOk, notifyTesting, notifyMsg, notifyMsgBad, exactAlarm,
+  exactAsking, exactMsg, exactMsgBad, exactHint, refreshExactAlarm, onAskExactAlarm, goMeTab, applyNotifySchedule,
+  toggleNotify, setNotifyLead, onTestNotify, initNotify, frameSettings, frameIsApp, frameMarksToday, refreshFrameMarks,
+  unmarkListenDone, frameMarkedClips, frameMsg, frameMsgBad, setFrameMsg, frameToast, frameToastTimer, showFrameToast,
+  frameDrainTimer, startFrameDrainLoop, stopFrameDrainLoop, frameTodayItems, frameTomorrowFirst, pushFrameNow, applyFrameActions, frameDrainErr,
+  drainFrameActions, initFrame, toggleFrame, onFrameVisible, ONBOARD_KEY, onboarding, onboardStep, OB_STEP_LABELS,
+  onboardStepNo, finishOnboarding, confirmClear, doClearData, habits, habitInput, habitName, habitToday,
+  reloadHabits, addHabitConfirm, removeHabitConfirm, habitDelId, habitDelTimer, onHabitDelete, toggleHabit, habitsAllDoneToday,
+  undoAllHabitsToday, habitGrace, habitWeekBase, habitViewDays, habitWeekLabel, shiftHabitWeek, habitTodayDone, onHabitCell,
+  habitCellState, HABIT_CELL_CLS, habitTodayText, lectures, recActiveId, recElapsed, recMsg, recMsgBad,
+  playingId, recTicker, audioEl, recSupported, refreshLectures, setRecMsg, fmtDur, fmtLecDate,
+  lecStatusLabel, defaultLecTitle, entryName, tickRec, startRec, AUTO_STOP_GRACE_MIN, finalizeRecording, stopRec,
+  onVisibleCheckAutoStop, reconcileKeepAlive, playLec, onPlayFail, delLecId, pressActiveId, pressTimer, pressPos,
+  delLec, startLecPress, moveLecPress, cancelLecPress, doDeleteLecture, listenClips, listenSettings, listenMsg,
+  listenMsgBad, listenOpen, listenIsApp, setListenMsg, refreshListen, initListen, listenDayKey, applyListenSchedule,
+  reviewSheet, reviewHistory, reviewSettings, reviewMsg, reviewMsgBad, REVIEW_AT_CHOICES, WD_LABELS, todayReview,
+  reviewStepTotal, weekdayLabelOf, refreshReviews, setReviewMsg, moodLabelOf, initReview, reviewStatsNow, openReview,
+  closeReview, reviewSetAnswer, reviewNext, reviewBack, reviewFinish, toggleReviewNotify, setReviewAt, applyReviewSchedule,
+  dailyBook, todayDaily, dailyBaseline, snapshotToday, dailyLineOf, accountToday, accountHistory, reasonBook,
+  saveReasonBook, reasonCallout, reasonAskedToday, patternDays, weekdayGapList, topGap, patternTell, patternAi,
+  patternLine, patternSrc, askPatternLine, noteReason, sayReasonBack, muteCurrentReason, markPatternSeen, usageBook,
+  usageToday, usageRow, usageCats, usageSlots, usageBase, usageOpen, usageState, usageLineText,
+  usageNote, refreshUsage, toggleUsage, openUsagePermission, usageSlotMax, usageSlotH, reviewFocusText, reviewAddTodo,
+  isSameDay, listenSuggestions, listenDue, listenTodayAll, listenStageLabel, onListenPick, listenAutoMark, toggleListenNotify,
+  listenSettingsOpen, patchListenSettings, onListenRepeat, onListenIntervals, onListenDnd, onListenNum, resetListenSettings, listenBlobUrls,
+  listenPlayId, listenPlayRound, listenPlayTotal, listenAudio, listenPaused, pauseListen, clearListen, resumeListen,
+  onListenEnded, onListenPlay, trSupported, trBusyId, trPhase, trPercent, trLabel, trOpenId,
+  fmtSize, startTr, llmCfg, llmInputOpen, settingsOpen, meSubStack, meSub, ME_SUB_TITLES,
+  meSubTitle, openMeSub, resetMeSub, closeMeSub, PROVIDER_OPTIONS, llmReady, sumBusyId, sumStage,
+  sumOpenId, sumCtrl, saveLlm, onLlmProvider, onLlmKey, llmTest, llmModels, testLlm,
+  cancelSummary, startSummary, runAutoPipeline, tomorrowStr, homeworkToTodos, onboardFile, onboardImport, onboardEduLogin,
+  obImportMsg, onOnboardFile, semForm, semErr, DEFAULT_PERIODS, openSemEdit, evenSplitSubTerms, saveSemEdit,
+  defaultTermName, fmtDateYMD, obForm, obErr, goObForm, obPageDir, goObPeriods, backObForm,
+  obStepDir, obAiFrom, obAiErr, gotoAiCfg, onObAiKey, obAiTest, obAiDone, obAiBack,
+  obPickStart, obStartHint, obPickWeeks, SEG_NAMES, segName, obTimeSummary, obPickDur, obPickGap,
+  obGlobal, obReperiod, obSegGroups, obPickPeriodStart, obPickPeriodEnd, obAddPeriod, obRemovePeriod, obSubmit,
+  obRecFile, obRecBusy, obRecErr, recPreview, WEEKDAY_LABELS, WEEK_RULE_LABELS, recSelectedCount, obPeriods,
+  obSegView, recFromMine, minePeriods, recPeriods, recSegView, mineRecStart, mineRecCancel, goObRec,
+  recBackForm, obManualAdd, obRecClick, onObRecFile, recSecOptions, recTimeRange, recRemove, recGrid,
+  recCols, recRows, recRowIdx, recColsStyle, recGridStyle, recOverlapNote, palOf, recItemHot,
+  recPressCell, recCellDown, recCellUp, recCell, recCellErr, openRecAdd, openRecEdit, recCellWhere,
+  recCellWhen, submitRecCell, delRecCell, recBack, recImport, THEME_KEY, theme, isDark,
+  applyTheme, toggleTheme, ACCENTS, ACCENT_KEY, savedAccent, accent, applyAccent, setAccent,
+  AUTO_THEME_KEY, autoTheme, AUTO_SLOTS, autoSlot, autoSlotName, autoApplied, applyAutoTheme, setAutoTheme,
+  todos, doneCount, toggleTodo, TODO_FILTERS, todoFilter, shownTodos, setTodoFilter, todoForm,
+  todoErr, openTodoAdd, openTodoEdit, submitTodo, deleteTodoNow, confirmDelTodo, confirmDelTodoTimer, onDeleteTodo,
+  evtForm, evtErr, evtWarn, evtConfirmed, openEventAdd, submitEvent, submitEvents, onExportBack,
+  onExportIcs, today, todayIdx, todayStr, todayEffWd, todayMark, todayCourses, todayRoutineCount,
+  termInfo, conflictPool, tParam, nowTime, GREET_CUTE, greetingText, state, currentCourse,
+  headerCourseText, nextTodayId, minUntil, rowMeta, LIVE_PREVIEW, todayPast, todayLive, todayExpanded,
+  pastOpen, pastSpan, livePreview, hiddenCount, rowsShown, REVIEW_FROM, heroCourse, allTodayCoursesDone,
+  heroMode, heroSubline, heroTitle, recEntryOn, heroSub, dateText, weekDay, DAY_START,
+  DAY_END, weekOffset, weekNo, monday, weekDays, weekSubTerm, weekVisible, weekDayMarks,
+  weekCols, gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME, winH, navH, satPx,
+  gridTop, gridH, measureNavH, measureSat, measureGridTop, onWinResize, gridColsStyle, gridBodyStyle,
+  cardFit, PALETTES, hashName, hexA, ROUTINE_PAL, isRoutine, pal, periods,
+  periodSpan, courseStatus, gridStatus, nowPct, nowClock, nowLineY, undoneCount, undoneTodos,
+  doneTodos, detail, openDetail, WDN, addForm, addErr, addWarn, addConfirmed,
+  DURATIONS, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail,
+  editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail,
+  onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove, gridUp,
+  gridDbl, anySheetOpen, syncBodyScrollLock,
 }))
 /* ===== APP_CTX:end ===== */
 </script>
@@ -5244,28 +5286,38 @@ provide(APP_CTX, reactive({
               </p>
             </div>
 
-            <!-- 第一次使用时补的两个字段：教务接口不返回开学日期，我们也不写死任何学校的校历 -->
+            <!-- 第一次使用时补的两个字段：教务接口不返回开学日期，我们也不写死任何学校的校历。
+                 2026-10-13 改口径：这两项原先直接抓了原生 <input type="date"> / <input type="number">，
+                 用户在手机上看到的是**系统日历**，跟 App 自己那套月历/滚轮完全两样；
+                 现在改成点开自做弹层（openDateField / openNumberField），与引导页第 1 步逐字一致：
+                 任意日期可点、内部归一到所在周周一，周数走数字滚轮。 -->
             <div v-if="eduPreview.needsSemester" data-edu-needsem class="rounded-2xl border border-line bg-card p-4">
               <p class="text-[12px] font-medium">先确认学期起止</p>
               <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">学校不同、开学日期也不同，这两项只能你告诉我（之后可在「我的 → 学期与节次」里改）。</p>
-              <label class="mt-3 block text-[11px] text-ink-dim">第一周的周一
-                <input
-                  v-model="eduNewFirstMonday"
-                  data-edu-first-monday
-                  type="date"
-                  class="mt-1 w-full rounded-xl border border-line bg-soft-2 px-3 py-2 text-[13px] text-ink"
-                />
-              </label>
-              <label class="mt-3 block text-[11px] text-ink-dim">总周数（1–30）
-                <input
-                  v-model="eduNewWeeks"
-                  data-edu-total-weeks
-                  type="number"
-                  min="1"
-                  max="30"
-                  class="mt-1 w-full rounded-xl border border-line bg-soft-2 px-3 py-2 text-[13px] text-ink"
-                />
-              </label>
+              <button
+                type="button"
+                data-edu-start
+                class="mt-3 flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.99]"
+                @click="eduPickStart"
+              >
+                <span class="min-w-0">
+                  <span class="block text-sm font-semibold">开学时间</span>
+                  <span class="mt-0.5 block truncate text-[11px] text-ink-dim">{{ eduStartHint }}</span>
+                </span>
+                <span class="shrink-0 text-xs font-medium" :class="eduNewFirstMonday ? 'text-primary-600' : 'text-ink-dim'">{{ eduNewFirstMonday || '选日期' }}</span>
+              </button>
+              <button
+                type="button"
+                data-edu-weeks
+                class="mt-2.5 flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-3 text-left transition active:scale-[0.99]"
+                @click="eduPickWeeks"
+              >
+                <span class="min-w-0">
+                  <span class="block text-sm font-semibold">本学期周数</span>
+                  <span class="mt-0.5 block text-[11px] text-ink-dim">假期不算，只算要上课的周</span>
+                </span>
+                <span class="shrink-0 text-sm font-semibold tabular-nums text-primary-600">{{ eduNewWeeks }} 周</span>
+              </button>
             </div>
 
             <ul data-edu-list class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">

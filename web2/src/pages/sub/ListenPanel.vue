@@ -32,7 +32,26 @@ const {
   listenPlayTotal,
   listenPaused,
   onListenPlay,
+  openTimeField,
+  openNumberField,
 } = toRefs(app)
+
+/* 勿扰时段 / 两个分钟阈值：2026-10-13 从原生 <input type="time"/"number"> 换成自做弹层。
+   口径与其余页面一致（原生控件在手机上长得跟 App 两样）。落盘仍走 onListenDnd / onListenNum
+   里那套「先校验、再 patch 并回报一句人话」的逻辑，这里只负责把滚轮选到的值喂进去。 */
+/* 注意：`toRefs(app)` 把函数也包成 ref，**在 <script setup> 正文里**必须写 `.value`
+   （模板里才自动解包）；漏了就是运行期 `ee is not a function`，编译期与 gen-app-ctx --check 都不报。 */
+function pickListenDnd(kind) {
+  const cur = kind === 'start' ? listenSettings.value.dndStart : listenSettings.value.dndEnd
+  openTimeField.value({ value: cur, onDone: (v) => { if (v) onListenDnd.value(kind, { target: { value: v } }) } })
+}
+function pickListenNum(key) {
+  openNumberField.value({
+    value: listenSettings.value[key], min: 1, max: 120, step: 1, unit: '分钟',
+    title: key === 'shortGapMaxMin' ? '短槽上限' : '最短空档',
+    onDone: (v) => onListenNum.value(key, { target: { value: String(v) } }),
+  })
+}
 </script>
 
 <template>
@@ -143,47 +162,39 @@ const {
             </div>
             <div class="flex items-center gap-2">
               <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">勿扰时段</span>
-              <input
-                type="time"
+              <button
+                type="button"
                 data-listen-dnd-start
-                class="rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
-                :value="listenSettings.dndStart"
-                @change="onListenDnd('start', $event)"
-              />
+                class="rounded-lg border border-line bg-white px-2.5 py-1.5 text-[12px] tabular-nums transition active:scale-[0.97]"
+                @click="pickListenDnd('start')"
+              >{{ listenSettings.dndStart }}</button>
               <span class="text-[11px] text-ink-dim">至</span>
-              <input
-                type="time"
+              <button
+                type="button"
                 data-listen-dnd-end
-                class="rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
-                :value="listenSettings.dndEnd"
-                @change="onListenDnd('end', $event)"
-              />
+                class="rounded-lg border border-line bg-white px-2.5 py-1.5 text-[12px] tabular-nums transition active:scale-[0.97]"
+                @click="pickListenDnd('end')"
+              >{{ listenSettings.dndEnd }}</button>
             </div>
             <p class="text-[11px] leading-relaxed text-ink-dim">结束时间早于开始时间 = 跨夜（默认 23:00–07:00），这段时间不发提醒。</p>
             <div class="flex items-center gap-2">
               <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">短槽上限</span>
-              <input
-                type="number"
-                min="1"
-                max="120"
+              <button
+                type="button"
                 data-listen-short-gap
-                class="w-16 rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
-                :value="listenSettings.shortGapMaxMin"
-                @change="onListenNum('shortGapMaxMin', $event)"
-              />
+                class="w-16 rounded-lg border border-line bg-white px-2 py-1.5 text-[12px] tabular-nums transition active:scale-[0.97]"
+                @click="pickListenNum('shortGapMaxMin')"
+              >{{ listenSettings.shortGapMaxMin }}</button>
               <span class="text-[11px] text-ink-dim">分钟以内算短槽（只放 1 段）</span>
             </div>
             <div class="flex items-center gap-2">
               <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">最短空档</span>
-              <input
-                type="number"
-                min="1"
-                max="120"
+              <button
+                type="button"
                 data-listen-slot-min
-                class="w-16 rounded-lg border border-line bg-white px-2 py-1.5 text-[12px]"
-                :value="listenSettings.slotMinMin"
-                @change="onListenNum('slotMinMin', $event)"
-              />
+                class="w-16 rounded-lg border border-line bg-white px-2 py-1.5 text-[12px] tabular-nums transition active:scale-[0.97]"
+                @click="pickListenNum('slotMinMin')"
+              >{{ listenSettings.slotMinMin }}</button>
               <span class="text-[11px] text-ink-dim">分钟以下不排（太碎听不完）</span>
             </div>
             <button

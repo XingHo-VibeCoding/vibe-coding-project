@@ -156,13 +156,16 @@ const {
                  ⇒ 陌生人打开公网链接后无路可走，只能先交出真实信息（填学期 / 登教务 / 导文件）。
                  实测（tmp/day27-selftest.mjs）：点底部「我的」3 秒超时、命中层是引导层内层 div。
                  现在补回这条路：示例数据本来就跑在引导层背后（store.js buildMock），
-                 所以这里不需要写任何数据，直接 finishOnboarding() 关掉引导层即可。 -->
+                 所以这里不需要写任何数据，直接 finishOnboarding() 关掉引导层即可。
+                 ⚠ 别在这句文案里写死「示例数据」：本机一旦有了 web2.data（比如刚从教务导完课表、
+                 只是引导层没关掉），点进来看到的就是他自己的数据 —— 2026-10-13 用户就是先撞见
+                 「导入后没反应」，再点这里进来发现「课表已经是我的课表」。 -->
             <button
               class="mt-5 w-full rounded-2xl px-4 py-3 text-center text-sm text-ink-dim underline underline-offset-4 transition active:scale-[0.98]"
               data-ob-choice-demo
               @click="finishOnboarding"
             >
-              先随便看看（示例数据，之后随时能换）
+              先随便看看（不导入，之后随时能补上课表）
             </button>
           </div>
 

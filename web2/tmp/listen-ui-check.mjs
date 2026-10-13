@@ -152,22 +152,40 @@ await ivEl.dispatchEvent('change')
 await page.waitForTimeout(250)
 t('M8. 非法间隔不写库（仍是 1,3）', JSON.stringify((await setOf()).reviewIntervals) === '[1,3]')
 t('M9. 非法输入被回退成当前值', (await ivEl.inputValue()) === '1,3', await ivEl.inputValue())
+/* 勿扰时段 / 两个阈值：2026-10-13 从原生 time/number 换成自做弹层（按钮 + 滚轮）。
+   断言从 inputValue() 改为 innerText()，改动路径改为「点开 → 点值 → 确定」。 */
+async function pickTime(trigger, hh, mm) {
+  await trigger.click()
+  await page.waitForSelector('[data-picker-mask]', { state: 'visible', timeout: 3000 })
+  await page.locator(`[data-wheel-hour="${hh}"]`).first().click()
+  await page.locator(`[data-wheel-min="${mm}"]`).first().click()
+  await page.locator('[data-picker-ok]').click()
+  await page.waitForTimeout(300)
+}
+async function pickNum(trigger, val) {
+  await trigger.click()
+  await page.waitForSelector('[data-picker-mask]', { state: 'visible', timeout: 3000 })
+  await page.locator(`[data-wheel-val="${val}"]`).first().click()
+  await page.locator('[data-picker-ok]').click()
+  await page.waitForTimeout(300)
+}
 const dndS = ME.locator('[data-listen-dnd-start]').first()
 const dndE = ME.locator('[data-listen-dnd-end]').first()
-t('M10. 勿扰回显默认 23:00–07:00',
-  (await dndS.inputValue()) === '23:00' && (await dndE.inputValue()) === '07:00',
-  `${await dndS.inputValue()}–${await dndE.inputValue()}`)
-await dndS.fill('22:00'); await dndS.dispatchEvent('change'); await page.waitForTimeout(200)
-await dndE.fill('06:30'); await dndE.dispatchEvent('change'); await page.waitForTimeout(200)
+t('M10. 勿扰入口是按钮且回显默认 23:00–07:00',
+  (await dndS.evaluate((el) => el.tagName)) === 'BUTTON'
+  && (await dndS.innerText()).trim() === '23:00' && (await dndE.innerText()).trim() === '07:00',
+  `${await dndS.innerText()}–${await dndE.innerText()}`)
+await pickTime(dndS, '22', '00')
+await pickTime(dndE, '06', '30')
 const dndSet = await setOf()
 t('M11. 勿扰跨零点改动落库（22:00–06:30）', dndSet.dndStart === '22:00' && dndSet.dndEnd === '06:30', JSON.stringify({ s: dndSet.dndStart, e: dndSet.dndEnd }))
 const sg = ME.locator('[data-listen-short-gap]').first()
 const sm = ME.locator('[data-listen-slot-min]').first()
 t('M12. 两个阈值回显默认 10 / 5',
-  (await sg.inputValue()) === '10' && (await sm.inputValue()) === '5',
-  `${await sg.inputValue()}/${await sm.inputValue()}`)
-await sg.fill('15'); await sg.dispatchEvent('change'); await page.waitForTimeout(200)
-await sm.fill('8'); await sm.dispatchEvent('change'); await page.waitForTimeout(200)
+  (await sg.innerText()).trim() === '10' && (await sm.innerText()).trim() === '5',
+  `${await sg.innerText()}/${await sm.innerText()}`)
+await pickNum(sg, 15)
+await pickNum(sm, 8)
 const numSet = await setOf()
 t('M13. 阈值改动落库 15 / 8', numSet.shortGapMaxMin === 15 && numSet.slotMinMin === 8, JSON.stringify({ g: numSet.shortGapMaxMin, s: numSet.slotMinMin }))
 await ME.locator('[data-listen-settings-reset]').first().click()
@@ -178,10 +196,10 @@ t('M14. 恢复默认：遍数 3 / 间隔 6 档 / 勿扰 23:00–07:00 / 阈值 1
   && resetSet.dndStart === '23:00' && resetSet.dndEnd === '07:00'
   && resetSet.shortGapMaxMin === 10 && resetSet.slotMinMin === 5,
   JSON.stringify(resetSet))
-t('M15. 恢复默认后输入框也回显默认值',
-  (await ivEl.inputValue()) === '1,2,4,7,15,30' && (await dndS.inputValue()) === '23:00'
-  && (await sg.inputValue()) === '10',
-  `${await ivEl.inputValue()} / ${await dndS.inputValue()} / ${await sg.inputValue()}`)
+t('M15. 恢复默认后入口也回显默认值',
+  (await ivEl.inputValue()) === '1,2,4,7,15,30' && (await dndS.innerText()).trim() === '23:00'
+  && (await sg.innerText()).trim() === '10',
+  `${await ivEl.inputValue()} / ${await dndS.innerText()} / ${await sg.innerText()}`)
 
 /* ===== D. 导入（L1） ===== */
 await ME.locator('[data-listen-import]').setInputFiles({ name: '我的听力材料.wav', mimeType: 'audio/wav', buffer: wavBuffer() })

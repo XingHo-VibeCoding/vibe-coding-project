@@ -26,6 +26,7 @@ const {
       <div class="mt-4 space-y-3">
         <input
           v-model="todoForm.title"
+          data-todo-title
           placeholder="要做什么？（必填）"
           class="w-full rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm outline-none focus:border-primary-400"
         />
@@ -42,6 +43,7 @@ const {
       <div class="mt-4 flex gap-2.5">
         <button
           v-if="todoForm.id"
+          data-todo-delete
           class="rounded-xl border py-2.5 px-4 text-sm font-medium transition active:scale-[0.98]"
           :class="confirmDelTodo ? 'border-red-400 bg-red-400/10 text-red-600 dark:text-red-400' : 'border-red-200 text-red-600 dark:text-red-400'"
           @click="onDeleteTodo"
@@ -55,6 +57,7 @@ const {
           取消
         </button>
         <button
+          data-todo-submit
           class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
           @click="submitTodo"
         >

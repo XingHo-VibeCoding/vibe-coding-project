@@ -12,6 +12,7 @@ import {
 const props = defineProps({
   modelValue: { type: Array, default: () => [] }, // [{ no, start, end, seg? }]
   openTime: { type: Function, default: null }, // (opt) => 打开自建时间面板
+  openNumber: { type: Function, default: null }, // (opt) => 打开自建数字滚轮（每节/课间，2026-10-13 从原生 number 换过来）
   fallback: { type: Array, default: () => [] }, // 全删后「恢复默认」用的表
   emptyHint: { type: String, default: '' }, // 全删后的说明文案
 })
@@ -55,11 +56,12 @@ function fail(reason) {
   else emit('error', '')
 }
 
-/* 段级「每节时长 / 课间」改动 → 只重排本段 */
-function onAssist(seg) {
+/* 段级「每节时长 / 课间」改动 → 只重排本段。
+   2026-10-13：入口从原生 <input type="number"> 换成自做数字滚轮（openNumber）。 */
+function onAssist(seg, key, value) {
   const a = assistOf(seg)
-  const d = Number(a.dur)
-  const gp = Number(a.gap)
+  const d = key === 'dur' ? Number(value) : Number(a.dur)
+  const gp = key === 'gap' ? Number(value) : Number(a.gap)
   if (!(d >= 10 && d <= 180) || !(gp >= 0 && gp <= 120)) return // 中途输入态不动表
   const r = reperiodSegment(list.value, seg, { dur: d, gap: gp })
   if (!r.ok) {
@@ -67,8 +69,20 @@ function onAssist(seg) {
     return
   }
   list.value = r.periods
+  assists.value[seg] = { ...a, dur: d, gap: gp }
   emit('error', '')
   push()
+}
+function pickAssist(seg, key) {
+  if (!props.openNumber) return
+  const a = assistOf(seg)
+  const isDur = key === 'dur'
+  props.openNumber({
+    value: isDur ? a.dur : a.gap,
+    min: isDur ? 10 : 0, max: isDur ? 180 : 120, step: 5, unit: '分钟',
+    title: isDur ? '每节时长' : '课间时长',
+    onDone: (v) => onAssist(seg, key, v),
+  })
 }
 /* 改某节开始时间 → 段内其后各节整体顺移（段外不动） */
 function pickStart(g, idx, p) {
@@ -171,30 +185,22 @@ defineExpose({ groups })
         <div class="mt-2 flex items-center gap-3">
           <label class="flex items-center gap-1.5 text-xs text-ink-dim">
             每节
-            <input
-              v-model.number="assistOf(g.seg).dur"
+            <button
+              type="button"
               :data-seg-dur="g.seg"
-              type="number"
-              min="10"
-              max="180"
-              step="5"
-              class="w-14 rounded-lg border border-line bg-canvas px-2 py-1 text-sm tabular-nums outline-none focus:border-primary-400"
-              @input="onAssist(g.seg)"
-            />
+              class="w-14 rounded-lg border border-line bg-canvas px-2 py-1 text-sm tabular-nums transition active:scale-[0.97]"
+              @click="pickAssist(g.seg, 'dur')"
+            >{{ assistOf(g.seg).dur }}</button>
             分
           </label>
           <label class="flex items-center gap-1.5 text-xs text-ink-dim">
             课间
-            <input
-              v-model.number="assistOf(g.seg).gap"
+            <button
+              type="button"
               :data-seg-gap="g.seg"
-              type="number"
-              min="0"
-              max="120"
-              step="5"
-              class="w-14 rounded-lg border border-line bg-canvas px-2 py-1 text-sm tabular-nums outline-none focus:border-primary-400"
-              @input="onAssist(g.seg)"
-            />
+              class="w-14 rounded-lg border border-line bg-canvas px-2 py-1 text-sm tabular-nums transition active:scale-[0.97]"
+              @click="pickAssist(g.seg, 'gap')"
+            >{{ assistOf(g.seg).gap }}</button>
             分
           </label>
         </div>

@@ -61,10 +61,18 @@ try {
   t('A6. 第 1↔2 段空档标为 1 小时 35 分钟（午休）', (await mergeRow.locator('..').innerText()).includes('1 小时 35 分钟'))
   t('A7. 第 2↔3 段空档标为 35 分钟（晚休）', (await page.locator('[data-seg-merge="3"]').locator('..').innerText()).includes('35 分钟'))
 
-  /* 段内改「每节 45 → 50」：只重排本段，段外第 6 节（下午段头）不动 */
+  /* 段内改「每节 45 → 50」：只重排本段，段外第 6 节（下午段头）不动。
+     2026-10-13：入口从原生 <input type="number"> 换成自做数字滚轮（点开 → 点数值 → 确定）。 */
   const dur1 = page.locator('[data-seg-dur="1"]')
-  await dur1.fill('50')
-  await page.waitForTimeout(300)
+  t('A7b. 「每节」入口是按钮不是原生 input', (await dur1.evaluate((el) => el.tagName)) === 'BUTTON')
+  async function pickWheel(trigger, val) {
+    await trigger.click()
+    await page.waitForSelector('[data-picker-mask]', { state: 'visible', timeout: 3000 })
+    await page.locator(`[data-wheel-val="${val}"]`).first().click()
+    await page.locator('[data-picker-ok]').click()
+    await page.waitForTimeout(300)
+  }
+  await pickWheel(dur1, 50)
   const p1 = await page.locator('[data-period="1"]').innerText()
   const p2 = await page.locator('[data-period="2"]').innerText()
   const p6 = await page.locator('[data-period="6"]').innerText()
@@ -74,15 +82,13 @@ try {
   t('A11. 第 1 段标题跟随新时段 08:00–12:50', (await page.locator('[data-seg="1"]').innerText()).includes('08:00–12:50'))
 
   /* 段内改到放不下：拒绝 + 就地报错，表不变 */
-  await dur1.fill('120')
-  await page.waitForTimeout(300)
+  await pickWheel(dur1, 120)
   const errText = await page.locator('text=会挤进下一段的第一节').count()
   t('A12. 越段时报错提示出现', errText > 0)
   const p1b = await page.locator('[data-period="1"]').innerText()
   t('A13. 被拒绝时表保持原样（仍是 08:00–08:50）', p1b.includes('08:00') && p1b.includes('08:50'))
 
-  await dur1.fill('45')
-  await page.waitForTimeout(300)
+  await pickWheel(dur1, 45)
   t('A14. 调回 45 后恢复 08:00–08:45', (await page.locator('[data-period="1"]').innerText()).includes('08:45'))
 
   /* 并入上一段：3 段 → 2 段，第 1 段收下第 6–10 节 */

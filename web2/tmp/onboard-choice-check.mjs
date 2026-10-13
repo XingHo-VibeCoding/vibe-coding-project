@@ -1,4 +1,4 @@
-﻿/* 第一次使用页三个入口（2026-10-09 用户重排）：
+/* 第一次使用页三个入口（2026-10-09 用户重排）：
    上「直接填学期信息，自己加课」/ 中「登录教务系统，直接抓课表」/ 下「导入数据」（JSON + 教务 xlsx 两个都收）。
    原「先用示例数据逛逛」已删除；示例数据以后只从「我的」页切。
    还要验：引导页里直接选 .xlsx → 预览页出现「先确认学期起止」两个输入 → 确认后
@@ -50,11 +50,32 @@ try {
   t('B1. 出现核对浮层', await page.locator('[data-edu-preview]').isVisible())
   t('B2. 解析出 2 门课', (await page.locator('[data-edu-row]').count()) === 2, String(await page.locator('[data-edu-row]').count()))
   t('B3. 出现「先确认学期起止」两个输入', await page.locator('[data-edu-needsem]').isVisible())
-  const fm = await page.locator('[data-edu-first-monday]').inputValue()
-  t('B4. 第一周周一已预填（非空日期）', /^\d{4}-\d{2}-\d{2}$/.test(fm), fm)
-  /* 选定的开学日：明确不写死任何学校 —— 用输入框自己喂进去 */
-  await page.locator('[data-edu-first-monday]').fill('2026-09-07')
-  await page.locator('[data-edu-total-weeks]').fill('16')
+  /* 2026-10-13 改口径：这两个字段不能再是原生 input（用户报「变成系统日历」），
+     而是项目自己的月历/数字滚轮（openDateField / openNumberField）。 */
+  t('B3b. 开学时间不是原生 input（走自做月历）', (await page.locator('[data-edu-needsem] input').count()) === 0, String(await page.locator('[data-edu-needsem] input').count()))
+  const startBtn = await page.locator('[data-edu-start]').innerText()
+  t('B3c. 字段名是「开学时间」（不是「第一周的周一」）', startBtn.includes('开学时间') && !startBtn.includes('第一周的周一'), JSON.stringify(startBtn))
+  t('B3d. 默认预填本周周一', /^\d{4}-\d{2}-\d{2}$/.test(await page.locator('[data-edu-start]').innerText().then((s) => (s.match(/\d{4}-\d{2}-\d{2}/) || [''])[0])), JSON.stringify(startBtn))
+  /* 选定的开学日：明确不写死任何学校 —— 用自做月历点选（restrictMonday=false，任意日可点，
+     eduPickStart 内部归一到所在周周一）。这里点 2026-09 的 7 号（周一）。 */
+  await page.locator('[data-edu-start]').click()
+  await page.waitForSelector('[data-picker-mask]', { state: 'visible', timeout: 3000 })
+  t('B3e. 点开学时间弹出的是自做月历（MonthCalendar）', (await page.locator('[data-cal-day]').count()) > 0)
+  /* 月历默认停在「当前值」所在月（= 本周周一 → 2026-10）；要选 9/7 得先往回翻一个月 */
+  await page.locator('[aria-label="上个月"]').click()
+  await page.waitForTimeout(200)
+  await page.locator('[data-cal-day="2026-09-07"]').click()
+  await page.locator('[data-picker-ok]').click()
+  await page.waitForTimeout(300)
+  t('B3f. 选完回填 2026-09-07', (await page.locator('[data-edu-start]').innerText()).includes('2026-09-07'), JSON.stringify(await page.locator('[data-edu-start]').innerText()))
+  /* 周数走自做数字滚轮（不是原生 number input） */
+  await page.locator('[data-edu-weeks]').click()
+  await page.waitForSelector('[data-picker-mask]', { state: 'visible', timeout: 3000 })
+  const weeksTitle = await page.locator('[data-picker-ok]').locator('xpath=..').innerText()
+  t('B3g. 点周数弹出的是自做数字滚轮', weeksTitle.includes('本学期周数'), JSON.stringify(weeksTitle))
+  await page.locator('[data-picker-cancel]').click()
+  await page.waitForTimeout(200)
+  /* 周数保留默认 16（原用例填的也是 16） */
   const confirmText = await page.locator('[data-edu-confirm]').innerText()
   t('B5. 按钮说的是「建学期并导入」而不是「替换现有课表」', confirmText.includes('建学期并导入'), JSON.stringify(confirmText))
   t('B6. 确认前一个字都没写盘', (await page.evaluate(() => localStorage.getItem('web2.data'))) === null)
@@ -80,7 +101,7 @@ try {
   t('B14. onboarded 标记已记', (await page.evaluate(() => localStorage.getItem('web2.onboarded'))) === '1')
   /* 课表页在平移容器里，永远在 DOM 里（inert 与否只看 tab）→ 用 nav 上的当前 tab 判，别用 isVisible */
   const activeTab = async (pg) => pg.evaluate(() => { const b = document.querySelector('nav button[data-active]'); return b ? (b.innerText || '').trim() : '' })
-  t('B15. 落在了课表页（导航当前 tab = 周课表）', (await activeTab(page)).includes('周课表'), await activeTab(page))
+  t('B15. 落在了今日页（导航当前 tab = 今日；2026-10-13 用户从课表页改成今日页）', (await activeTab(page)).includes('今日'), await activeTab(page))
   t('B16. 全程零 pageerror', errs.length === 0, errs.join(' | '))
 
   /* ---------- C. 老规矩不能破：设置页那条路照旧 ---------- */

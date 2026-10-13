@@ -24,7 +24,30 @@ const {
   holidayMsg,
   holidayBusy,
   refreshHolidaysNow,
+  openDateField,
 } = toRefs(app)
+
+/* 日期显示成「10 月 13 日 周二」——原生 <input type="date"> 自带这个格式化，换成按钮后得自己写。
+   WEEKDAY_CN 是 1..7 的「一二三四五六日」，与 Date.getDay()（0=周日）差一位。 */
+function dayoverLabel(date) {
+  const d = new Date(date + 'T00:00:00')
+  if (Number.isNaN(d.getTime())) return date
+  const wd = d.getDay() === 0 ? 7 : d.getDay()
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日 周${WEEKDAY_CN[wd - 1]}`
+}
+/* 改这一条的日期：**必须**走项目自己的月历（不用原生 <input type="date">）。
+   2026-10-13 用户口径：原生控件在手机上长得跟 App 两样，全项目统一换成自做弹层。
+   注意 patchDayOverride 按「旧日期」当 key 匹配（map 里 x.date !== date 比对），
+   所以要把旧 date 闭包带进来，不能直接用新的。 */
+function pickDayoverDate(ov) {
+  openDateField.value({
+    value: ov.date,
+    onDone: (v) => {
+      if (!v || v === ov.date) return
+      patchDayOverride(ov.date, { date: v })
+    },
+  })
+}
 </script>
 
 <template>
@@ -66,13 +89,13 @@ const {
     <div v-else class="mt-3 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-canvas">
       <div v-for="ov in dayOverrides" :key="ov.date" :data-dayover-row="ov.date" class="p-3.5">
         <div class="flex items-center gap-2">
-          <input
-            type="date"
-            :value="ov.date"
+          <!-- 日期：自做月历（2026-10-13 从原生 <input type="date"> 换过来） -->
+          <button
+            type="button"
             :data-dayover-date="ov.date"
-            class="min-w-0 flex-1 rounded-xl border border-line bg-card px-2.5 py-2 text-sm tabular-nums outline-none focus:border-primary-400"
-            @change="(e) => patchDayOverride(ov.date, { date: e.target.value })"
-          />
+            class="min-w-0 flex-1 truncate rounded-xl border border-line bg-card px-2.5 py-2 text-left text-sm tabular-nums transition active:scale-[0.99]"
+            @click="pickDayoverDate(ov)"
+          >{{ dayoverLabel(ov.date) }}</button>
           <button
             type="button"
             :data-dayover-del="ov.date"
