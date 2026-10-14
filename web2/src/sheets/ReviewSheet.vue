@@ -146,7 +146,7 @@ const saveDraft = () => {
 
             <!-- 没有可甩的旧理由、今天也还没问过 → 才追问一句（不写也行） -->
             <div v-else-if="accountToday.rest && !reasonAskedToday" data-reason-ask class="mt-2.5 border-t border-line pt-2.5">
-              <p class="text-[11px] text-ink-dim">有 {{ accountToday.rest }} 件没动，有原因吗？（不写也行）</p>
+              <p class="text-[11px] text-ink-dim">有 {{ accountToday.rest }} 件没动，有原因吗？（可不写）</p>
               <div class="mt-1.5 flex flex-wrap gap-1.5">
                 <button
                   v-for="q in QUICK_REASONS"
@@ -188,7 +188,7 @@ const saveDraft = () => {
             </div>
 
             <p v-if="!accountToday.baseline.enough" data-account-baseline class="mt-2 text-[11px] text-ink-dim">
-              基线建立中 {{ accountToday.baseline.kept }} / {{ accountToday.baseline.need }} 天 · 攒够才说「比平时多还是少」
+              基线建立中 {{ accountToday.baseline.kept }} / {{ accountToday.baseline.need }} 天 · 攒够才比「多还是少」
             </p>
 
             <!-- 手机使用时间（六期 P6）：副栏**默认折叠**，一行摘要，需要对照时点开。
@@ -210,7 +210,7 @@ const saveDraft = () => {
                 <template v-if="!usageState.granted">
                   <p data-usage-note class="text-[11px] text-ink-dim">{{ usageLineText }}</p>
                   <p v-if="usageState.supported" class="mt-0.5 text-[11px] text-ink-dim">
-                    要开「使用情况访问权限」才有数（只能你手动开，App 开不了）
+                    要开「使用情况访问权限」才有数（只能你手动开）
                   </p>
                   <button
                     v-if="usageState.supported"
@@ -255,7 +255,7 @@ const saveDraft = () => {
                       :title="s.label"
                     ></span>
                   </div>
-                  <p class="mt-0.5 text-[10px] text-ink-dim">按最后使用时刻归的 3 小时段</p>
+                  <p class="mt-0.5 text-[10px] text-ink-dim">按时段归桶，非逐条记录</p>
                 </template>
               </div>
             </div>
@@ -357,7 +357,7 @@ const saveDraft = () => {
             <p class="text-base font-bold">日精进 · 全部</p>
             <span class="text-[11px] text-ink-dim">共 {{ accountHistory.length }} 天 · 只在本机</span>
           </div>
-          <p v-if="!accountHistory.length" class="mt-3 text-[12.5px] leading-relaxed text-ink-dim">还没有复盘记录。从今天开始，每晚花 2 分钟收个尾。</p>
+          <p v-if="!accountHistory.length" class="mt-3 text-[12.5px] leading-relaxed text-ink-dim">还没有复盘记录，今晚花 2 分钟收个尾。</p>
           <div v-else data-review-history-list class="mt-3 max-h-[58vh] space-y-2.5 overflow-y-auto">
             <div
               v-for="r in accountHistory"
@@ -373,7 +373,7 @@ const saveDraft = () => {
               </div>
               <p v-if="r.line" data-account-history-line class="mt-1 text-[11px] text-primary-600">{{ r.line }}</p>
               <p v-if="r.record" class="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-ink-dim">{{ r.record.summary }}</p>
-              <p v-else class="mt-0.5 text-[11px] text-ink-dim">这天没结账，只留了数字。</p>
+              <p v-else class="mt-0.5 text-[11px] text-ink-dim">这天没做四题，只留了数字。</p>
             </div>
           </div>
         </template>

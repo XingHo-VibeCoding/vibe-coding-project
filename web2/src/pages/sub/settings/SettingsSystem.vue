@@ -26,7 +26,7 @@ const {
           </span>
           <div class="flex-1">
             <span class="block text-sm font-medium">清理重复课程</span>
-            <span class="block text-[11px] text-ink-dim">检测到 {{ addedDupCount }} 门重复（多次导入叠加），一键删掉多余的</span>
+            <span class="block text-[11px] text-ink-dim">检测到 {{ addedDupCount }} 门重复，可一键删掉</span>
           </div>
           <button
             class="rounded-full bg-soft px-3 py-1.5 text-xs font-medium transition active:scale-95"
@@ -54,7 +54,7 @@ const {
           </span>
           <span class="flex-1">
             <span class="block text-sm font-medium text-red-600 dark:text-red-400">清除数据并重置</span>
-            <span class="block text-[11px] text-ink-dim">想从头开始（换学期 / 重测）用它，无法恢复</span>
+            <span class="block text-[11px] text-ink-dim">从头开始（换学期 / 重测）用它，无法恢复</span>
           </span>
         </button>
       </section>

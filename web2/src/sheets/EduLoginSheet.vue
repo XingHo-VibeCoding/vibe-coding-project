@@ -54,12 +54,12 @@ const TERMS = [
         </div>
 
         <p class="rounded-xl bg-soft px-3 py-2.5 text-[11px] leading-relaxed text-ink-dim">
-          用你的<strong class="font-semibold text-ink">统一身份认证</strong>账号登录，App 直接把课表抓回来，抓完一样<strong class="font-semibold text-ink">先给你核对</strong>再替换。<br />
-          账号密码只在这台手机和学校服务器之间走，<strong class="font-semibold text-ink">不经任何第三方服务器</strong>；不勾「记住」就不存密码。
+          用<strong class="font-semibold text-ink">统一身份认证</strong>账号登录，抓回来的课表<strong class="font-semibold text-ink">先给你核对</strong>再替换。<br />
+          账号密码只在手机和学校服务器之间走，<strong class="font-semibold text-ink">不经第三方</strong>；不勾「记住」就不存密码。
         </p>
 
         <p v-if="!eduHttpAvailable()" data-edu-login-noweb class="mt-2 rounded-xl bg-amber-50 px-3 py-2.5 text-[11px] leading-relaxed text-amber-700 dark:bg-amber-500/10 dark:text-amber-500">
-          这个环境不能直连教务网（浏览器里会被跨域挡住）—— 装到手机 App 里才生效。
+          浏览器里不能直连教务网（会被跨域挡住），装到手机 App 里才生效。
         </p>
 
         <div class="mt-3 space-y-2.5 pb-2">
@@ -105,8 +105,8 @@ const TERMS = [
           >
             <span class="min-w-0 flex-1">
               <span class="block text-[12px] font-medium">记住账号密码</span>
-              <span v-if="eduSecretBackend() === 'keystore'" data-edu-login-keystore class="block text-[11px] text-ink-dim">密码存进手机的系统密钥库（Android Keystore，加密存放）</span>
-              <span v-else class="block text-[11px] text-ink-dim">当前环境没有系统密钥库，只能存浏览器本地（App 里才是加密的）</span>
+              <span v-if="eduSecretBackend() === 'keystore'" data-edu-login-keystore class="block text-[11px] text-ink-dim">密码存进手机系统密钥库（加密存放）</span>
+              <span v-else class="block text-[11px] text-ink-dim">没有系统密钥库，只能存浏览器本地（App 里才是加密的）</span>
             </span>
             <span
               class="relative h-6 w-11 shrink-0 rounded-full transition"
@@ -150,7 +150,7 @@ const TERMS = [
           >
             <span class="min-w-0 flex-1">
               <span class="block text-[12px] font-medium">连其他学期一起留</span>
-              <span class="block text-[11px] text-ink-dim">默认只留上面选的学期；教务会把整年的都返回来，所以本地要再筛一遍</span>
+              <span class="block text-[11px] text-ink-dim">默认只留上面选的学期；教务会把整年的都返回来</span>
             </span>
             <span
               class="relative h-6 w-11 shrink-0 rounded-full transition"
@@ -175,7 +175,7 @@ const TERMS = [
           </p>
 
           <p class="text-[11px] leading-relaxed text-ink-dim">
-            抓取只会<strong class="font-semibold text-ink">在你点按钮时</strong>发生：不做定时轮询、出错不自动重试（学校会锁号）。
+            只在<strong class="font-semibold text-ink">你点按钮时</strong>抓取：不轮询、出错不自动重试（学校会锁号）。
           </p>
         </div>
       </div>

@@ -148,7 +148,7 @@ const openAsk = async (page) => {
   const txt2 = await p2.locator('[data-account-history-item="snapshot"]').first().textContent().catch(() => '')
   const yLine = await p2.locator('[data-review-history-item]', { hasText: '排 3 做完 0' }).count()
   t('D1 只有数字的日子也进历史（浅色行）', snap2 >= 1, 'snap=' + snap2)
-  t('D2 浅色行写明「这天没结账，只留了数字」', /没结账/.test(txt2), txt2)
+  t('D2 浅色行写明「这天没做四题，只留了数字」', /没做四题/.test(txt2), txt2)
   t('D3 浅色行带昨天数字「排 3 做完 0」', yLine >= 1, 'rows=' + yLine)
 
   /* ---------- E 数字没变不重复写盘 ---------- */

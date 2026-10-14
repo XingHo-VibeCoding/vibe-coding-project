@@ -34,7 +34,7 @@ const {
             </span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">课堂纪要</span>
-              <span class="block text-[11px] text-ink-dim">{{ llmReady ? 'AI 服务已配置，可在录音场次一键生成' : '转写完成后用 AI 把文字稿总结成复习纪要' }}</span>
+              <span class="block text-[11px] text-ink-dim">{{ llmReady ? '已配置，可在录音场次一键生成' : '把文字稿交给 AI 总结成复习纪要' }}</span>
             </span>
             <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim transition-transform" :class="llmInputOpen ? 'rotate-90' : ''" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
           </button>
@@ -51,7 +51,7 @@ const {
               />
             </div>
             <label v-if="llmCfg.provider === 'deepseek'" class="block">
-              <span class="mb-1 block text-[11px] text-ink-dim">DeepSeek API Key（只存在本机，不会上传）</span>
+              <span class="mb-1 block text-[11px] text-ink-dim">DeepSeek API Key（只存本机）</span>
               <input
                 v-model="llmCfg.key"
                 type="text"
@@ -88,7 +88,7 @@ const {
               :class="llmTest.ok ? 'text-primary-600' : 'text-red-600 dark:text-red-400'"
             >{{ llmTest.msg }}</p>
             <p class="text-[11px] leading-relaxed text-ink-dim">
-              Key 在 platform.deepseek.com 申请；一次纪要通常几分钱以内。配置存在本机，换设备后需重填。
+              Key 在 platform.deepseek.com 申请；一次纪要只要几分钱。配置只存本机，换设备要重填。
             </p>
           </div>
         </div>
@@ -101,7 +101,7 @@ const {
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">后台录音</span>
             <span class="block text-[11px] leading-relaxed text-ink-dim">
-              录音时锁屏、切到别的应用都会继续录，通知栏会有一条「正在录音」。看不到这条通知的话，去系统设置里打开本应用的通知权限——通知被拦掉时，后台更容易被系统清理。
+              锁屏、切到别的应用都会继续录，通知栏有一条「正在录音」。看不到就去系统设置里打开通知权限，否则后台更容易被系统清掉。
             </span>
           </span>
         </div>

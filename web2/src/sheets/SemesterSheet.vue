@@ -77,7 +77,7 @@ function pickSubTerm(i, key) {
 
       <!-- 节次表（分段式：段内改参数只重排本段，午休/大课间原样保留） -->
       <p class="mt-5 text-sm font-semibold">节次时间表</p>
-      <p class="mt-1 text-[11px] text-ink-dim">改「每节 / 课间」只重排本段（午休、大课间不动）；改某节开始时间本段后面整体顺移；全部删掉 = 不设置节次（周视图回落默认节次表）</p>
+      <p class="mt-1 text-[11px] text-ink-dim">改「每节 / 课间」只重排本段（午休不动）；改某节开始时间，本段后面整体顺移；全部删掉 = 用默认节次表</p>
       <div class="mt-2">
         <PeriodsEditor
           v-model="semForm.periods"
@@ -92,8 +92,7 @@ function pickSubTerm(i, key) {
            没有这一层的话，标「秋」的课会在整 16 周里都显示（用户 2026-10-06 发现的问题）。 -->
       <p class="mt-5 text-sm font-semibold">小学期周次</p>
       <p class="mt-1 text-[11px] text-ink-dim">
-        课程标着「秋」就只在前半段出现、「冬」只在后半段出现、「秋冬」整学期都在。
-        默认按总周数对半分；短学期（暑假）暂不区分。
+        课程标「秋」只上前半段、「冬」只上后半段、「秋冬」整学期都在。默认按总周数对半分。
       </p>
       <div class="mt-2 space-y-2">
         <div v-for="(st, i) in semForm.subTerms" :key="i" class="flex items-center gap-2">

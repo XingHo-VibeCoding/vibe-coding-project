@@ -48,8 +48,8 @@ const {
             <span class="block text-sm font-medium">课前提醒</span>
             <span class="block text-[11px] leading-relaxed text-ink-dim">
               {{ notifyOk
-                ? '上课前高优先级提醒（会响、会弹横幅），点通知或「开始录音」直接开录。课程、独立日程、循环日程都包含。'
-                : '通知能力仅 App 内生效，浏览器上不可用。' }}
+                ? '上课前提醒（会响、会弹横幅），点通知直接开录。课程、日程都包含。'
+                : '通知只在 App 里生效，浏览器上不可用。' }}
             </span>
           </span>
           <button
@@ -81,7 +81,7 @@ const {
               @click="onTestNotify"
             >{{ notifyTesting ? '发送中…' : '发测试通知' }}</button>
           </div>
-          <p v-if="notifyPerm === false" class="mt-2 text-[11px] text-red-600 dark:text-red-400">通知权限被拒绝了：请在系统设置里允许本应用发通知，否则提醒收不到。</p>
+          <p v-if="notifyPerm === false" class="mt-2 text-[11px] text-red-600 dark:text-red-400">通知权限被拒了：去系统设置里允许本应用发通知，否则收不到提醒。</p>
           <p v-if="notifyMsg" class="mt-2 text-[11px]" :class="notifyMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ notifyMsg }}</p>
         </div>
 
@@ -93,7 +93,7 @@ const {
             </span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">每日复盘</span>
-              <span class="block text-[11px] leading-relaxed text-ink-dim">每晚轻提醒一次，点开花 2 分钟收个尾，生成当天的日精进。存档只在本机，不进导出。</span>
+              <span class="block text-[11px] leading-relaxed text-ink-dim">每晚提醒一次，花 2 分钟收个尾，生成当天的日精进。存档只在本机。</span>
             </span>
             <button
               v-if="notifyOk"
@@ -134,7 +134,7 @@ const {
               <div v-if="exactHint" data-exact-warn>
                 <p class="text-[12px] font-medium text-ink">提醒可能晚到（最多 1 小时）</p>
                 <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">
-                  还没允许本应用「设置闹钟和提醒」，系统会把这批提醒当成普通闹钟，到点可能晚一小时才响。允许之后，课前提醒和练耳提醒就能准点到。
+                  还没允许本应用「设置闹钟和提醒」，这批提醒可能晚一小时才响。允许后课前与练耳提醒就能准点。
                 </p>
                 <button
                   data-exact-ask
@@ -159,7 +159,7 @@ const {
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">常驻状态框</span>
               <span class="block text-[11px] leading-relaxed text-ink-dim">
-                通知栏常驻一条「现在 · 课名 / 还有多久」，可直接开始录音、标记「这节上完了」「我去听了」；录音时变身成录音态，全程只有一条常驻通知。
+                通知栏常驻一条「现在 · 课名 / 还有多久」，可直接开始录音、标记「上完了」「我去听了」；录音时变成录音态。
               </span>
             </span>
             <button

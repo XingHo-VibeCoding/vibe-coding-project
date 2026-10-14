@@ -79,7 +79,7 @@ try {
   await p2.waitForTimeout(600)
   const s2 = p2.locator('section').filter({ has: p2.locator('h2', { hasText: '待办' }) }).first()
   t('16. 无待办时不出现筛选 chips', (await s2.locator('[role="group"][aria-label="待办状态筛选"]').count()) === 0)
-  t('17. 空态文案正常', (await s2.locator('p:has-text("没有待办，轻松自在～")').count()) === 1)
+  t('17. 空态文案正常', (await s2.locator('p:has-text("没有待办")').count()) === 1)
   await p2.close()
 
   /* 桌面宽度冒烟 */

@@ -120,11 +120,11 @@ async function doSyncDownload() {
   try {
     const r = await syncDownload({ pass: syncPass.value })
     if (!r.found) {
-      syncMsg.value = '这个同步串在云端还没有数据：现在点「上传」就会把这台设备的课表和待办存上去。'
+      syncMsg.value = '这个串在云端还没有数据：点「上传」就会把这台设备的课表和待办存上去。'
       syncMsgBad.value = false
     } else {
       reloadDataset.value() // 本机数据换了，页面上的课表/待办要跟着重读
-      syncMsg.value = `已从云端取回：${r.applied} 项已写进这台设备（rev ${r.rev}）。本机原有数据已被这一份替换。`
+      syncMsg.value = `已从云端取回：${r.applied} 项写进这台设备（rev ${r.rev}）。本机原有数据已被替换。`
       syncMsgBad.value = false
     }
     syncConflict.value = null
@@ -153,7 +153,7 @@ async function doSyncClearCloud() {
   syncMsg.value = '正在清空云端…'
   try {
     const r = await syncClearCloud({ pass: syncPass.value })
-    syncMsg.value = r.deleted ? '云端那份已删除。本机数据原样保留。' : '云端本来就没有这个串的数据，什么都没做。'
+    syncMsg.value = r.deleted ? '云端那份已删除，本机数据保留。' : '云端本来就没有这个串的数据，什么都没做。'
     syncMsgBad.value = false
   } catch (e) {
     syncMsg.value = (e && e.message) || '清空失败，没有改动任何数据。'
@@ -208,7 +208,7 @@ onMounted(() => {
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">登录教务网抓课表</span>
-            <span class="block text-[11px] text-ink-dim">填一次统一身份认证账号，直接抓回来核对（不用手动导出）</span>
+            <span class="block text-[11px] text-ink-dim">填一次统一身份认证账号，直接抓课表</span>
           </span>
           <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
         </button>
@@ -219,7 +219,7 @@ onMounted(() => {
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">从教务导入课表</span>
-            <span class="block text-[11px] text-ink-dim">选教务导出的 .xlsx，先核对再替换（待办和日程不动）</span>
+            <span class="block text-[11px] text-ink-dim">选教务导出的 .xlsx，先核对再替换（只换课程）</span>
           </span>
           <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
           <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" data-edu-file @change="onEduFile" />
@@ -249,7 +249,7 @@ onMounted(() => {
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">恢复上一套课表</span>
             <span class="block text-[11px] text-ink-dim">
-              换教务课表前自动存的（{{ eduSnapshot.courses }} 门课<template v-if="eduSnapshot.added">，含 {{ eduSnapshot.added }} 门手动加的</template>）
+              换课表前自动存的（{{ eduSnapshot.courses }} 门课<template v-if="eduSnapshot.added">，含 {{ eduSnapshot.added }} 门手动加的</template>）
             </span>
           </span>
         </button>
@@ -279,7 +279,7 @@ onMounted(() => {
           </span>
           <span class="flex-1">
             <span class="block text-sm font-medium">导出日历（.ics）</span>
-            <span class="block text-[11px] text-ink-dim">整学期课表装进手机系统日历，带课前提醒</span>
+            <span class="block text-[11px] text-ink-dim">整学期课表装进系统日历，带课前提醒</span>
           </span>
         </button>
       </section>
@@ -295,7 +295,7 @@ onMounted(() => {
             </span>
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium">云同步（课表与待办）</span>
-              <span class="block text-[11px] text-ink-dim">两台设备输入同一个同步串，就能看到同一份课表</span>
+              <span class="block text-[11px] text-ink-dim">两台设备填同一个串，就能看到同一份课表</span>
             </span>
           </div>
 
@@ -328,15 +328,15 @@ onMounted(() => {
             <span v-else-if="syncCfg.pass" class="text-[11px] text-ink-dim">已存串，还没同步过</span>
           </div>
           <p class="mt-2 text-[11px] leading-relaxed text-ink-dim">
-            传上去的只有课表和待办（{{ syncSummary.keys }} 项<template v-if="syncSummary.courses || syncSummary.todos">：{{ syncSummary.courses }} 门课、{{ syncSummary.todos }} 条待办</template>）。
-            录音、练耳进度、每日快照这些本机大件不上云；同步串本身也不上传原文。
+            只上传课表和待办（{{ syncSummary.keys }} 项<template v-if="syncSummary.courses || syncSummary.todos">：{{ syncSummary.courses }} 门课、{{ syncSummary.todos }} 条待办</template>）。
+            录音、练耳、日精进都留本机。
           </p>
         </div>
 
         <!-- 冲突：云端比本机新。不自动选，两份摆出来让用户定 -->
         <div v-if="syncConflict" data-sync-conflict class="bg-amber-50 p-4 dark:bg-amber-950/30">
           <p class="text-xs font-medium text-amber-700 dark:text-amber-300">云端有一份更新的数据（rev {{ syncConflict.cloudRev }}），本机这份没被覆盖。</p>
-          <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">要云端那份就「取回云端」；本机这份才是对的就「用本机覆盖云端」。</p>
+          <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">要云端那份就「取回云端」；本机才对就「用本机覆盖云端」。</p>
           <div class="mt-2.5 flex items-center gap-2">
             <button
               data-sync-take-cloud

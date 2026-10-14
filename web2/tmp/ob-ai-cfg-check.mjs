@@ -62,7 +62,7 @@ try {
   t('B4. 有「先不配，手动加课」退路', await page.locator('[data-ob-ai-manual]').isVisible())
   t('B5. 有「返回上一步」出口', await page.locator('[data-ob-ai-back]').isVisible())
   const aiText = (await page.locator('[data-ob-step]').innerText()).replace(/\s+/g, ' ')
-  t('B6. 说明里写清为什么需要 Key（图片识别）', aiText.includes('识别课表要先配好 AI') && aiText.includes('图片识别'))
+  t('B6. 说明里写清为什么需要 Key（拍课表识别）', aiText.includes('识别课表要先配好 AI') && aiText.includes('拍课表识别'))
   t('B7. 说明里给了申请地址', aiText.includes('platform.deepseek.com'))
 
   /* ③ 空 Key 点保存 → 就地报错、留在配置页 */

@@ -133,13 +133,13 @@ async function probe(schedules) {
 let r = await probe([course('a1', '高等数学', -40, 45)])
 t('A1 剩 5 分钟下课 → 场次挂上课名', r.title.includes('高等数学'), r.title)
 t('A2 排了自动停（≈下课+2 分 = 7 分钟后）', r.scheduled > 0 && r.scheduled < 10 * 60000, String(r.scheduled))
-t('A3 提示说有自动停', r.card.includes('下课后 2 分钟自动停'), r.card.slice(-40))
+t('A3 提示说有自动停', r.card.includes('下课 2 分钟后自动停'), r.card.slice(-40))
 
 /* ---------- B. 剩 2 分钟下课：不认（快下课不认） ---------- */
 r = await probe([course('b1', '高等数学', -43, 45)])
 t('B1 剩 2 分钟下课 → 不挂课名（用默认「课堂录音」标题）', !r.title.includes('高等数学') && r.title.includes('课堂录音'), r.title)
 t('B2 没有排自动停', r.scheduled === null, String(r.scheduled))
-t('B3 提示改为「没排自动停，记得自己停」', r.card.includes('没排自动停'), r.card.slice(-40))
+t('B3 提示改为「这场不自动停，记得自己停」', r.card.includes('不自动停'), r.card.slice(-40))
 
 /* ---------- C. 课间 10 分：前一节刚下课那一刻开录（用户原始场景） ---------- */
 r = await probe([course('c1', '高等数学', -45, 45), course('c2', '大学英语', 10, 45)])

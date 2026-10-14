@@ -99,7 +99,7 @@ t('A2 排程毫秒 = 下课+2分钟宽限−现在（±3s）', Math.abs(fakeA.sc
 t('A3 录音真的开了（假插件 startRecording 被调）', fakeA.startCount === 1 && fakeA.recording === true)
 t('A4 保活服务拉起', fakeA.svcStop === 0)
 const cardA = await page.locator('[data-today-rec]').textContent()
-t('A5 提示含「下课后 2 分钟自动停」', cardA.includes('下课后 2 分钟自动停'))
+t('A5 提示含「下课 2 分钟后自动停」', cardA.includes('下课 2 分钟后自动停'))
 t('A6 停止按钮出现', await page.locator('[data-today-rec-stop]').isVisible())
 
 /* ===== B. 手动停正常收尾 ===== */

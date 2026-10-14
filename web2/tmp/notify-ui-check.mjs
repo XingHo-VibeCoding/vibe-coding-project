@@ -136,7 +136,7 @@ await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ?
   await page.waitForTimeout(800)
   /* Stage 6：录音钮搬进「我的 → 录音历史」二级页，action 会直接打开那一页 */
   t('E1 点「开始录音」action 后直接进入录音态（落在 lectures 二级页）', await page.locator('[data-sub-page][data-sub="lectures"]').locator('button:has-text("停止并保存")').isVisible())
-  t('E2 录音条出现（在「我的」页可见）', (await page.locator('text=录音中 · 锁屏也会继续录').count()) > 0)
+  t('E2 录音条出现（在「我的」页可见）', (await page.locator('text=录音中 · 锁屏也继续录').count()) > 0)
 
   /* ---------- F：点通知本体（tap）→ 只定位不开录 ---------- */
   await page.locator('[data-sub-page][data-sub="lectures"]').locator('button:has-text("停止并保存")').click() // 先停（限定 lectures 二级页：今日页也有同名按钮）
@@ -174,7 +174,7 @@ await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ?
   /* 2026-10-12 两层导航：「课前提醒」提示在「提醒」子页里，先进去再断言 */
   await page.locator('[data-settings-index="remind"]').click()
   await page.waitForTimeout(350)
-  t('G1 权限被拒时显示红色提示', (await page.locator('text=通知权限被拒绝了').count()) > 0)
+  t('G1 权限被拒时显示红色提示', (await page.locator('text=通知权限被拒了').count()) > 0)
   const n = await page.evaluate(() => window.__notify)
   t('G2 被拒后仍完成排程（权限与排程互不阻塞）', n.scheduled.length > 10)
   t('G3 权限缺失时发起了申请', n.permReq === 1)
@@ -202,7 +202,7 @@ await ctx.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ?
   await page.locator('[data-settings-index="remind"]').click()
   await page.waitForTimeout(350)
   t('H1 无桥时开关不渲染（能力不可用）', (await page.locator('button[aria-label="课前提醒开关"]').count()) === 0)
-  t('H2 副文案说明仅 App 生效', (await page.locator('text=通知能力仅 App 内生效').count()) > 0)
+  t('H2 副文案说明仅 App 生效', (await page.locator('text=通知只在 App 里生效').count()) > 0)
   t('H3 无页面异常', errs.length === 0)
   await ctx.close()
 }

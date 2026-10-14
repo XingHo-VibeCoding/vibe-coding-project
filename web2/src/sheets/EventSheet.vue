@@ -263,7 +263,7 @@ function addSelected() {
 
       <!-- 批量 · 一次多条面板：一段话或一张图，抽出一串 -->
       <div v-if="multiOpen" class="mt-3 rounded-xl border border-line bg-canvas p-3">
-        <p class="text-xs text-ink-dim">一次说好几件事的通知、群消息、海报，粘进来或传张图，一次认出多条，改完勾选一起添加。</p>
+        <p class="text-xs text-ink-dim">粘一段通知或传张图，一次认出多条，改完勾选一起添加。</p>
         <textarea
           data-event-smart-input-multi
           v-model="smartText"

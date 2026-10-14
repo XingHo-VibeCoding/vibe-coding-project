@@ -64,7 +64,7 @@ const lecHiddenCount = computed(() => Math.max(0, lectures.value.length - lecRec
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">课堂录音</span>
-            <span class="block text-[11px] text-ink-dim">下课后 2 分钟自动停；停录后自动转写并生成纪要；长按场次可删除</span>
+            <span class="block text-[11px] text-ink-dim">下课 2 分钟自动停，然后转写并生成纪要</span>
           </span>
           <button
             v-if="!recActiveId"
@@ -87,7 +87,7 @@ const lecHiddenCount = computed(() => Math.max(0, lectures.value.length - lecRec
         <div v-if="recActiveId" class="mt-3 flex items-center gap-2 rounded-xl bg-red-400/10 px-3 py-2.5">
           <span class="h-2 w-2 animate-pulse rounded-full bg-red-400"></span>
           <span class="text-sm font-semibold tabular-nums">{{ fmtDur(recElapsed * 1000) }}</span>
-          <span class="ml-auto text-[11px] text-ink-dim">录音中 · 锁屏也会继续录</span>
+          <span class="ml-auto text-[11px] text-ink-dim">录音中 · 锁屏也继续录</span>
         </div>
 
         <p v-if="recMsg" class="mt-2.5 text-[11px]" :class="recMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ recMsg }}</p>

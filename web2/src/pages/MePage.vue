@@ -22,7 +22,7 @@ const {
            改组原因是顶部一个学期条单独一张卡、底下四个入口挤一张卡，
            看着像「学期」和「录音/练耳/待办/设置」是同级的东西 —— 其实前者是数据本身，
            后者是拿数据的四个工具；分成「我的数据 / 应用」两组之后层级一眼能看出来。 -->
-      <h2 class="mb-2 px-1 text-sm font-semibold text-ink">我的数据 <span class="text-xs font-normal text-ink-dim">· 可导出带走</span></h2>
+      <h2 class="mb-2 px-1 text-sm font-semibold text-ink">我的数据 <span class="text-xs font-normal text-ink-dim">· 可导出</span></h2>
       <section class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">
         <button
           type="button"
@@ -32,7 +32,7 @@ const {
         >
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm font-medium">{{ semester.name }} · 第 {{ semester.week }} 周</span>
-            <span class="block text-[11px] text-ink-dim">{{ source === 'import' ? '主项目数据 · 共 ' + semester.totalWeeks + ' 周 · 点这里改学期与节次' : '示例数据不能编辑学期信息' }}</span>
+            <span class="block text-[11px] text-ink-dim">{{ source === 'import' ? '共 ' + semester.totalWeeks + ' 周 · 点这里改学期与节次' : '示例数据不能编辑学期信息' }}</span>
           </span>
           <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
         </button>
@@ -79,7 +79,7 @@ const {
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">设置</span>
-            <span class="block text-[11px] text-ink-dim">外观、提醒、录音与数据都在这里</span>
+            <span class="block text-[11px] text-ink-dim">外观、提醒、录音、数据</span>
           </span>
           <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 shrink-0 text-ink-dim" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5" /></svg>
         </button>

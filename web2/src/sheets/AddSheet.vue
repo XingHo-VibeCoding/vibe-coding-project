@@ -62,7 +62,7 @@ const app = useApp()
       <p v-else class="rounded-xl border border-line bg-canvas px-3 py-2 text-xs leading-relaxed text-ink-dim">
         {{ app.addForm.week_rule === 'every'
           ? '循环日程每周重复，不占学期课表。'
-          : '这条原本是' + ({ odd: '单周', even: '双周' }[app.addForm.week_rule] || '每周') + '，保存后保持原样（循环日程表单不提供单双周选项）。' }}
+          : '这条原本是' + ({ odd: '单周', even: '双周' }[app.addForm.week_rule] || '每周') + '，保存后保持原样。' }}
       </p>
     </div>
     <p v-if="app.addWarn" class="mt-2.5 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-500">{{ app.addWarn }}</p>

@@ -1705,8 +1705,8 @@ async function startRec() {
     /* 没排上自动停的情况要说清楚（自由录音、或开录时刻没对上任何一节课的覆盖窗口：
        早于开课前 5 分钟、或落在某节快下课的尾巴上）——否则用户会以为自动停坏了。 */
     setRecMsg(course && auto
-      ? '录音中：锁屏、切到后台都会继续录，下课后 2 分钟自动停。'
-      : '录音中：锁屏、切到后台都会继续录；这场没排自动停，记得自己停。')
+      ? '录音中：锁屏、切后台都继续录，下课 2 分钟后自动停。'
+      : '录音中：锁屏、切后台都继续录；这场不自动停，记得自己停。')
   }
   /* M5 分段转写：开录即让原生边录边预转（每 3 分钟吃掉已写完的 30s 段），
      课后只等尾巴。尽力而为：模型没下好/没文件都自动放弃，最终转写兜底全量。 */
@@ -5015,7 +5015,7 @@ provide(APP_CTX, reactive({
             </div>
             <p v-if="recActiveId" class="mt-1.5 flex items-center gap-1.5 text-[11px] text-red-600 dark:text-red-400">
               <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400"></span>
-              录音中 {{ fmtDur(recElapsed * 1000) }} · 下课 2 分钟自动停 · 锁屏也会继续录
+              录音中 {{ fmtDur(recElapsed * 1000) }} · 下课 2 分钟自动停 · 锁屏也继续录
             </p>
             <p v-if="recMsg" class="mt-1.5 text-[11px]" :class="recMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ recMsg }}</p>
           </div>
@@ -5310,10 +5310,8 @@ provide(APP_CTX, reactive({
 
 <DayoverSheet />
 
-    <!-- P12a 教务课表导入的预览确认浮层。
-         为什么必须有这一步：导入是**替换**现有课表（用户：「不要追加，我只希望有一套课表」），
-         所以先把解析结果摆出来让人看一眼再动手。固定自建外壳（不走 BottomSheet 组件），
-         因为它要显示表格、比一般浮层宽，且与引导页第 3 步「核对导入」同构。 -->
+    <!-- P12a 教务课表导入的预览确认浮层：导入是**替换**现有课表，先看一眼再动手。
+         固定自建外壳（不走 BottomSheet 组件）：要显示表格、比一般浮层宽，且与引导页「核对导入」同构。 -->
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="eduPreview" data-edu-preview class="fixed inset-0 z-[70] flex flex-col bg-canvas" :style="{ paddingTop: 'var(--sat, 0px)' }">
@@ -5339,10 +5337,10 @@ provide(APP_CTX, reactive({
               </p>
               <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">
                 <template v-if="eduPreview.needsSemester">
-                  你现在还没有学期。确认时会先按下面两项建好学期，再把这套课表装进去。
+                  还没有学期，确认时一起建好。
                 </template>
                 <template v-else>
-                  确认后会<b class="font-semibold text-ink">替换</b>你现在的课表（只换课程；待办和日程不动，手动加的课会清掉）。替换前会自动存一份旧课表，随时能恢复。
+                  确认后会<b class="font-semibold text-ink">替换</b>现在的课表（待办、日程不动），替换前自动存一份，可恢复。
                 </template>
               </p>
             </div>
@@ -5354,7 +5352,7 @@ provide(APP_CTX, reactive({
                  任意日期可点、内部归一到所在周周一，周数走数字滚轮。 -->
             <div v-if="eduPreview.needsSemester" data-edu-needsem class="rounded-2xl border border-line bg-card p-4">
               <p class="text-[12px] font-medium">先确认学期起止</p>
-              <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">学校不同、开学日期也不同，这两项只能你告诉我（之后可在「我的 → 学期与节次」里改）。</p>
+              <p class="mt-1 text-[11px] leading-relaxed text-ink-dim">这两项学校不同，只能你来填（之后可在「我的 → 学期与节次」里改）。</p>
               <button
                 type="button"
                 data-edu-start
@@ -5403,7 +5401,7 @@ provide(APP_CTX, reactive({
                   {{ n.name }}<template v-if="n.teacher"> · {{ n.teacher }}</template><template v-if="n.term"> · {{ n.term }}学期</template>
                 </li>
               </ul>
-              <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">这类多半是实践/短学期课，需要你自己加，或者以后告诉我怎么排。</p>
+              <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">这类多半是实践/短学期课，要自己加。</p>
             </div>
 
             <div v-if="eduPreview.notes && eduPreview.notes.length" data-edu-notes class="rounded-2xl border border-line bg-card p-4">

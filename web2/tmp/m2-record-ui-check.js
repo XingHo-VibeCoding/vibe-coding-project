@@ -107,7 +107,7 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
   await me(page).locator('button:has-text("开始录音")').first().click()
   await page.waitForTimeout(500)
   t('B1 点开始后按钮变「停止并保存」', await me(page).locator('button:has-text("停止并保存")').isVisible())
-  t('B2 出现录音中提示', (await me(page).locator('text=锁屏也会继续录').count()) > 0)
+  t('B2 出现录音中提示', (await me(page).locator('text=锁屏也继续录').count()) > 0)
   t('B3 列表立即出现「录音中」场次', (await me(page).locator('text=录音中').count()) > 0)
   const dur1 = await me(page).locator('.tabular-nums').first().innerText()
   await page.waitForTimeout(2200)

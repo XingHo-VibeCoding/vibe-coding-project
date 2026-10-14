@@ -172,13 +172,13 @@ const {
           </button>
         </div>
         <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
-          今天没有课程安排～
+          今天没有课程安排
         </p>
         <button
           class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-2.5 text-xs font-medium text-ink-dim transition active:bg-soft"
           @click="openEventAdd"
         >
-          ＋ 添加日程（班会、聚餐这类）
+          ＋ 添加日程
         </button>
       </section>
 
@@ -246,7 +246,7 @@ const {
           没有{{ todoFilter === 'open' ? '未完成' : '已完成' }}的待办
         </p>
         <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
-          没有待办，轻松自在～
+          没有待办
         </p>
         <button
           class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-3 text-sm font-medium text-ink-dim transition active:bg-soft"

@@ -66,7 +66,7 @@ function pickListenNum(key) {
           </span>
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">今天已去听过</span>
-            <span class="block text-[11px] text-ink-dim">这几段今天不再提醒你；撤掉就还会再提醒</span>
+            <span class="block text-[11px] text-ink-dim">这几段今天不再提醒；撤掉就还会提醒</span>
           </span>
         </div>
         <ul class="mt-2.5 space-y-1.5">
@@ -91,7 +91,7 @@ function pickListenNum(key) {
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium">碎片练耳</span>
             <span class="block text-[11px] text-ink-dim">
-              本地音频按艾宾浩斯排复习；到点只提醒你去听，不自动播放
+              本地音频按遗忘曲线排复习；到点只提醒你去听，不自动播放
             </span>
           </span>
           <button
@@ -120,7 +120,7 @@ function pickListenNum(key) {
             </button>
           </div>
           <p v-if="listenSettings.enabled && !notifyOk" class="mt-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-500">
-            这个环境没有通知能力（浏览器里收不到）——装到手机 App 里才生效。
+            这个环境收不到通知（浏览器里没有）——装到手机 App 里才生效。
           </p>
 
           <!-- 练耳设置面板（2026-10-03 补：这几项原来只能改代码里的 DEFAULTS） -->
@@ -130,7 +130,7 @@ function pickListenNum(key) {
             :aria-expanded="listenSettingsOpen ? 'true' : 'false'"
             @click="listenSettingsOpen = !listenSettingsOpen"
           >
-            <span>练耳设置（遍数 / 复习间隔 / 勿扰 / 空档）</span>
+            <span>练耳设置（遍数 / 间隔 / 勿扰 / 空档）</span>
             <span class="text-[11px] text-ink-dim">{{ listenSettingsOpen ? '收起' : '展开' }}</span>
           </button>
 
@@ -176,7 +176,7 @@ function pickListenNum(key) {
                 @click="pickListenDnd('end')"
               >{{ listenSettings.dndEnd }}</button>
             </div>
-            <p class="text-[11px] leading-relaxed text-ink-dim">结束时间早于开始时间 = 跨夜（默认 23:00–07:00），这段时间不发提醒。</p>
+            <p class="text-[11px] leading-relaxed text-ink-dim">结束时间早于开始 = 跨夜（默认 23:00–07:00），这段时间不发提醒。</p>
             <div class="flex items-center gap-2">
               <span class="w-[72px] shrink-0 text-[12px] text-ink-dim">短槽上限</span>
               <button
@@ -248,11 +248,11 @@ function pickListenNum(key) {
             </li>
           </ul>
           <p v-else class="mt-3 rounded-xl bg-soft px-3 py-2.5 text-[11px] text-ink-dim">
-            还没有音频。导入一段（20 秒–1 分钟最合适），当天就可以开始听。
+            还没有音频。导入一段 20 秒–1 分钟的素材，当天就能开始听。
           </p>
 
           <p v-if="listenClips.length && !listenIsApp" class="mt-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-500">
-            浏览器里音频字节不落盘：刷新后要重新导入（听过的次数与复习排期会保留）。
+            浏览器里音频不落盘：刷新后要重新导入（听过的次数与复习排期保留）。
           </p>
           <p v-if="listenMsg" class="mt-2 text-[11px]" :class="listenMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'">{{ listenMsg }}</p>
         </template>

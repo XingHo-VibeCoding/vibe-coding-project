@@ -130,7 +130,7 @@ const {
               @click="goObForm"
             >
               <p class="text-sm font-semibold">直接填学期信息，自己加课</p>
-              <p class="mt-1 text-xs text-ink-dim">三步走：先填学期与节次表 → 再拍课表截图识别（也可以跳过）→ 核对后入库</p>
+              <p class="mt-1 text-xs text-ink-dim">填学期与节次表，可以跳过识别</p>
             </button>
             <button
               class="mt-3 w-full rounded-2xl border border-primary-200 bg-primary-50/60 p-4 text-left shadow-sm transition active:scale-[0.98]"
@@ -138,7 +138,7 @@ const {
               @click="onboardEduLogin"
             >
               <p class="text-sm font-semibold text-primary-600">登录教务系统，直接抓课表</p>
-              <p class="mt-1 text-xs text-ink-dim">用你的统一身份认证账号登录，抓回来先给你核对再入库；也能顺手从教务导出的 Excel 导入</p>
+              <p class="mt-1 text-xs text-ink-dim">用统一身份认证账号登录抓课表，也可导入教务 Excel</p>
             </button>
             <button
               class="mt-3 w-full rounded-2xl border border-line bg-card p-4 text-left shadow-sm transition active:scale-[0.98]"
@@ -146,7 +146,7 @@ const {
               @click="onboardImport"
             >
               <p class="text-sm font-semibold">导入数据</p>
-              <p class="mt-1 text-xs text-ink-dim">选主项目导出的 JSON 备份，或教务导出的课表 Excel（.xlsx）</p>
+              <p class="mt-1 text-xs text-ink-dim">导入 JSON 备份，或教务导出的课表 Excel</p>
             </button>
             <p v-if="obImportMsg" class="mt-2 px-1 text-xs text-red-600 dark:text-red-400">{{ obImportMsg }}</p>
 
@@ -165,7 +165,7 @@ const {
               data-ob-choice-demo
               @click="finishOnboarding"
             >
-              先随便看看（不导入，之后随时能补上课表）
+              先随便看看（不导入）
             </button>
           </div>
 
@@ -177,7 +177,7 @@ const {
             <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
               <p class="text-sm font-semibold">识别课表要先配好 AI</p>
               <p class="mt-1 text-xs leading-relaxed text-ink-dim">
-                拍课表识别是把图片交给 DeepSeek 的图片识别能力，读成「星期 × 第几节 × 课程名」。所以要有一个 API Key —— 它和「课堂纪要」共用同一个，配一次两处都能用。
+                拍课表识别把图片交给 DeepSeek 读成「星期 × 第几节 × 课程名」。Key 与「课堂纪要」共用，配一次两处都能用。
               </p>
               <label class="mt-3 block">
                 <span class="mb-1 block text-[11px] text-ink-dim">DeepSeek API Key（只存在这台设备，不会上传）</span>
@@ -194,7 +194,7 @@ const {
                 />
               </label>
               <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">
-                去 platform.deepseek.com 注册后，在「API Keys」里新建一个，复制粘贴到上面即可；识别一张课表通常只要几分钱。
+                去 platform.deepseek.com 注册，在「API Keys」新建一个粘到上面；识别一张课表只要几分钱。
               </p>
               <button
                 type="button"
@@ -257,20 +257,20 @@ const {
           <div v-else-if="onboardStep === 'rec'" key="rec" class="relative overflow-hidden">
             <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
               <p class="text-sm font-semibold">拍课表识别</p>
-              <p class="mt-1 text-xs text-ink-dim">截图里能看清「星期 × 第几节 × 课程名」就够。图上写的时间是学校自己的作息（课表截图上常是期末考时间），识别只取第几节，时间按下面这张表换算。</p>
+              <p class="mt-1 text-xs text-ink-dim">看清「星期 + 第几节 + 课名」就够。图上的时间不认，按下面这张节次表换算。</p>
 
               <!-- 本次换算用的节次表：让「节次先设好」这件事在识别前可见、可改。
                    mine 入口 = 当前学期的节次表（recPeriods 已切源）；引导页 = 第 1 步里那张 -->
               <div class="mt-3 rounded-xl bg-soft px-3 py-2.5" data-ob-summary>
                 <p class="text-xs font-semibold">本次换算用的节次表</p>
-                <p class="mt-0.5 text-[11px] text-ink-dim">{{ recFromMine ? '识别结果只给第几节，上课时间按你当前学期的这张表算' : '识别结果只给第几节，上课时间按这张表算' }}</p>
+                <p class="mt-0.5 text-[11px] text-ink-dim">{{ recFromMine ? '识别只给第几节，时间按你当前学期的这张表算' : '识别只给第几节，时间按这张表算' }}</p>
                 <template v-if="recFromMine || obForm.periods.length">
                   <p class="mt-1.5 text-[11px] tabular-nums text-ink-dim">共 {{ recPeriods.length }} 节 · 分 {{ recSegView.length }} 段</p>
                   <p class="mt-0.5 text-[11px] leading-relaxed tabular-nums text-ink-dim">
                     <span v-for="(g, i) in recSegView" :key="g.seg" class="inline-block"><template v-if="i">&nbsp;·&nbsp;</template>第 {{ g.nos[0] }}<template v-if="g.nos.length > 1">–{{ g.nos[g.nos.length - 1] }}</template> 节 {{ g.start }}–{{ g.end }}</span>
                   </p>
                 </template>
-                <p v-else class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">你没设置节次表，按默认 13 节换算（上午 5 节 · 下午 5 节 · 晚上 3 节；每节 45 分钟、课间 10 分钟，午休/晚休时段可在上一步改）</p>
+                <p v-else class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">没设节次表，按默认 13 节换算（上午 5 · 下午 5 · 晚上 3，每节 45 分钟）</p>
                 <button
                   v-if="!recFromMine"
                   type="button"
@@ -280,7 +280,7 @@ const {
                 >
                   ← 改节次表 / 学期信息
                 </button>
-                <p v-else class="mt-2 text-[11px] text-ink-dim">节次表不对？点「取消识别」后在学期卡片的 ✎ 编辑里改</p>
+                <p v-else class="mt-2 text-[11px] text-ink-dim">节次表不对？先「取消识别」，去学期卡片 ✎ 里改</p>
               </div>
 
               <button
@@ -291,9 +291,9 @@ const {
                 :disabled="obRecBusy"
                 @click="obRecClick"
               >
-                {{ obRecBusy ? '识别中…（大约十几秒，别退出去）' : '选课表截图 / 拍照识别' }}
+                {{ obRecBusy ? '识别中…（十几秒，别退出）' : '选课表截图 / 拍照识别' }}
               </button>
-              <p class="mt-1.5 px-1 text-[11px] text-ink-dim">用已配置的 DeepSeek Key（与课堂纪要共用）；识别结果会先给你逐条核对，改完才入库</p>
+              <p class="mt-1.5 px-1 text-[11px] text-ink-dim">识别结果先逐条给你核对，改完才入库</p>
               <p v-if="obRecErr" class="mt-2 px-1 text-xs text-red-600 dark:text-red-400" data-ob-rec-err>{{ obRecErr }}</p>
 
               <!-- 手动输入入口：不想识别 / 识别不全时，直接手动补课进核对页 -->
@@ -303,12 +303,12 @@ const {
                 class="mt-2.5 w-full rounded-xl border border-dashed border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
                 @click="obManualAdd"
               >
-                ＋ 不识别了，手动加一门课
+                ＋ 不识别了，手动加课
               </button>
 
               <!-- 已识别过一次：可以直接回到核对，也可以重新选图 -->
               <div v-if="recPreview" data-ob-rec-done class="mt-3 rounded-xl border border-line bg-canvas px-3 py-2.5">
-                <p class="text-xs">已有识别结果（{{ recPreview.items.length }} 门课），可以直接核对，也可以重新选图识别</p>
+                <p class="text-xs">已有识别结果（{{ recPreview.items.length }} 门课），可直接核对或重新选图</p>
                 <button
                   type="button"
                   data-ob-rec-continue
@@ -343,7 +343,7 @@ const {
           <div v-else-if="onboardStep === 'recConfirm'" key="recConfirm" class="relative overflow-hidden">
             <div class="rounded-2xl border border-line bg-card p-4 shadow-sm">
               <p class="text-sm font-semibold">共 {{ recPreview.items.length }} 门课，核对后导入</p>
-              <p class="mt-1 text-xs text-ink-dim">上半是整周排布，点空格子加课、点课块改课；下半逐条改细节</p>
+              <p class="mt-1 text-xs text-ink-dim">上半是整周排布，点空格子加课、点课块改课</p>
 
               <div v-if="recPreview.warnings.length" class="mt-2.5 rounded-xl bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-600">
                 <span v-for="(w, i) in recPreview.warnings" :key="i" class="block">{{ w }}</span>
@@ -474,7 +474,7 @@ const {
                         <input v-model="it.location" maxlength="30" placeholder="地点（可留空）" class="min-w-0 w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
                         <input v-model="it.teacher" maxlength="20" placeholder="教师（可留空）" class="min-w-0 w-full truncate rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-primary-400" />
                       </div>
-                      <p v-if="recItemHot(it)" data-item-conflict class="mt-1.5 text-[11px] leading-snug text-red-600 dark:text-red-400">与同一格的另一门课重叠：留一门，或者下面改成别的节次</p>
+                      <p v-if="recItemHot(it)" data-item-conflict class="mt-1.5 text-[11px] leading-snug text-red-600 dark:text-red-400">与同一格的另一门课重叠：留一门，或改成别的节次</p>
                     </div>
                     <button
                       type="button"
@@ -488,7 +488,7 @@ const {
                 </div>
               </div>
 
-              <p v-if="recPreview.notes.length" class="mt-2.5 text-[11px] text-ink-dim">图片里看不清的地方：{{ recPreview.notes.join('；') }}</p>
+              <p v-if="recPreview.notes.length" class="mt-2.5 text-[11px] text-ink-dim">看不清的地方：{{ recPreview.notes.join('；') }}</p>
               <p v-if="obRecErr" class="mt-2.5 text-xs text-red-600 dark:text-red-400">{{ obRecErr }}</p>
 
               <div class="mt-4 flex gap-2.5">
@@ -539,7 +539,7 @@ const {
                 >
                   <span class="min-w-0">
                     <span class="block text-sm font-semibold">本学期周数</span>
-                    <span class="mt-0.5 block text-[11px] text-ink-dim">假期不算，只算要上课的周</span>
+                    <span class="mt-0.5 block text-[11px] text-ink-dim">只算要上课的周</span>
                   </span>
                   <span class="shrink-0 text-sm font-semibold tabular-nums text-primary-600">{{ obForm.total_weeks }} 周</span>
                 </button>
@@ -589,7 +589,7 @@ const {
                   <p class="text-sm font-semibold">课程时间设置</p>
                   <button type="button" data-ob-time-back class="rounded-lg px-2 py-1 text-xs font-medium text-primary-600 transition active:bg-primary-50" @click="backObForm">完成</button>
                 </div>
-                <p class="mt-1 text-[11px] text-ink-dim">改时长或课间，三块时间自动重排；开学时间在上一页</p>
+                <p class="mt-1 text-[11px] text-ink-dim">改时长或课间，三块时间自动重排</p>
 
                 <div class="mt-3 grid grid-cols-2 gap-2.5">
                   <button
@@ -662,7 +662,7 @@ const {
           </div>
           </Transition>
 
-                    <p class="mt-6 text-center text-[11px] text-ink-dim">这个选择只记一次，之后随时可以在「我的」页切换示例或导入</p>
+                    <p class="mt-6 text-center text-[11px] text-ink-dim">之后随时能在「我的」页改</p>
           <input ref="onboardFile" data-ob-file type="file" accept=".json,application/json,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden" @change="onOnboardFile" />
           <input ref="obRecFile" type="file" accept="image/*" class="hidden" @change="onObRecFile" />
         </div>

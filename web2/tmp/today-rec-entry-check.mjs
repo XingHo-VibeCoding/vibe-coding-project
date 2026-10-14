@@ -74,7 +74,7 @@ await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
 await page.waitForTimeout(400)
 const mineText = await page.locator('[data-sub-body]').textContent()
 t('C1b 推进 lectures 二级页后录音区仍在（课堂录音 + 开始录音）', mineText.includes('课堂录音') && mineText.includes('开始录音'))
-t('C2 「我的」页场次说明未丢', mineText.includes('长按场次可删除'))
+t('C2 「我的」页场次说明未丢', mineText.includes('下课 2 分钟自动停'))
 
 /* D. 无页面错误 */
 t('D1 全程无 pageerror', pageErrors.length === 0, pageErrors.join(' | '))

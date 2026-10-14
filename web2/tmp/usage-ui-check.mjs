@@ -136,7 +136,7 @@ const usageLS = (page) => page.evaluate(() => localStorage.getItem('web2.usage')
   const note = await page.locator('[data-usage-note]').textContent()
   t('B6 只有 1 天 → 基线文案是「基线建立中」（§1.7 攒够 8 天才许下结论）', /基线建立中/.test(note), note)
   t('B7 分时段口径如实标注（不是逐条事件，别装精确）',
-    /按最后使用时刻归的\s*3\s*小时段/.test(await page.locator('[data-usage-panel]').textContent()))
+    /按时段归桶，非逐条记录/.test(await page.locator('[data-usage-panel]').textContent()))
 
   /* ---------- E 隐私：DOM 与落盘都不许有包名/App 名 ---------- */
   const blockText = await page.locator('[data-usage-block]').textContent()

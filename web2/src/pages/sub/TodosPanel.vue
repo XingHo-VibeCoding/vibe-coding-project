@@ -34,7 +34,7 @@ const {
             </div>
           </section>
           <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
-            没有未完成的待办，轻松自在～
+            没有未完成的待办
           </p>
 
           <section v-if="doneTodos.length" class="divide-y divide-line rounded-2xl border border-line bg-card shadow-sm">

@@ -73,7 +73,7 @@ t('A1. 我的页有清除入口', await page.locator('[data-clear-entry]').count
 await page.locator('[data-clear-entry]').click()
 await page.waitForTimeout(300)
 t('A2. 弹出二次确认弹层', await page.locator('[data-clear-confirm]').count() === 1)
-const tip = await page.locator('text=API Key、主题与通知设置会保留').count()
+const tip = await page.locator('text=API Key、主题与通知设置保留').count()
 t('A3. 弹层文案说明保留项', tip === 1)
 
 /* 取消：不应清任何键 */

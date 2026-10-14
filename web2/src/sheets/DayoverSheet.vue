@@ -58,7 +58,7 @@ function pickDayoverDate(ov) {
   >
     <p class="text-base font-bold">特殊日期</p>
     <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">
-      放假 / 补课 / 只提示。放假 = 这天没课；补课 = 这天按你选的星期上课；只提示 = 挂个说明，课照上。
+      放假 = 这天没课；补课 = 这天按你选的星期上课；只提示 = 课照上，只挂说明。
     </p>
 
     <div class="mt-4 flex gap-2.5">
@@ -77,13 +77,12 @@ function pickDayoverDate(ov) {
       >{{ holidayBusy ? '正在更新…' : '从网上更新法定节假日' }}</button>
     </div>
     <p class="mt-2 text-[11px] leading-relaxed text-ink-dim">
-      只自动填「放假」。政府公告只说哪天放假、不说补哪天的课，所以
-      <span class="font-medium text-ink">补课日的星期要你自己选</span>（打开 App 时会自动更新一次，不打扰你）。
+      只自动填「放假」，<span class="font-medium text-ink">补课日的星期要你自己选</span>（打开 App 时自动更新一次）。
     </p>
     <p v-if="holidayMsg" data-dayover-refresh-msg class="mt-2 text-[11px] text-primary-600">{{ holidayMsg }}</p>
 
     <p v-if="!dayOverrides.length" data-dayover-empty class="mt-4 rounded-xl border border-dashed border-line bg-canvas p-4 text-center text-xs text-ink-dim">
-      还没有特殊日期。放假/补课的日子在这里加，或者直接点上面的「从网上更新」。
+      还没有特殊日期。放假/补课的日子在这里加，或点上面的「从网上更新」。
     </p>
 
     <div v-else class="mt-3 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-canvas">

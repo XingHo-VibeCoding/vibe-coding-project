@@ -16,7 +16,7 @@ const app = useApp()
     >
       <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-soft-2"></div>
       <h2 class="text-lg font-bold">删除这场录音？</h2>
-      <p class="mt-2 text-xs text-ink-dim">「{{ app.delLec.title }}」及其录音文件、文字稿和纪要将一并删除，无法恢复。</p>
+      <p class="mt-2 text-xs text-ink-dim">「{{ app.delLec.title }}」连同录音、文字稿与纪要一起删除，无法恢复。</p>
       <div class="mt-5 grid grid-cols-2 gap-2.5">
         <button
           class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"

@@ -16,7 +16,7 @@ const app = useApp()
     >
       <div class="mx-auto mb-4 h-1 w-9 rounded-full bg-soft-2"></div>
       <h2 class="text-lg font-bold">确认清除全部数据</h2>
-      <p class="mt-2 text-xs text-ink-dim">将清空学期、课程、日程与待办并回到初始设定，无法恢复。API Key、主题与通知设置会保留。</p>
+      <p class="mt-2 text-xs text-ink-dim">清空学期、课程、日程与待办，无法恢复。API Key、主题与通知设置保留。</p>
       <div class="mt-5 grid grid-cols-2 gap-2.5">
         <button
           class="rounded-xl border border-line py-2.5 text-sm font-medium text-ink-dim transition active:scale-[0.98]"
