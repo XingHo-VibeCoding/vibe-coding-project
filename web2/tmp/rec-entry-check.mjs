@@ -1,8 +1,10 @@
-/* rec-entry-check —— Stage 5：录音入口归位
-   约定（用户 m12102/m12129）：不加右下角悬浮键、不加自动录音开关；
-   录音入口只有两处随「正在上课」出现——今天页顶卡那颗钮、课表页正在上的那节课块上那颗钮，
-   外加「我的」页那条独立入口（管理态，永远在）。全篇断言「什么时候有几个入口」。
-   锚点：今天页 data-today-rec-start / data-today-rec-stop；课表页 data-week-rec-now。 */
+/* rec-entry-check —— 录音入口归位
+   约定（用户 m12102/m12129/m12586）：不加右下角悬浮键、不加自动录音开关；
+   录音入口只有两处——今天页顶卡那颗钮（随「正在上课」出现）、
+   「我的 → 课堂录音」二级页里那条常驻入口（管理态，永远在）。
+   2026-10-13 用户 m12586「周课表里的录音按钮可以去掉」⇒ 课表页那颗钮已删，
+   本脚本相应改为**断言它不再出现**（防以后被不知不觉加回来）。
+   锚点：今天页 data-today-rec-start / data-today-rec-stop；课表页 data-week-rec-now（应为 0）。 */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
 const BASE = process.env.BASE || 'http://127.0.0.1:4177'
@@ -65,7 +67,7 @@ async function openMeLectures(page) {
   await page.waitForTimeout(400)
 }
 
-/* ================= A. 课上（10:30）：两处入口都在 ================= */
+/* ================= A. 课上（10:30）：顶卡有钮；课表页那颗已删 ================= */
 const A = await open('10:30')
 t('A1 今天页顶卡给「录音」钮', (await A.page.locator('[data-today-rec-start]').count()) === 1)
 t('A2 今天页没有常驻录音大卡', !/课堂录音/.test(await A.page.locator('[data-page="today"]').innerText()))
@@ -75,34 +77,28 @@ t('A3 全应用没有右下角悬浮录音键（不加 FAB）',
   )) === 0)
 t('A4 没有自动录音开关（用户 m12129：录音暂时不加自动开关）',
   !/自动录音|自动开始录音|进入教室.*录/.test(await A.page.evaluate(() => document.body.innerText)))
-t('A5 课表页正在上的那节课有且只有一个录音钮',
-  (await A.page.locator('[data-week-rec-now]').count()) === 1,
+t('A5 课表页不再有录音钮（2026-10-13 用户 m12586 要求去掉）',
+  (await A.page.locator('[data-week-rec-now]').count()) === 0,
   String(await A.page.locator('[data-week-rec-now]').count()))
-const weekTxt = await A.page.locator('[data-week-rec-now]').first().innerText().catch(() => '')
-t('A6 课表页那钮文案是「录音」', weekTxt.trim() === '录音', weekTxt)
 t('A7 「我的」索引页有「录音历史」入口', (await A.page.locator('[data-page="me"] [data-me-entry="lectures"]').count()) === 1)
 await openMeLectures(A.page)
 t('A7b 推进 lectures 二级页后有「开始录音」按钮', (await A.page.locator('[data-sub-body] button:has-text("开始录音")').count()) === 1)
 t('A8 无报错', A.errs.length === 0, A.errs.join(' | '))
 await A.ctx.close()
 
-/* ================= B. 点课表页那颗钮：起录（或如实报权限），且不误开课程详情 ================= */
+/* ================= B. 课表页那颗钮删掉后：点课程卡仍只走「详情」，没有残留的录音入口 ================= */
 const B = await open('10:30', 'week')
-/* 网格很高、这颗钮常在视口外，所以走程序化 click（事件本身一样是 Vue 的 @click.stop） */
-await B.page.$eval('[data-week-rec-now]', (el) => el.click())
-await B.page.waitForTimeout(700)
-const sheetOpen = (await B.page.locator('[data-sheet-detail]').count()) > 0 && (await B.page.locator('[data-sheet-detail]').first().isVisible().catch(() => false))
-t('B1 点课表页录音钮不会顺手弹开课程详情（卡片本身是详情入口）', !sheetOpen, `sheetOpen=${sheetOpen}`)
-const st = await B.page.evaluate(() => ({
-  rec: !!document.querySelector('[data-today-rec-stop]'),
-  /* 提示就落在这颗钮所属的录音区里（与今天页那颗钮共用同一处 recMsg） */
-  msg: (document.querySelector('[data-today-rec] p:last-of-type')?.textContent || '').trim(),
+t('B1 课上时刻课表页仍不给录音钮（删干净了，没留半颗）',
+  (await B.page.locator('[data-week-rec-now]').count()) === 0)
+const bRec = await B.page.evaluate(() => ({
+  stop: !!document.querySelector('[data-today-rec-stop]'),
+  start: !!document.querySelector('[data-today-rec-start]'),
 }))
-t('B2 点了就走真流程：要么进入录音态，要么如实报错（浏览器无麦克风权限即报这句）', st.rec || st.msg.length > 0, JSON.stringify(st))
+t('B2 课表页本身不进入录音态（录音入口不在这页）', !bRec.stop, JSON.stringify(bRec))
 t('B3 无报错', B.errs.length === 0, B.errs.join(' | '))
 await B.ctx.close()
 
-/* ================= C. 空档（13:00）：两处钮都收起来，只留「我的」页那条 ================= */
+/* ================= C. 空档（13:00）：顶卡钮收起来，课表页也没有，「我的」页那条还在 ================= */
 const C = await open('13:00', 'week')
 t('C1 空档时今天页不给录音钮', (await C.page.locator('[data-today-rec-start]').count()) === 0)
 t('C2 空档时课表页也不给录音钮', (await C.page.locator('[data-week-rec-now]').count()) === 0)
@@ -113,14 +109,10 @@ t('C3 空档时「我的」索引有录音历史入口，推进去仍有「开�
 t('C4 无报错', C.errs.length === 0, C.errs.join(' | '))
 await C.ctx.close()
 
-/* ================= D. 别的星期那一列不带钮 ================= */
+/* ================= D. 别的星期那一列也不带钮 ================= */
 const D = await open('10:30', 'week')
-const other = await D.page.evaluate(() => {
-  const btn = document.querySelector('[data-week-rec-now]')
-  const card = btn && btn.closest('article')
-  return card ? getComputedStyle(card).gridColumnStart : ''
-})
-t('D1 只有今天这一列的那节课有钮（明天那节没有）', (await D.page.locator('[data-week-rec-now]').count()) === 1, `位于列 ${other}`)
+t('D1 课表页任何一列都没有录音钮（含今天与明天）',
+  (await D.page.locator('[data-week-rec-now]').count()) === 0)
 await D.ctx.close()
 
 await browser.close()

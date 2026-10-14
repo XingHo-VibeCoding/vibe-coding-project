@@ -48,6 +48,18 @@ const adbOut = (args) => { try { return execFileSync(ADB, args, { encoding: 'utf
 const devices = adbOut(['devices']).split('\n').slice(1).map(l => l.trim()).filter(l => l.endsWith('device'))
 const DEVICE = devices.length > 0
 
+/* 息屏时 requestAnimationFrame 永不触发 ⇒ 脚本里那些「等 6 帧」的循环会永久挂住
+   （2026-10-14 实测：设备 mWakefulness=Dozing 时 S1 卡死，日志停在标题行）。
+   真机模式下先点亮屏幕并让它别睡。 */
+if (DEVICE) {
+  adbOut(['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'])
+  adbOut(['shell', 'input', 'keyevent', 'KEYCODE_MENU'])
+  adbOut(['shell', 'svc', 'power', 'stayon', 'true'])
+  const wake = adbOut(['shell', 'dumpsys', 'power'])
+  const m = wake.match(/mWakefulness=(\w+)/)
+  console.log(`  屏幕: ${m ? m[1] : '未知'}（息屏会让 rAF 不触发、脚本挂死，已尝试唤醒）`)
+}
+
 console.log('=== P10 真机自动化 S1–S8 ===')
 console.log(`  设备: ${DEVICE ? devices.join(', ') : '（无 adb 设备）'}`)
 
@@ -68,10 +80,11 @@ if (DEVICE) {
   for (const c of browser.contexts()) for (const p of c.pages()) page = p
   if (!page) { console.log('9222 上没找到页面'); process.exit(2) }
   // 真机首跑（2026-10-13 21:08）5 个 FAIL 里有 4 个是「时辰不对」造成的假 FAIL：
-  // 那天晚上课全上完了，「接下来」只剩一条折叠行 ⇒ [data-today-item] 一条都没有（S2a/S3a 挂），
-  // 课表页也没有「正在上的那节课」⇒ [data-week-rec-now] 不存在（S4b 挂）。
+  // 那天晚上课全上完了，「接下来」只剩一条折叠行 ⇒ [data-today-item] 一条都没有（S2a/S3a 挂）。
   // 所以真机模式也走同一个 ?t= 时间后门，把钟点钉在「正在上高等数学」的 10:30 再断言。
   // ?t= 只冻结钟点、不冻日期（见 App.vue:3900），也不动任何数据，跑完再 reload 回真实时间。
+  // 注：S4b 原本也吃「时辰」亏（没正在上的课 ⇒ 课表页没录音钮），但 2026-10-13 用户把那个钮去掉了，
+  // 断言已反转为「不该存在」，不再依赖时刻。
   const T = process.env.S1S8_T || '10:30'
   appUrl = page.url().split('?')[0]
   await page.goto(appUrl + '?t=' + T, { waitUntil: 'domcontentloaded' }).catch(() => {})
@@ -144,14 +157,18 @@ const heroVisible = () => page.evaluate(() => {
   return r.width > 0 && r.right > 2 && r.left < vw - 2
 })
 const shoot = async (name) => {
-  await page.screenshot({ path: `${OUT}/${mode}-${name}.png` })
-  if (mode === 'device') {
-    try {
-      execFileSync(ADB, ['shell', 'screencap', '-p', `/sdcard/s1s8-${name}.png`])
-      execFileSync(ADB, ['pull', `/sdcard/s1s8-${name}.png`, `${OUT}/${mode}-adb-${name}.png`])
-      execFileSync(ADB, ['shell', 'rm', `/sdcard/s1s8-${name}.png`])
-    } catch { /* 截图失败不该中断检查 */ }
+  /* 真机 CDP 上 page.screenshot() 会挂死（等到 30s+ 也不返回，且设备一断就抛
+     "Target page, context or browser has been closed"）⇒ 真机一律走 adb 整屏截图，
+     只有桌面替身才用 CDP 截图。2026-10-14 实测：S1 就是卡在 page.screenshot() 上。 */
+  if (mode !== 'device') {
+    await page.screenshot({ path: `${OUT}/${mode}-${name}.png` })
+    return
   }
+  try {
+    execFileSync(ADB, ['shell', 'screencap', '-p', `/sdcard/s1s8-${name}.png`])
+    execFileSync(ADB, ['pull', `/sdcard/s1s8-${name}.png`, `${OUT}/${mode}-adb-${name}.png`])
+    execFileSync(ADB, ['shell', 'rm', `/sdcard/s1s8-${name}.png`])
+  } catch { /* 截图失败不该中断检查 */ }
 }
 // 真机 CDP 上 playwright 的「可操作性」检查会失效：按钮只要贴近视口底部/被 BottomSheet 的
 // 进场动画推着（例如 [data-todo-submit] 在 top 726 / vh 794），locator.click() 会一直等
@@ -191,8 +208,16 @@ await go('today')
     return { hero: q('[data-hero-wrap]'), nav: q('nav'), scrollTop: document.querySelector('[data-today-scroll]')?.scrollTop ?? -1 }
   })
   await page.evaluate(async () => {
+    /* 等帧用「rAF 或 60ms 兜底」：息屏 / 后台标签页里 rAF 永不触发，
+       直接 await requestAnimationFrame 会把整个脚本挂死（2026-10-14 踩过）。 */
+    const frame = () => new Promise((r) => {
+      let done = false
+      const fin = () => { if (!done) { done = true; r() } }
+      requestAnimationFrame(fin)
+      setTimeout(fin, 60)
+    })
     const s = document.querySelector('[data-today-scroll]')
-    if (s) { s.scrollTop = 220; for (let i = 0; i < 6; i++) await new Promise(r => requestAnimationFrame(r)) }
+    if (s) { s.scrollTop = 220; for (let i = 0; i < 6; i++) await frame() }
     await new Promise(r => setTimeout(r, 300))
   })
   await page.waitForTimeout(400)
@@ -209,7 +234,10 @@ await go('today')
   ok('S1b', '底部 tab 条不动', navPinned, `nav.top ${before.nav?.top} → ${after.nav?.top}`)
   ok('S1c', '顶部问候卡/学期进度不位移', heroPinned, `hero.top ${before.hero?.top} → ${after.hero?.top}，高 ${before.hero?.h} → ${after.hero?.h}`)
   await shoot('s1-scrolled')
-  await page.evaluate(async () => { const s = document.querySelector('[data-today-scroll]'); if (s) { s.scrollTop = 0; for (let i = 0; i < 6; i++) await new Promise(r => requestAnimationFrame(r)) } })
+  await page.evaluate(async () => {
+    const frame = () => new Promise((r) => { let d = false; const f = () => { if (!d) { d = true; r() } }; requestAnimationFrame(f); setTimeout(f, 60) })
+    const s = document.querySelector('[data-today-scroll]'); if (s) { s.scrollTop = 0; for (let i = 0; i < 6; i++) await frame() }
+  })
   await page.waitForTimeout(500)
 }
 
@@ -306,7 +334,9 @@ console.log('\n=== S3 手指点「接下来」某一行 → 进课程详情 ==='
     })
     ok('S3b', '最长连续可点段 ≥44px（不被上层遮罩裁掉）', scan.best >= 44,
       `第 ${scan.bestIdx} 行最长连续 ${scan.best}px / 共 ${scan.count} 行 ${JSON.stringify(scan.detail)}px / 占位=${JSON.stringify(scan.lost)}`)
-    await page.locator('[data-today-item]').first().click({ force: false }).catch(() => {})
+    /* 真机 CDP 上 locator.click() 会卡在 actionability（见上面 tap 的注释）⇒ 真机用 tap 派发 click */
+    if (mode === 'device') await tap('[data-today-item]')
+    else await page.locator('[data-today-item]').first().click({ force: false }).catch(() => {})
     await page.waitForTimeout(700)
     const detail = await page.evaluate(() => {
       const s = document.querySelector('[data-sheet-detail]')
@@ -335,7 +365,9 @@ console.log('\n=== S4 三个录音入口 ===')
     const b = document.querySelector('[data-week-rec-now]')
     return b ? { ok: true, txt: b.innerText.trim().slice(0, 14) } : { ok: false }
   })
-  ok('S4b', '② 课表页「正在上的那节课」卡右下录音钮存在', e2.ok, e2.ok ? `文案「${e2.txt}」` : '找不到 [data-week-rec-now]（今天此刻可能没课）')
+  /* 2026-10-13 用户 m12586 拍板「周课表里的录音按钮可以去掉」⇒ 现在它**不该**存在。
+     断言反转为「课表页没有录音钮」，防它以后被谁不知不觉加回来。 */
+  ok('S4b', '② 课表页不再有录音钮（2026-10-13 用户要求去掉）', !e2.ok, e2.ok ? `仍有 [data-week-rec-now]（文案「${e2.txt}」）` : '课表页无 [data-week-rec-now]，符合预期')
 
   if (mode === 'device') {
     // ③ 通知栏状态框的「开始录音」：从 adb 侧看通知里有没有这个 action

@@ -437,7 +437,56 @@ web2 (App.vue watch / visibilitychange)
 
 **验证**：`periods-editor-ui-check` **38/38**（A7b 断言 `[data-seg-dur="1"]` 的 `tagName === 'BUTTON'`，改值走「点开 → 点 `[data-wheel-val="50"]` → 点 `[data-picker-ok]`」）；`listen-ui-check` **92/0**（M10–M15 全覆盖，含「恢复默认后入口回显默认值」）；`subterm-check` **22/0**；`dayover-check` **56/0**；`status-frame-check` **63/0**（B21 改勿扰改成点滚轮）；回归 `onboard-choice-check` **37/0**、`step5-check` **28/0**、`obrec-periods-check` **14/14**、`rec-dedup-check` **9/9**、`recognize-ui-check` **30/30**、`event-smart-check` **64/0**、`hero-collapse-check` **28/0**、`today-shell-check` **17/0**、`week-fit-check` **19/19**、`me-nest-check` **27/0**、`day27-fix-check` **11/0**；`gen-app-ctx --check` **859 绑定 ✓ 最新**；`quality-scan` **0 处问题**（14 张截图）。
 
-**未换（拍板保留）**：`<select>` 6 处（识别结果核对 / 格子补课 —— 出戏感轻）、`input[type=file]` 各处（选文件本就该用系统选择器）、`inputmode="numeric"` 的自由文本输入（练耳复习间隔 `1,2,4,7,15,30` 这类需要手打逗号串的）。
+**未换（拍板保留）**：`<select>` 6 处（识别结果核对 / 格子补课 —— 出戏感轻）、`input[type=file]` 各处（选文件本就该用系统文件选择器）、`inputmode="numeric"` 的自由文本输入（练耳复习间隔 `1,2,4,7,15,30` 这类需要手打逗号串的）。
+
+---
+
+### 2.12 应用内「今天 / 第几周」跟随系统时间（2026-10-14，用户 m12586）
+
+**问题**：用户报「应用内时间和系统时间对不上，只有导入课表的时候会去同步」。三处根因：
+
+| 位置 | 原来 | 问题 |
+| --- | --- | --- |
+| `web2/src/App.vue` 头卡日期链 | `const today = new Date()` / `const todayIdx = …` / `const todayStr = …` **模块级常量** | setup 执行时算一次就冻住；模板头卡那行、待办/日精进/复盘/用量/课表三态全是它 |
+| `web2/src/App.vue` 30 秒自走定时器 | 只写 `nowTime.value = d.getHours()*60 + d.getMinutes()` | **钟点走了、日期不走** ⇒ 「时间对不上」 |
+| `web2/src/data/store.js:462` | `week: currentWeekNo(sem.first_monday)`，只在 `buildFromExport()` 里算 | 学期第几周只在 `loadDataset()`（导入 / 恢复 / 清数据）时算一次 ⇒ 「只有导入课表才同步」 |
+
+**改法**：
+
+1. 新增 `const todayVersion = ref(0)` + `let todayKeyCache = todayKeyOf()`，把三个常量换成基于 `todayVersion` 的 computed：
+   - `const today = computed(() => { todayVersion.value; return new Date() })`
+   - `const todayIdx = computed(() => (today.value.getDay() + 6) % 7)`
+   - `const todayStr = computed(() => todayKeyOf(today.value))`
+   - `const dateText = computed(() => …today.value…)` / `const weekDay = computed(() => …today.value…)`
+2. 新增 `syncToday()`：`const k = todayKeyOf(); if (k === todayKeyCache) return; todayKeyCache = k; todayVersion.value += 1`，然后**只在 `source === 'import'` 且有 `firstMonday` 时**重算 `semester.value = { ...semester.value, week: currentWeekNo(semester.value.firstMonday) }`（示例数据的 week 是写死的 4，不重算）。
+3. 挂两个触发点：30 秒定时器内加 `syncToday()`；`onFrameVisible()` 第一句加 `syncToday()`（该函数挂在 `visibilitychange` / `window focus` / `appStateChange` / `resume` 四个钩子上）。
+4. 连带把打卡那套常量改成 computed：`habitToday` → `computed(() => todayStr.value)`；`habitGrace` → `computed(() => new Set(graceKeysOf(habitToday.value)))`；`habitTodayText` 由 IIFE 改 computed。所有 `habitToday` 用法补 `.value`。
+5. `web2/src/App.vue:3` 的 import 行补 `currentWeekNo`；`gen-app-ctx` 重生成（859 → **865** 绑定）。
+
+**为什么不是「每次 new Date()」**：`today` 在 24 处被当 Date 对象用（`.getDay()` / `.getDate()`），且 `weekAll` / `weekDays` / `gridStatus` / `termInfo` 等一堆 computed 依赖它。做成 `todayVersion` 版本号 + computed，才能让整条链**只在真跨天时**重算一次，而不是每帧 new 一个 Date（那会让所有依赖它的 computed 每帧失效）。
+
+**验证**：`web2/tmp/day28c-today-check.mjs` **15/0** —— 用 `addInitScript` 换掉 `window.Date` 造假钟（2026-10-13 → 10-20 → 10-27），A1 起始态 `10 月 13 日 周二 · 第 5 周`；A2 派发 `focus` 后变 `10 月 20 日 周二 · 第 6 周`；A4b 不碰页面、等真实 30 秒定时器后变 `10 月 27 日 周二 · 第 7 周`；B1 示例数据仍是写死的 `第 4 周`。负向验证：把 `syncToday()` 首行插 `if (true) return` → A2/A3/A4b 三条 FAIL（12/3），还原后 15/0。
+
+**真机实测**：设备日期从 10-13 跨到 10-14 后重新出包装机，`https://localhost/` 头卡自动显示「10 月 14 日 周三 · 第 5 周」，页内 `new Date()` = `2026-10-14`。
+
+---
+
+### 2.13 删周课表页录音钮 + 开学日期如实显示（2026-10-14，用户 m12586）
+
+**(a) 删周课表页录音钮**：`web2/src/pages/WeekPage.vue:281-296` 整个 `<button v-if="gridStatus(it) === 'now'" data-week-rec-now …>` 块删除；紧随的「让位」条件 `v-if="!isAligned(it.c, periods) && gridStatus(it) !== 'now'"` 去掉 `&& gridStatus(it) !== 'now'`（已无叠放冲突）；`toRefs` 名单里删掉 `recActiveId` / `startRec` / `stopRec`（已无人用）。
+- 录音入口现在只剩两处：今日页顶卡那颗（`data-today-rec-start` / `data-today-rec-stop`，随「正在上课」出现）、「我的 → 课堂录音」二级页那条常驻入口。
+- 同步改的自检：`web2/tmp/device-s1s8-check.mjs` 的 **S4b 断言反转**（原「课表页录音钮存在」→ 现「课表页不再有录音钮」）；`web2/tmp/rec-entry-check.mjs` 整份重写（16/0，5 条围绕 `[data-week-rec-now]` 的断言全部改为「应为 0」）。
+
+**(b) 开学日期如实显示**：归一本身不能去（`store.js:1541` 要求 `first_monday` 是合法周一，第几周才算得对），但界面原先把用户点的日期**悄悄改掉**、只显示归一后的周一 ⇒ 看起来像「选了没生效」。
+- 新增 `const obPickedDate = ref('')`（引导页）/ `const eduPickedDate = ref('')`（教务核对页），在 `openDateField` 的 `onDone` 里先记原始选择、再归一写 `first_monday`。
+- 摘要文案改成：选周一 → `✓ M 月 D 日（周一）开学`；选非周一 → `✓ 你选的是 M 月 D 日（周X）· 第 1 周从 M 月 D 日（周一）起算`。
+- 清空点：`goObForm()` 里清 `obPickedDate`；`eduPreviewOf()` 里清 `eduPickedDate`。
+- **不给月历加 `restrictMonday`**：任意日仍可点，只是文案不再骗人（用户 m12641 拍板口径）。
+- 验证：`day28c-today-check.mjs` C1–C6（月历点 `2026-10-15` 周四 → 文案含「10 月 15 日（周四）」+「第 1 周从 10 月 12 日（周一）起算」+ 右端 `2026-10-12`）。
+
+**验证汇总**：`rec-entry-check` **16/0**、`day28c-today-check` **15/0**、`onboard-choice-check` **37/0**、`obrec-periods-check` **14/14**、`today-shell-check` **17/0**、`week-fit-check` **19/19**、`dayover-check` **56/0**、`me-nest-check` **27/0**、`onboard-import-check` **10/10**、`subterm-check` **22/0**、`gen-app-ctx --check` **865 绑定 ✓**。
+
+**已知非本轮回归**：`hero-collapse-check` 的 Z1「全程无 pageerror」在**本机**红，报 4 条 `net::ERR_PROXY_CONNECTION_FAILED` —— 根因是页面拉外网节假日 CDN `https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/2026.json` 不可达（本机无代理）；`git stash push -- src/` 收起本次全部改动后**同样红**，与本次无关。
 
 ---
 
