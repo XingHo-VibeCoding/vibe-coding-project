@@ -16,6 +16,14 @@ function t(name, cond, extra) {
 const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 
 const now = new Date()
+/* 2026-10-15：本地时间距零点太近时，下面「相对 now 造课」的 fixture 会落到昨天
+   （如 00:10 跑时的 now-90min = 昨天 22:40），而 weekday 仍写今天 → 断言必假红。
+   这个时刻本身不可构造，直接 SKIP（诚实标注：既不算通过也不算失败），
+   消掉 ~1/1440 概率的假红。 */
+if (now.getHours() < 2 || now.getHours() >= 23) {
+  console.log('SKIP | 本地时间 ' + now.toTimeString().slice(0, 5) + ' 距零点不足 2 小时，相对 now 的课表 fixture 无法构造成立，本脚本跳过')
+  process.exit(0)
+}
 const mon = new Date(now)
 mon.setDate(now.getDate() - ((now.getDay() + 6) % 7))
 const MONDAY = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`

@@ -4,6 +4,9 @@
 """
 import zipfile, hashlib, os, re, sys
 
+if hasattr(sys.stdout, "reconfigure"):          # Windows 控制台默认 GBK：打印 ↔ 会 UnicodeEncodeError
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 """用法: python web2/tmp/verify-apk.py <apk路径> [期望版本串 vX.Y]
 路径按脚本位置推导（web2/tmp → 仓库根），换机器也能跑。"""
 APK = sys.argv[1]

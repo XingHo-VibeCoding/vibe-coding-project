@@ -149,7 +149,11 @@ t('C6. 最早一节课之前不画游标', (await pc6.locator('[data-now-line]')
 await C6.ctx.close()
 
 /* ============ D. 主题随时间呼吸 ============ */
-const D = await open()
+/* 2026-10-15 修假红（D4）：主题选档读的是**真实小时**（`?t=` 后门只管「现在」游标/活进度条，
+   不管主题档，实测 ?t=11:00 时 22 点仍落到「夜里」），所以不能拿脚本启动时抓的 now.getHours()
+   当预期——那可能比页面加载早好几分钟，跨 5/9/17/21 点档界就假红。
+   改法：在点开开关的当口现读真小时。D 段仍传 t=11:00，把本段别的时刻相关项钉死。 */
+const D = await open({ t: '11:00' })
 const pd = D.page
 t('D1. 默认关（web2.theme.auto 没被写过）', (await pd.evaluate(() => localStorage.getItem('web2.theme.auto'))) === null)
 await tab(pd, '我的').click()
@@ -162,14 +166,15 @@ await pd.waitForTimeout(400)
 await pd.locator('[data-settings-index="appearance"]').click()
 await pd.waitForTimeout(400)
 t('D2. 设置里有「跟着时间自动换」开关', (await pd.locator('[data-theme-auto]').count()) === 1)
-const h = now.getHours()
+await pd.locator('[data-theme-auto]').click()
+await pd.waitForTimeout(300)
+/* 开关生效当口现读真小时（见本段开头说明），把假红窗口从「几分钟」压到毫秒级 */
+const h = new Date().getHours()
 const slot = h < 5 ? { a: 'lavender', dark: true, name: '夜里' }
   : h < 9 ? { a: 'mint', dark: false, name: '清晨' }
     : h < 17 ? { a: 'blue', dark: false, name: '白天' }
       : h < 21 ? { a: 'lavender', dark: false, name: '傍晚' }
         : { a: 'lavender', dark: true, name: '夜里' }
-await pd.locator('[data-theme-auto]').click()
-await pd.waitForTimeout(300)
 const on = await pd.evaluate(() => ({
   acc: document.documentElement.dataset.accent,
   dark: document.documentElement.classList.contains('dark'),

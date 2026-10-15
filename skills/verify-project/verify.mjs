@@ -40,6 +40,7 @@ function run(cmd, args, opts = {}) {
     timeout: opts.timeout || 180000,
     maxBuffer: 64 * 1024 * 1024,
     shell: false,
+    env: opts.env ? { ...process.env, ...opts.env } : undefined,
   })
   return { code: r.status, out: (r.stdout || '') + (r.stderr || ''), err: r.error }
 }
@@ -353,7 +354,7 @@ if (FAST) {
       `最新 APK ${apks[0].name} 比 web2/dist 旧（dist 有未出包的改动），出包链检查跳过 —— 交付前请先跑壳仓 npm run ship`, true)
   } else {
     const py = 'C:\\Users\\26502\\.dsh\\dsh-runtimes\\dsh-primary-runtime\\dependencies\\python\\python.exe'
-    const r = run(py, ['web2/tmp/verify-apk.py', apks[0].path], { timeout: 300000 })
+    const r = run(py, ['web2/tmp/verify-apk.py', apks[0].path], { timeout: 300000, env: { PYTHONIOENCODING: 'utf-8' } })
     rec('E1', 'APK 三方一致（dist ↔ www ↔ APK）', r.code === 0,
       `验 ${apks[0].name} ｜ exit=${r.code} ｜ ${r.out.split(/\r?\n/).filter((l) => /一致|命中|不一致|缺失/.test(l)).slice(0, 3).join(' ； ') || r.out.slice(-140)}`)
   }

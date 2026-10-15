@@ -25,6 +25,12 @@ function t(name, cond, extra) {
 const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 
 const now = new Date()
+/* 2026-10-15：与 grid-status-check 同因——「现在 ± N 分钟」造的课/日程在零点附近会落到昨天，
+   而 weekday/date 仍写今天 → 断言必假红。该时刻不可构造，直接 SKIP（不算通过也不算失败）。 */
+if (now.getHours() < 2 || now.getHours() >= 23) {
+  console.log('SKIP | 本地时间 ' + now.toTimeString().slice(0, 5) + ' 距零点不足 2 小时，相对 now 的课表/日程 fixture 无法构造成立，本脚本跳过')
+  process.exit(0)
+}
 const mon = new Date(now)
 mon.setDate(now.getDate() - ((now.getDay() + 6) % 7))
 const MONDAY = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`
