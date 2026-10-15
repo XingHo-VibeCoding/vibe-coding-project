@@ -33,9 +33,15 @@ const AI_SAT = {
   notes: [],
 }
 
+/* --disable-gpu 是必须的（2026-10-15 查出的根因）：这台机器上 Chrome 走 GPU 合成时
+   整个渲染器不产帧 —— rAF 连续 6 秒一次都不回调、CSS 过渡永远停在起点，
+   于是弹层卡在 *.enter-from（translateY(100%)）落在视口外、Playwright 的
+   「元素稳定」检查也永远等不到两帧，点什么都 30s 超时。加了这个参数走软件合成，rAF 20ms 就回来。
+   不是产品问题：真机与正常机器的动画都正常。 */
 const browser = await chromium.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   headless: true,
+  args: ['--disable-gpu'],
 })
 
 async function newPage(payload) {
@@ -191,6 +197,12 @@ try {
   /* ---- J. 正常页课表仍保留长按加课（防误触，本轮没改成点按） ---- */
   await p2.locator('[data-rec-import]').click()
   await p2.waitForTimeout(900)
+  /* 导入后落回的是「今日」tab：周课表虽然还挂在三页并排的平移层里，但整页在视口外
+     （实测网格左边界 x=407 > 视口 390），直接点格子会「element is outside of the viewport」。
+     先切到「周课表」再量 —— 之前这里长期红就是这个原因。 */
+  await p2.locator('[data-nav="week"]').click()
+  await p2.waitForTimeout(700)
+  t('J0. 切到「周课表」tab（后面几条的前提）', (await p2.locator('[data-nav="week"]').getAttribute('data-active')) === '1')
   const cBefore = await p2.locator('[data-grid] article').count()
   await p2.locator('[data-cell="2-6"]').click()   // 正常页第 7 节空格：单击不该弹任何表单
   await p2.waitForTimeout(400)

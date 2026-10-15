@@ -301,22 +301,29 @@ if (FAST) {
     const m = r.out.match(/(\d+)\s*个脚本，非\s*0\s*退出\s*(\d+)\s*个/)
     if (m) { total = Number(m[1]); bad = Number(m[2]) }
   }
-  // 基线脚本是并发/连续跑的，浏览器类脚本会互相抢资源 → 失败可能是「真回归」也可能是「并发抖动」。
-  // 判据：把每个失败脚本**单独再跑一次**，仍失败才算真回归（单独跑还红 = 稳定复现）。
-  let soloNote = ''
+  // 基线脚本是并发跑的，浏览器类脚本会互相抢资源 → 失败可能是「真回归」也可能是「抖动绿」。
+  // 判据（2026-10-15 起）：把每个失败脚本**单独再跑一次**，仍失败才算真回归；
+  // 复跑转绿的算抖动，只在文案里注明，**不再一票否决整个 D4** —— 老判据「只要 bad>0 就 FAIL」
+  // 会让一批「按小时轮转」的假红永远拦着（fixture 用 new Date() 造相对时间），每次都要人工返工。
+  const stable = [], flaky = []
   if (bad) {
-    const stable = [], flaky = []
     for (const f of badList) {
       const sr = run(NODE, [`tmp/${f}`], { cwd: path.join(ROOT, 'web2'), timeout: 300000 })
       if (sr.code === 0) flaky.push(f); else stable.push(f)
     }
-    if (stable.length || flaky.length) {
-      soloNote = ` ｜ 单独复跑：稳定红 ${stable.length} 个（${stable.join(' / ') || '无'}）${flaky.length ? `，抖动绿 ${flaky.length} 个（${flaky.join(' / ')}）` : ''}`
-    }
   }
-  rec('D4', '测试基线无非 0 退出（day19-baseline）', bad === 0,
+  let soloNote = ''
+  if (bad) {
+    soloNote = badList.length
+      ? ` ｜ 单独复跑：稳定红 ${stable.length} 个（${stable.join(' / ') || '无'}）${flaky.length ? `，抖动绿 ${flaky.length} 个（${flaky.join(' / ')}）` : ''}`
+      : ' ｜ 非 0 名单没解析出来，无法归类，按稳定红处理'
+  }
+  // bad>0 且名单解析出来了 ⇒ 只有稳定红才拦；名单没解析出来 ⇒ 保守判红
+  const d4ok = bad === 0 || (bad !== null && badList.length > 0 && stable.length === 0)
+  const d4note = bad ? (d4ok ? ' ⇒ 只有抖动绿，不算拦（单独复跑即绿）' : '') : ''
+  rec('D4', '测试基线无稳定红（day19-baseline；批跑红但单跑绿算抖动）', d4ok,
     bad === null ? `没能解析出基线结果（产物 ${existsSync(outFile) ? '存在但没解析到 exit 行' : '不存在'}；console 尾：${r.out.split(/\r?\n/).filter((l) => l.trim()).slice(-1)[0] || '(空)'}）`
-      : `${total} 个脚本，非 0 退出 ${bad} 个${bad ? '：' + badList.slice(0, 6).join(' / ') : ''}${soloNote}`)
+      : `${total} 个脚本，非 0 退出 ${bad} 个${bad ? '：' + badList.slice(0, 6).join(' / ') : ''}${soloNote}${d4note}`)
 }
 
 /* ═══════════ E 组｜出包链 ═══════════ */

@@ -98,17 +98,20 @@ if (DEVICE) {
   const MON = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return keyOf(d) })()
   const WD = ((new Date().getDay() + 6) % 7) + 1
   const now = new Date()
-  // 造一节「正在进行」的课：起始 = 现在往前 30 分钟，时长 145
-  const st = new Date(now.getTime() - 30 * 60 * 1000)
-  const hhmm = `${pad(st.getHours())}:${pad(st.getMinutes())}`
-  // 再造一节「已上完」的课（现在往前 3 小时、45 分钟），好把 S2 的折叠行也真跑到
-  const past = new Date(now.getTime() - 3 * 3600 * 1000)
-  const pastHM = `${pad(past.getHours())}:${pad(past.getMinutes())}`
+  /* 时钟钉死（2026-10-15 修）：原来用 `now ± Nh` 造 fixture —— 晚上跑时 +4/+6/+8h 会跨过零点，
+     那三节课被算成「今天已过」折叠掉，「接下来」只剩 1 条 live 行；S3b 取的是**所有行的最长
+     连续可点段最大值**，只有一条行时它上下紧挨「已过 / 展开全部」两个带 after:-inset-y-[9px]
+     扩触区的控制行，量到 40px < 44px 就假红。改成固定钟点（含 ?t= 后门同值）后任何时刻跑都一致。 */
+  const APP_T = '10:30'                 // 应用内的「现在」（?t= 后门）
+  const hhmm = '10:00'                  // 「正在进行」的一节：10:00–12:25（含 10:30）
+  // 再造一节「已上完」的课（08:00–08:45），好把 S2 的折叠行也真跑到
+  const pastHM = '08:00'
   // 再造几节「接下来」的课，凑够「展开全部」出现的条件（超过首屏 3 条）
-  const later = [4, 6, 8].map((h, i) => {
-    const d = new Date(now.getTime() + h * 3600 * 1000)
-    return { id: 'n' + i, type: 'course', semester_id: 'sem1', title: '后续课' + (i + 1), location: '东' + (i + 1) + '-10' + i, weekday: WD, start_time: `${pad(d.getHours())}:${pad(d.getMinutes())}`, duration: 95, week_rule: 'every' }
-  })
+  const later = [
+    { id: 'n0', start: '14:00', loc: '东1-100' },
+    { id: 'n1', start: '16:00', loc: '东2-101' },
+    { id: 'n2', start: '18:00', loc: '东3-102' },
+  ].map((x, i) => ({ id: x.id, type: 'course', semester_id: 'sem1', title: '后续课' + (i + 1), location: x.loc, weekday: WD, start_time: x.start, duration: 95, week_rule: 'every' }))
   const DOC = JSON.stringify({
     app: 'sched', schema_version: 1, exported_at: now.toISOString(),
     semester: { id: 'sem1', name: '测试学期', first_monday: MON, total_weeks: 16 },
@@ -131,7 +134,7 @@ if (DEVICE) {
     localStorage.setItem('web2.theme', 'light')
     for (const k of ['web2.review', 'web2.daily', 'web2.usage', 'web2.llm']) localStorage.removeItem(k)
   }, DOC)
-  await page.goto(BASE + '?t=' + hhmm, { waitUntil: 'domcontentloaded' })
+  await page.goto(BASE + '?t=' + APP_T, { waitUntil: 'domcontentloaded' })
   console.log('  模式: fallback（桌面 Chrome + 样例数据）| ' + page.url())
 }
 await page.waitForTimeout(1800)

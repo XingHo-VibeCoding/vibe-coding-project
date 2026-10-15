@@ -31,6 +31,7 @@ const SETTLE_MS = 1800
 const browser = await chromium.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   headless: true,
+  args: ['--disable-gpu'], /* 这台机器 GPU 合成不产帧：rAF/过渡全停 ⇒ 触摸手势断言全假红。详见 rec-preview-check.mjs 顶部注释。 */
 })
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 const page = await ctx.newPage()
@@ -191,28 +192,53 @@ try {
   t('B5 快甩档物理甩动 ≥18 格（第五轮诉求「惯性到 30」；5 分钟步长后一份只 480px，可见位移会折一份，所以改测不折叠的物理总量）', fastest.rawTotal - dragItems >= 18, `${fastest.v}px/s → 物理甩动 ${(fastest.rawTotal - dragItems).toFixed(1)} 格（可见 ${fastest.extra.toFixed(1)}）`)
 
   console.log('\n=== C. 循环（一直朝一个方向拖，永不到底）===')
+  /* 慢拖（帧间隔 80ms ⇒ 松手末速 10px/0.08s = 125px/s < FLING_MIN_V=150 ⇒ 不叠加惯性）。
+     2026-10-15 修正（这条断言长期假红）：C 段原本是「零间隔快拖」，一轮 = 拖动 3 格 + 惯性 6 格
+     = 前进 9 格 = 45 分钟；而分钟列是 12 项循环（00…55 回到 00），**前进 45 分钟和后退 15 分钟
+     落在同一个值上**，旧断言 `Number(seen[0]) > Number(startVal)` 看到 30 → 15 就判 FAIL。
+     方向必须用「循环差」判，且一轮步长要小于半圈（15 分钟 < 30 分钟），落点才唯一。 */
+  const vAdvance = (a, b) => {
+    let d = (((Number(b) - Number(a)) % 60) + 60) % 60
+    if (d > 30) d -= 60
+    return d
+  }
   await reset()
   const startVal = await val()
   const seen = []
   for (let round = 0; round < 3; round++) {
     await send('touchStart', cy)
-    for (let i = 1; i <= 12; i++) await send('touchMove', cy - i * 10) // 手指上移 120px = 往后 3 格
+    for (let i = 1; i <= 12; i++) {
+      await send('touchMove', cy - i * 10) // 手指上移 120px = 往后 3 格
+      await page.waitForTimeout(80)
+    }
     await send('touchEnd', cy - 120)
     await page.waitForTimeout(SETTLE_MS)
     seen.push(await val())
   }
   t('C1 连续同向拖动 3 轮，值持续变化（未卡边界）', new Set(seen).size === 3, seen.join(' → '))
-  t('C2 方向正确（上移手指 → 值递增）', Number(seen[0]) > Number(startVal), `${startVal} → ${seen[0]}`)
+  t(
+    'C2 方向正确（上移手指 → 值递增；分钟列循环，按循环差判）',
+    vAdvance(startVal, seen[0]) > 0,
+    `${startVal} → ${seen[0]}（循环差 ${vAdvance(startVal, seen[0])} 分）`
+  )
   const r = await page.evaluate(() => {
     const el = document.querySelectorAll('.wheel')[1]
     return { top: el.scrollTop, max: el.scrollHeight - el.clientHeight }
   })
   t('C3 位置始终在可滚范围内（没被夹到 0 或到底）', r.top > 0 && r.top < r.max, `top=${Math.round(r.top)} max=${Math.round(r.max)}`)
   await send('touchStart', cy)
-  for (let i = 1; i <= 12; i++) await send('touchMove', cy + i * 10)
+  for (let i = 1; i <= 12; i++) {
+    await send('touchMove', cy + i * 10) // 手指下移 120px = 退回 3 格（同样慢拖，别叠惯性）
+    await page.waitForTimeout(80)
+  }
   await send('touchEnd', cy + 120)
   await page.waitForTimeout(SETTLE_MS)
-  t('C4 反方向也通（下移手指 → 值递减）', Number(await val()) < Number(seen[2]), `${seen[2]} → ${await val()}`)
+  const c4Val = await val()
+  t(
+    'C4 反方向也通（下移手指 → 值递减）',
+    vAdvance(seen[2], c4Val) < 0,
+    `${seen[2]} → ${c4Val}（循环差 ${vAdvance(seen[2], c4Val)} 分）`
+  )
 
   console.log('\n=== D. 跨份边界松手不空转（分钟从 55 拖到 15，跨过 55/00 边界；5 分钟步长）===')
   /* traceStart/traceStop 已提前到 B 段之前共用（页面内 rAF 记录，见上方注释） */

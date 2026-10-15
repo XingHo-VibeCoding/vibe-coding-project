@@ -39,6 +39,7 @@ const topOf = (w) => (w - WEEKS_MIN) * ROW
 const browser = await chromium.launch({
   executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   headless: true,
+  args: ['--disable-gpu'], /* 这台机器 GPU 合成不产帧：rAF/过渡全停 ⇒ 触摸手势断言全假红。详见 rec-preview-check.mjs 顶部注释。 */
 })
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 const page = await ctx.newPage()
