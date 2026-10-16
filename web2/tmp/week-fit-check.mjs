@@ -218,6 +218,39 @@ await ctxA.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') 
   await ctxA.close()
 }
 
+/* ---- I 没名字的课不能把整页弄崩（2026-10-15 回归）
+   导入数据里某条课缺 title/name 时，hashName() 里的 `for (const ch of name)`
+   会抛 "e is not iterable"，整个周课表连带三页并排层一起白屏。
+   一门课没名字，不该让全屏消失。 ---- */
+{
+  const ctxI = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  await ctxI.route('**/*', (r) => (r.request().url().includes('cdn.jsdelivr.net') ? r.abort() : r.continue()))
+  const pI = await ctxI.newPage()
+  const errs = []
+  pI.on('pageerror', (e) => errs.push(String(e && e.message)))
+  const nameless = JSON.parse(seedDoc)
+  nameless.schedules = [
+    { id: 'n1', type: 'course', semester_id: 'sem1', weekday: 1, start_time: '10:00', duration: 45, week_rule: 'every' },
+    { id: 'n2', type: 'course', semester_id: 'sem1', title: '有名字的课', weekday: 3, start_time: '15:05', duration: 45, week_rule: 'every' },
+  ]
+  await pI.addInitScript(`localStorage.setItem('web2.data', ${JSON.stringify(JSON.stringify(nameless))})`)
+  await pI.addInitScript(`localStorage.setItem('web2.onboarded', '1')`)
+  await pI.goto(URL, { waitUntil: 'domcontentloaded' })
+  await pI.waitForTimeout(700)
+  await pI.locator('nav button', { hasText: '周课表' }).click()
+  await pI.waitForTimeout(700)
+  const I = await pI.evaluate(() => ({
+    cells: document.querySelectorAll('[data-cell]').length,
+    bodyLen: (document.body.innerText || '').length,
+    hasName: (document.body.innerText || '').includes('有名字的课'),
+  }))
+  console.log('I 明细:', JSON.stringify(I), 'pageerror:', JSON.stringify(errs))
+  t('I1 缺名字的课不再让周课表白屏（格子渲染出来）', I.cells > 0, `data-cell=${I.cells}`)
+  t('I2 同页其它课照常显示', I.hasName, `有名字的课 in text=${I.hasName}`)
+  t('I3 没有未捕获异常', errs.length === 0, errs.join(' | ') || '无')
+  await ctxI.close()
+}
+
 await browser.close()
 const fails = results.filter((r) => !r[1])
 console.log(`\n=== 周课表一屏/多行：${results.length - fails.length}/${results.length} 通过 ===`)

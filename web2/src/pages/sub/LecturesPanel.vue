@@ -42,6 +42,10 @@ const {
   sumOpenId,
   cancelSummary,
   startSummary,
+  hwInfoOf,
+  addHomeworkTodo,
+  hwExamHint,
+  addHomeworkExam,
 } = toRefs(app)
 
 /* ---------------- 最近 3 场 + 展开更多（本地计算，不进 APP_CTX） ---------------- */
@@ -186,8 +190,19 @@ const lecHiddenCount = computed(() => Math.max(0, lectures.value.length - lecRec
                 </div>
                 <div v-if="l.summary.homework && l.summary.homework.length" class="mt-2.5">
                   <p class="text-[11px] font-semibold text-ink-dim">作业 / 截止</p>
-                  <ul class="mt-1 space-y-0.5">
-                    <li v-for="(h, i) in l.summary.homework" :key="'h' + i" class="text-[12px] leading-relaxed">□ {{ h }}</li>
+                  <ul class="mt-1 space-y-1">
+                    <li v-for="(h, i) in l.summary.homework" :key="'h' + i" data-hw-item class="text-[12px] leading-relaxed">
+                      <div class="flex items-start gap-1.5">
+                        <span class="shrink-0 text-primary-600">{{ hwInfoOf(l, i) && hwInfoOf(l, i).added ? '☑' : '□' }}</span>
+                        <span class="flex-1">{{ hwInfoOf(l, i) ? hwInfoOf(l, i).text : (h.text || h) }}</span>
+                      </div>
+                      <div v-if="hwInfoOf(l, i)" class="mt-0.5 flex items-center gap-2 pl-4 text-[11px] text-ink-dim">
+                        <span data-hw-due>{{ hwInfoOf(l, i).due }} · {{ hwInfoOf(l, i).source }}</span>
+                        <span v-if="hwInfoOf(l, i).added" data-hw-added class="text-primary-600">已在待办</span>
+                        <button v-else type="button" data-hw-add class="text-primary-600 active:opacity-70" @click="addHomeworkTodo(l, i)">加入待办</button>
+                        <button v-if="hwExamHint(l, i)" type="button" data-hw-exam class="text-amber-700 active:opacity-70 dark:text-amber-500" @click="addHomeworkExam(l, i)">加入考试</button>
+                      </div>
+                    </li>
                   </ul>
                 </div>
                 <div v-if="l.summary.questions && l.summary.questions.length" class="mt-2.5">

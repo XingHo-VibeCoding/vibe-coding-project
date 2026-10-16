@@ -45,7 +45,9 @@ function run(cmd, args, opts = {}) {
   return { code: r.status, out: (r.stdout || '') + (r.stderr || ''), err: r.error }
 }
 
-function git(args) { return run('git', args) }
+// ⚠ 必须带 -c core.quotepath=false：否则 git 把非 ASCII 路径转义成
+// "docs/\344\270\213..." 形式，凡按文件名比对的检查（F2 的三份文档）都会假红。
+function git(args) { return run('git', ['-c', 'core.quotepath=false', ...args]) }
 
 console.log(`\n=== verify-project 发布前检查（${FAST ? '快档 --fast' : '全量'}）===\n`)
 

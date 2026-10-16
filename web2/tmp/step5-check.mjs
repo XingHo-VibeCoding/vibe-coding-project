@@ -153,7 +153,7 @@ try {
   await page.waitForTimeout(400)
   t('D3. 返回键收回练耳二级页（回索引，未退出、未切页）',
     (await page.locator('[data-sub-page]').count()) === 0 && (await exits()) === 0 && (await activeTab()).includes('我的'))
-  t('D4. 收回后索引页 4 个入口仍在', (await page.locator('[data-page="me"] [data-me-entry]').count()) === 4)
+  t('D4. 收回后索引页 6 个入口仍在', (await page.locator('[data-page="me"] [data-me-entry]').count()) === 6)
   /* 课表页：2026-10-12（用户 m04810）「其他日程」子视图已整块删除，
      课表页不再有第二层视图，返回键从课表页直接回今日页（不再先「回周课表」）。
      这里守的就是这条：从课表页按一次返回即回今日页，且回到后滚动锁恢复。 */

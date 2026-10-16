@@ -391,13 +391,19 @@ export function dueClips(clips, today = todayKey()) {
 /* ------------------------------------------------------------------
    空闲槽（与日程取交集：给 items 直接喂 notify.js 的 buildScheduleItems 输出）
    ------------------------------------------------------------------ */
-/* items: [{ at: Date, title }]，startMin/endMin 是"当天分钟数"；不带 mins 的项忽略 */
+/* items: [{ at: Date, start: 'HH:mm', end: 'HH:mm' }]，startMin/endMin 是"当天分钟数"；不带 mins 的项忽略。
+   ⚠ 起点必须优先取真实的 start，**不能拿 at 当起点**：notify.js 的 at 是「提前量之后的提醒时刻」
+   （默认提前 10 分钟 → at = 课程开始 − 10min），拿它算空档会让每一块忙时段整体前移提前量，
+   把课程开始前后的空隙算错（2026-10-16 查清：09:30 的课在 09:00–09:20 之间凭空多出一段「空档」，
+   而那 9:20–9:30 其实是课前的准备时间）。notify.js 的 makeItem 注释里本来就写明了这条纪律。 */
 function itemMinutes(it) {
   const at = it && it.at instanceof Date ? it.at : new Date(it && it.at)
   if (Number.isNaN(at.getTime())) return null
   const mins = Number(it && it.mins)
   if (!Number.isFinite(mins) || mins <= 0) return null
-  return { start: at.getHours() * 60 + at.getMinutes(), mins, title: String(it.title || '日程') }
+  const real = minOf(it && it.start)
+  const start = real >= 0 ? real : at.getHours() * 60 + at.getMinutes()
+  return { start, mins, title: String(it.title || '日程') }
 }
 
 /* 排程项 + 时长 → 归一成 [{start, mins, title}]（按开始时间排序）。

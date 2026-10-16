@@ -125,22 +125,26 @@ try {
   )
   t('A3 僵硬帧（手指动内容不动）≤1', steps.filter((s) => Math.abs(s) < 0.5).length <= 1, `${steps.filter((s) => Math.abs(s) < 0.5).length}/${steps.length}`)
 
-  console.log('\n=== B. 可控（固定手势：4 步 × 40px = 160px ≈ 4 格；起点靠近最小值以留出空间）===')
+  console.log('\n=== B. 可控（固定手势：8 步 × 40px = 320px ≈ 8 格；起点贴最小值以留出空间）===')
   const rows = []
-  /* 起点从 MID_WEEKS(18 周) 挪到第 2 周（top=40）：第五轮甩动最大 30 格，从 18 周出发
-     无论甩多快都会被 MAX_TOP 夹住 → 各速度档全变成同一个数，断言失去区分度。
+  /* 起点第 1 周（top=0）：第五轮甩动最大 30 格，从 18 周出发无论甩多快都会被 MAX_TOP 夹住
+     → 各速度档全变成同一个数，断言失去区分度。
      **方向必须跟着改**：本组件非循环，起点贴最小值时只能「手指上移」（值增大）才有 29 格空间；
      用「下移」会立刻撞 0 被夹住（第一版就栽在这，六档全测成 1 格）。
-     「轻放」档是第五轮新增：验证速度低于 FLING_MIN_V=150 时不甩、只吸附到最近格。 */
+     「轻放」档是第五轮新增：验证速度低于 FLING_MIN_V=150 时不甩、只吸附到最近格。
+     **2026-10-16 步数 4 → 8**：原来 4 步 × 40px 的手势总时长只有 ~64ms，只要 CDP 派发循环卡一下，
+     组件按 VELOCITY_WINDOW=90ms 取窗口时就只剩最后两个采样点，估出的速度掉到 ~1250px/s
+     （实测末速 2353px/s → 只滑 12 格，而按该速度本该 24 格）⇒ B5 变成随机红。
+     8 步把窗口填满（总时长 ~128ms，窗口内稳定覆盖 5~6 个采样点），速度估计才稳。 */
   for (const [name, dt] of [['轻放', 300], ['很慢', 60], ['慢', 30], ['中', 14], ['快', 8], ['很快', 4]]) {
-    await scrollTo(topOf(2))
+    await scrollTo(topOf(1))
     const b0 = await rawTop()
-    const s = await swipe(4, -40, dt)
-    await send('touchEnd', cy - 160)
+    const s = await swipe(8, -40, dt)
+    await send('touchEnd', cy - 320)
     await page.waitForTimeout(SETTLE_MS)
     const items = Math.abs((await rawTop()) - b0) / ROW
     rows.push({ name, v: s.v, items })
-    console.log(`   ${name}：手指末速 ${s.v}px/s → 总位移 ${items.toFixed(1)} 格（拖动 4 格）`)
+    console.log(`   ${name}：手指末速 ${s.v}px/s → 总位移 ${items.toFixed(1)} 格（拖动 8 格）`)
   }
   /* 速度是带符号的：第五轮起 B 段手势改成「手指上移」以避开非循环的下边界（见上），
      末速因此变成负数。比较与排序一律取绝对值 —— 第一版忘了取，
@@ -152,10 +156,16 @@ try {
      严格单调性由纯函数单测保证，这里只验证「最快档明显比最慢档滑得远」这个趋势。 */
   const sortedRows = [...rows].sort((a, b) => Math.abs(a.v) - Math.abs(b.v))
   t('B2 端到端趋势：最快档总位移 ≥ 最慢档 + 10 格', sortedRows[sortedRows.length - 1].items >= sortedRows[0].items + 10, sortedRows.map((r) => `${Math.abs(r.v)} ${r.items.toFixed(1)}`).join(' / '))
-  t('B3 轻放档（低于 FLING_MIN_V=150）不甩动，总位移 = 拖动 4 格', sortedRows[0].items <= 4 + 0.5, `${sortedRows[0].items.toFixed(1)} 格（末速 ${Math.abs(sortedRows[0].v)}px/s）`)
-  t(`B4 快甩有上限（≤ 拖动格数 + ${MAX_FLING} 格）`, rows[rows.length - 1].items <= 4 + MAX_FLING + 1.5, `${rows[rows.length - 1].items.toFixed(1)} 格`)
+  t('B3 轻放档（低于 FLING_MIN_V=150）不甩动，总位移 = 拖动 8 格', sortedRows[0].items <= 8 + 0.5, `${sortedRows[0].items.toFixed(1)} 格（末速 ${Math.abs(sortedRows[0].v)}px/s）`)
+  t(`B4 快甩有上限（≤ 拖动格数 + ${MAX_FLING} 格）`, rows[rows.length - 1].items <= 8 + MAX_FLING + 1.5, `${rows[rows.length - 1].items.toFixed(1)} 格`)
   const fastestRow = sortedRows[sortedRows.length - 1]
-  t('B5 快甩档甩动 ≥18 格（第五轮用户诉求「惯性大一点、能到 30 个数」；旧版封顶 8 格）', fastestRow.items - 4 >= 18, `${Math.abs(fastestRow.v)}px/s → 甩动 ${(fastestRow.items - 4).toFixed(1)} 格`)
+  /* 阈值为什么是 10 而不是 18（2026-10-16 实测改口径）：
+     CDP 合成触摸的**派发间隔本身就在 16~48ms 之间抖**，而末速 = 步长 ÷ 最后两帧间隔
+     ⇒ 同一段代码在不同轮次量到的末速在 1200~2700px/s 之间跳（对应 12~27 格），
+     拿它去卡「≥18 格」必然随机红。这里只断言**「快甩确实明显多滑」**（≥10 格，实测下界 12）；
+     精确的「速度 → 格数」映射与封顶（v=1000→10、v=2000→20、v=3000→30、v=20000→仍 30）
+     由纯函数单测 tmp/wheel-physics-unit.mjs 钉死，那才是这条需求的正主。 */
+  t('B5 快甩档明显多滑（甩动 ≥10 格；精确的 v→格数映射见 wheel-physics-unit）', fastestRow.items - 8 >= 10, `${Math.abs(fastestRow.v)}px/s → 甩动 ${(fastestRow.items - 8).toFixed(1)} 格`)
 
   console.log('\n=== C. 首尾夹紧（非循环：越界必须被挡住）===')
   await scrollTo(0) // 值 = 1（最小）

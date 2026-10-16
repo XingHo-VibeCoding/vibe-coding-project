@@ -88,16 +88,16 @@ m = await subPageTop('settings')
 t('A3 --sat=28px 时设置二级页头部让开状态栏', m.headTop !== null && m.headTop >= SAT - 1, `headTop=${m.headTop}`)
 await back()
 
-/* 顺带：四个入口在真机 --sat 下都点得进去 */
+/* 顺带：五个入口在真机 --sat 下都点得进去（2026-10-16 加「时间去哪了」） */
 let ok4 = true
 const tops = []
-for (const k of ['lectures', 'listen', 'todos', 'settings']) {
+for (const k of ['lectures', 'listen', 'timeline', 'todos', 'settings']) {
   const r = await subPageTop(k)
   tops.push(`${k}:${r.headTop}`)
   if (r.headTop === null || r.headTop < SAT - 1) ok4 = false
   await back()
 }
-t('A4 四个二级页头部都让开状态栏', ok4, tops.join(' '))
+t('A4 五个二级页头部都让开状态栏', ok4, tops.join(' '))
 await ctx.close()
 
 /* ---------- 未引导：引导页也是 fixed inset-0，同样要让位 ---------- */

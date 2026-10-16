@@ -175,7 +175,8 @@ await page.waitForTimeout(300)
 /* Stage 6 两层导航：设置索引页 → 「数据与导入导出」子页，导入 JSON 的 input 在子页里 */
 await page.$eval('[data-settings-index="data"]', (el) => el.click())
 await page.waitForTimeout(350)
-await page.locator('input[accept=".json,application/json"]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(importDoc) })
+/* 选「导入主项目数据」那个 input：设置页里现在还有一个「从归档恢复」的 input，accept 相同 ⇒ 必须排除 */
+await page.locator('input[accept=".json,application/json"]:not([data-archive-file])').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(importDoc) })
 await page.waitForTimeout(600)
 /* 导入成功走 reloadDataset 统一刷新（含 habits），就地更新——回今日页看浮层即最新 */
 await page.waitForTimeout(300)

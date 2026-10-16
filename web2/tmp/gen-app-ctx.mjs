@@ -205,7 +205,11 @@ export function missingDestructures(names, files = listVueFiles(SRC)) {
     const body = clean.slice(clean.indexOf('<template>'))
     for (const name of names) {
       if (have.has(name) || imported.has(name)) continue
-      const re = new RegExp('(^|[^\\w$.])' + name.replace(/\$/g, '\\$') + '($|[^\\w$])')
+      /* 边界要把 `-` 也算作标识符的一部分：模板里 `data-archive-detail` 这种
+         连字符属性名会被误判成用了 `detail` 绑定（2026-10-15 实测踩到）。
+         真正的绑定写法是 `:x="detail"` / `{{ detail }}` / `@click="detail=…"`，
+         前后不会是 `-`。 */
+      const re = new RegExp('(^|[^\\w$.-])' + name.replace(/\$/g, '\\$') + '($|[^\\w$-])')
       if (!re.test(body)) continue
       if (!missing.has(name)) missing.set(name, [])
       missing.get(name).push(path.relative(SRC, file))

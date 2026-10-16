@@ -1,7 +1,9 @@
-/* Stage 6 自检：「我的」页从功能堆砌改成索引页 —— 一屏只有「1 行学期 + 4 个入口」，
+/* Stage 6 自检：「我的」页从功能堆砌改成索引页 —— 一屏只有「1 行学期 + 6 个入口」，
+   （2026-10-16 由 4 个变 5 个：新增「时间去哪了」，见五条新功能线 03；
+     再由 5 个变 6 个：新增「考试与复习」，见五条新功能线 04）
    功能各自进全屏二级页（返回按钮 / 系统返回键都能回索引）。
-   ① 索引页只该有 4 个入口，不该再看到录音/练耳/设置的内容
-   ② 四个入口各自能推进去、标题对得上、里面有原来那块东西
+   ① 索引页只该有 6 个入口，不该再看到录音/练耳/设置的内容
+   ② 六个入口各自能推进去、标题对得上、里面有原来那块东西
    ③ 返回键一路往回收：二级页 → 索引 → （再按）今日页，且不许误退出
    ④ 待办清单是「全部待办」：勾选就地生效，已完成收在后面
    纪律：切 tab / 点页内元素一律程序化 click（非当前页带 inert，真实鼠标事件会被吃） */
@@ -67,20 +69,20 @@ const ME = page.locator('main[data-page="me"]')
 const open = (k) => page.$eval(`[data-me-entry="${k}"]`, (el) => el.click())
 const back = () => page.$eval('[data-sub-back]', (el) => el.click())
 
-/* 1. 索引页：1 行学期 + 4 个入口，且看不到各功能的内容 */
+/* 1. 索引页：1 行学期 + 6 个入口，且看不到各功能的内容 */
 await page.$eval('[data-nav="me"]', (el) => el.click())
 await page.waitForTimeout(500)
 t('A1. 「我的」页只有 1 行学期', (await ME.locator('[data-me-term]').count()) === 1)
-t('A2. 只有 4 个入口', (await ME.locator('[data-me-entry]').count()) === 4, String(await ME.locator('[data-me-entry]').count()))
+t('A2. 只有 6 个入口', (await ME.locator('[data-me-entry]').count()) === 6, String(await ME.locator('[data-me-entry]').count()))
 const order = await page.evaluate(() => [...document.querySelectorAll('[data-me-entry]')].map((el) => el.getAttribute('data-me-entry')))
-t('A3. 入口顺序＝录音历史 / 碎片练耳 / 待办清单 / 设置', JSON.stringify(order) === JSON.stringify(['lectures', 'listen', 'todos', 'settings']), order.join(','))
+t('A3. 入口顺序＝录音历史 / 碎片练耳 / 时间去哪了 / 考试与复习 / 待办清单 / 设置', JSON.stringify(order) === JSON.stringify(['lectures', 'listen', 'timeline', 'exams', 'todos', 'settings']), order.join(','))
 t('A4. 索引页上没有设置本体（设置自己的页里才有）', (await ME.locator('[data-settings-body]').count()) === 0)
 t('A5. 索引页上没有练耳设置面板', (await ME.locator('[data-listen-settings]').count()) === 0)
 t('A6. 索引页上没有「开始录音」按钮（录音在自己的页里）', (await ME.getByText('开始录音', { exact: true }).count()) === 0)
 const meText = (await ME.innerText()).replace(/\s+/g, ' ')
 t('A7. 待办入口如实报数（未完成 2 / 共 3 件）', meText.includes('未完成 2 / 共 3 件'), meText.slice(0, 90))
 
-/* 2. 四个入口各推一层：标题对得上、里面有原来那块东西 */
+/* 2. 五个入口各推一层：标题对得上、里面有原来那块东西 */
 await open('lectures')
 await page.waitForTimeout(350)
 t('B1. 点「录音历史」推进二级页', (await subCount()) === 1 && (await page.locator('[data-sub-page]').getAttribute('data-sub')) === 'lectures')
@@ -189,8 +191,8 @@ await page.setViewportSize({ width: 1280, height: 900 })
 await page.waitForTimeout(400)
 await page.$eval('[data-nav="me"]', (el) => el.click())
 await page.waitForTimeout(400)
-t('G1. 桌面 1280 下「我的」索引页照常（4 个入口 + 1 行学期）',
-  (await ME.locator('[data-me-entry]').count()) === 4 && (await ME.locator('[data-me-term]').count()) === 1)
+t('G1. 桌面 1280 下「我的」索引页照常（6 个入口 + 1 行学期）',
+  (await ME.locator('[data-me-entry]').count()) === 6 && (await ME.locator('[data-me-term]').count()) === 1)
 await open('settings')
 await page.waitForTimeout(400)
 t('G2. 桌面 1280 下设置索引页 5 行正常渲染',

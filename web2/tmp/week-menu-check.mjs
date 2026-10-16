@@ -4,7 +4,7 @@
    ② ＋ 打开选单：手动加课 / 加日程 / 拍课表识别 / 特殊日期
       （2026-10-12 用户 m04810：删掉「其他日程」，那是个重复入口；识别项的旧锚点 data-mine-rec 跟着搬进来）
    ③ 选单的收起时机：选中任一项 / 点别处 / 按返回键（返回键只收选单，不切页、不误退出）
-   ④ 四个入口各自真的干活；课表页不再有第二层视图
+   ④ 入口各自真的干活；课表页不再有第二层视图
    纪律：切 tab / 点页内元素一律程序化 click（非当前页带 inert，真实鼠标事件会被吃） */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
@@ -140,7 +140,7 @@ t('B6 返回键先收选单：不切页、不误退出',
   afterBack.menu === 0 && afterBack.weekActive === '1' && afterBack.grid === 1 && (await exits()) === exitsBefore,
   JSON.stringify(afterBack))
 
-/* ---- C 四个入口各自干活 ---- */
+/* ---- C 入口各自干活 ---- */
 await openMenu()
 await page.$eval('[data-week-menu-course]', (el) => el.click())
 await page.waitForTimeout(400)

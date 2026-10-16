@@ -14,6 +14,18 @@ import {
   syncClearCloud,
   SYNC_MIN_PASS,
 } from '../../../data/sync.js'
+/* 全量归档：同样是这个二级页独有的入口，直接 import 数据层（理由同上）。 */
+import {
+  buildArchive,
+  archiveToText,
+  readArchive,
+  planRestore,
+  applyArchive,
+  localArchiveSummary,
+  ARCHIVE_INCLUDE,
+  ARCHIVE_EXCLUDE,
+} from '../../../data/archive.js'
+import { downloadText } from '../../../data/ics.js'
 
 const app = useApp()
 /* 这段 markup 是从 App.vue 逐字搬过来的：绑定名一个没改，靠 toRefs 按原名接出（模板里自动解包）。
@@ -63,6 +75,97 @@ const syncLastAt = computed(() => {
 function syncRefresh() {
   syncCfg.value = loadSyncConfig()
   syncSummary.value = localDocSummary()
+}
+
+/* ---------------- 全量归档（2026-10-15，05 号功能） ----------------
+   为什么单独一张卡：上面那些导出按钮都是「给别的软件用的格式」
+   （主项目 JSON / .ics 日历），只有这一张是「给这个 App 自己用的备份」。
+   换机、清缓存、重装系统之后能救回来的，只有它。
+   恢复是破坏性操作：必须先选文件 → 看预览 → 再点确认，三步都不省。 */
+const archSummary = ref(localArchiveSummary())
+const archMsg = ref('')
+const archMsgBad = ref(false)
+const archPending = ref(null) // 读好、等确认的归档
+const archConfirm = ref(false) // 二次确认：连点两次才真恢复
+const archShowDetail = ref(false)
+
+const archSizeText = computed(() => {
+  const b = archSummary.value.bytes
+  if (b < 1024) return b + ' B'
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB'
+  return (b / 1024 / 1024).toFixed(2) + ' MB'
+})
+
+function archRefresh() {
+  archSummary.value = localArchiveSummary()
+}
+
+/* 导出：生成 → 下载。文件名带日期，方便用户自己攒几份不同时间点的备份。 */
+function onExportArchive() {
+  const built = buildArchive()
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  const ds = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+  downloadText(`日程助手-全量归档-${ds}.json`, archiveToText(built.archive), 'application/json')
+  archMsgBad.value = false
+  archMsg.value = built.empty
+    ? '已导出，但这台设备还没有数据（归档里是空的）。'
+    : `已导出 ${built.keys} 项（${archSizeText.value}）。机密项没有进文件：${ARCHIVE_EXCLUDE.map((x) => x.k.replace('web2.', '')).join('、')}。`
+}
+
+/* 选文件：读进来只做「预览」，一个字都不写本机。 */
+function onPickArchive(e) {
+  const f = e.target.files && e.target.files[0]
+  e.target.value = '' // 允许同一个文件连选两次
+  if (!f) return
+  archConfirm.value = false
+  const reader = new FileReader()
+  reader.onload = () => {
+    const r = readArchive(String(reader.result || ''))
+    if (!r.ok) {
+      archPending.value = null
+      archMsgBad.value = true
+      archMsg.value = r.error
+      return
+    }
+    archPending.value = { archive: r.archive, preview: r.preview, plan: planRestore(r.archive) }
+    archMsgBad.value = false
+    archMsg.value = ''
+  }
+  reader.onerror = () => {
+    archMsgBad.value = true
+    archMsg.value = '文件读不出来，换一个试试。'
+  }
+  reader.readAsText(f)
+}
+
+function onCancelArchive() {
+  archPending.value = null
+  archConfirm.value = false
+  archMsg.value = ''
+}
+
+/* 落地恢复：连点两次才执行；做完把整个应用的数据重读一遍（reloadDataset），
+   否则界面上还是旧数据，用户会以为没生效。 */
+function onRestoreArchive() {
+  const p = archPending.value
+  if (!p) return
+  if (!archConfirm.value) {
+    archConfirm.value = true
+    return
+  }
+  const r = applyArchive(p.archive)
+  archConfirm.value = false
+  archPending.value = null
+  if (!r.ok) {
+    archMsgBad.value = true
+    archMsg.value = r.error
+    return
+  }
+  archMsgBad.value = false
+  archMsg.value = `已恢复：写入 ${r.written} 项、清空 ${r.removed} 项。录音与练耳等本机数据都已换成归档里那份。`
+  archRefresh()
+  reloadDataset()
 }
 
 function syncRemember() {
@@ -176,6 +279,7 @@ function armSyncClear() {
 onMounted(() => {
   syncPass.value = syncCfg.value.pass
   syncRefresh()
+  archRefresh()
 })
 </script>
 
@@ -282,6 +386,91 @@ onMounted(() => {
             <span class="block text-[11px] text-ink-dim">整学期课表装进系统日历，带课前提醒</span>
           </span>
         </button>
+      </section>
+
+      <!-- ---------------- 全量归档（2026-10-15，05 号功能） ----------------
+           与上面那些导出按钮的区别，说在最显眼的地方：
+           上面是「给别的软件看的格式」，这张是「给这个 App 自己用的备份」。
+           恢复要三步：选文件 → 看预览 → 连点两次确认。破坏性操作不省步骤。 -->
+      <section class="mt-3 divide-y divide-line rounded-2xl border border-line bg-card shadow-sm" data-archive-card>
+        <div class="p-4">
+          <div class="flex items-center gap-3.5">
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
+              <svg viewBox="0 0 16 16" class="h-4.5 w-4.5 text-primary-500" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5.5A1.5 1.5 0 013.5 4h2.2l1.3 1.6h5.5A1.5 1.5 0 0114 7.1v5.4A1.5 1.5 0 0112.5 14h-9A1.5 1.5 0 012 12.5z" /><path d="M8 8.5v3.2M6.4 10.1L8 11.7l1.6-1.6" /></svg>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium">全量归档（备份与恢复）</span>
+              <span class="block text-[11px] text-ink-dim">
+                本机 {{ archSummary.keys }} / {{ archSummary.total }} 项有数据，共 {{ archSizeText }}
+              </span>
+            </span>
+          </div>
+          <p class="mt-2 text-[11px] leading-relaxed text-ink-dim">
+            换手机、清缓存、重装系统之后能救回来的，只有这个文件。录音、练耳、复盘、每日快照都在里面。
+            <b class="font-medium text-ink-dim">机密不进文件</b>：{{ ARCHIVE_EXCLUDE.map((x) => x.k.replace('web2.', '')).join('、') }}。
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2 p-4">
+          <button
+            data-archive-export
+            class="flex-1 rounded-lg bg-primary-500 px-3 py-2 text-xs font-medium text-white active:scale-[0.98]"
+            @click="onExportArchive"
+          >导出全量归档</button>
+          <label class="flex-1 cursor-pointer rounded-lg border border-line px-3 py-2 text-center text-xs font-medium active:scale-[0.98]">
+            从归档恢复
+            <input type="file" accept=".json,application/json" class="hidden" data-archive-file @change="onPickArchive" />
+          </label>
+        </div>
+
+        <!-- 恢复前的预览：三个数字（覆盖 / 清空 / 不变）摆出来，比一句「将覆盖本机数据」诚实 -->
+        <div v-if="archPending" data-archive-preview class="bg-soft/60 p-4">
+          <p class="text-xs font-medium text-ink">
+            这份归档导出于 {{ archPending.preview.exportedAt.slice(0, 16).replace('T', ' ') || '未知时间' }}
+            <template v-if="archPending.preview.appVersion">（App {{ archPending.preview.appVersion }}）</template>
+          </p>
+          <p class="mt-1.5 text-[11px] leading-relaxed text-ink-dim">
+            里面 {{ archPending.preview.keys }} 项。恢复会
+            <b class="text-ink-dim">覆盖 {{ archPending.plan.write }} 项</b>、
+            <b class="text-ink-dim">清空 {{ archPending.plan.remove }} 项</b>本机数据
+            —— 归档里没有的东西一律清掉，不做合并。恢复前请先自己导出一份当前的归档。
+          </p>
+          <p
+            v-if="archPending.preview.ignored.length"
+            data-archive-ignored
+            class="mt-1.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-400"
+          >文件里有 {{ archPending.preview.ignored.length }} 项被跳过（不属于备份范围）。</p>
+          <button
+            data-archive-detail
+            class="mt-2 text-[11px] text-primary-600"
+            @click="archShowDetail = !archShowDetail"
+          >{{ archShowDetail ? '收起明细' : '看明细' }}</button>
+          <ul v-if="archShowDetail" class="mt-1.5 space-y-0.5">
+            <li v-for="it in archPending.preview.items" :key="it.k" class="text-[11px] text-ink-dim">
+              {{ it.label }}<span class="text-ink-dim/60">（{{ it.k }}）</span>
+            </li>
+          </ul>
+          <div class="mt-2.5 flex items-center gap-2">
+            <button
+              data-archive-restore
+              class="rounded-lg px-3 py-1.5 text-xs font-medium text-white active:scale-[0.98]"
+              :class="archConfirm ? 'bg-red-500' : 'bg-primary-500'"
+              @click="onRestoreArchive"
+            >{{ archConfirm ? '再点一次，确认覆盖' : '恢复这份归档' }}</button>
+            <button
+              data-archive-cancel
+              class="rounded-lg border border-line px-3 py-1.5 text-xs font-medium active:scale-[0.98]"
+              @click="onCancelArchive"
+            >取消</button>
+          </div>
+        </div>
+
+        <p
+          v-if="archMsg"
+          data-archive-msg
+          class="px-4 pb-3 text-[11px] leading-relaxed"
+          :class="archMsgBad ? 'text-red-600 dark:text-red-400' : 'text-primary-600'"
+        >{{ archMsg }}</p>
       </section>
 
       <!-- ---------------- P7 云同步（2026-10-12，用户 m07603） ----------------

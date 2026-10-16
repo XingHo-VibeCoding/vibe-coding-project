@@ -1,5 +1,6 @@
 /* 方案 C · Step 4 结构检查（我的瘦身 + 拍课表识别归位）——playwright，走 dist 静态服务。
-   2026-10-05 Stage 6：「我的」页从功能堆砌改成索引页（1 行学期 + 4 个入口），
+   2026-10-05 Stage 6：「我的」页从功能堆砌改成索引页（1 行学期 + 入口），
+   2026-10-16：入口由 4 个变 5 个（新增「时间去哪了」五条新功能线 03）、再由 5 个变 6 个（新增「考试与复习」五条新功能线 04），计数断言同步。
    设置内容搬进 data-sub="settings" 的全屏二级页。本脚本随之把「折叠」断言换成「二级页」断言。
    断言：
    ① 课表页右上「＋」= 选单开关（data-week-add）；点开选单里有「拍课表识别」一项，
@@ -7,7 +8,7 @@
       ＋ 在周课表 / 其他日程两个子视图里都在（它是这一行的固定成员，不属于任一侧）。
    ② 「我的」索引页不再常显任何设置正文；推入设置二级页后主题入口恰一处（色点 4 个、
       点色点真换肤、点明暗按钮真换主题）；数据类入口在设置二级页里、且在设置正文之外。
-   ③ 「我的」索引页块序 = 学期行 → 4 个入口（录音 → 练耳 → 待办 → 设置），不再出现功能正文。
+   ③ 「我的」索引页块序 = 学期行 → 6 个入口（录音 → 练耳 → 时间去哪了 → 考试与复习 → 待办 → 设置），不再出现功能正文。
    跑法：先起 dist 静态服务（默认 4177，TW_URL 可覆盖）再 node tmp/step4-check.mjs */
 const { chromium } = await import('file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs')
 
@@ -138,9 +139,9 @@ t('B11. 返回索引后子页消失、5 行入口仍在',
   (await page.locator('[data-sub-page][data-sub="settings"]').count()) === 1
   && (await page.locator('[data-settings-index]').count()) === 5)
 await backSub() // 索引 → 我的页
-t('B12. 再返回 → 回「我的」页、二级页消失、4 个入口仍在',
+t('B12. 再返回 → 回「我的」页、二级页消失、6 个入口仍在',
   (await page.locator('[data-sub-page]').count()) === 0
-  && (await ME.locator('[data-me-entry]').count()) === 4)
+  && (await ME.locator('[data-me-entry]').count()) === 6)
 
 /* ============ ③ 我的索引页块序 ============ */
 console.log('\n--- ③ 我的索引页块序 ---')
@@ -164,8 +165,8 @@ t('C1b. 我的页分「我的数据 / 应用」两组（两个 h2 小标题）',
     const me = document.querySelector('[data-page="me"]')
     return [...me.querySelectorAll('h2')].map((h) => h.innerText.replace(/\s+/g, ' ').trim()).join('|')
   })).includes('我的数据'))
-t('C2. 4 个入口齐全且顺序固定：录音 → 练耳 → 待办 → 设置',
-  JSON.stringify(entryKeys) === JSON.stringify(['lectures', 'listen', 'todos', 'settings']), entryKeys.join(','))
+t('C2. 6 个入口齐全且顺序固定：录音 → 练耳 → 时间去哪了 → 考试与复习 → 待办 → 设置',
+  JSON.stringify(entryKeys) === JSON.stringify(['lectures', 'listen', 'timeline', 'exams', 'todos', 'settings']), entryKeys.join(','))
 t('C3. 设置入口排在最后', entryKeys[entryKeys.length - 1] === 'settings')
 t('C4. 索引页不再出现功能正文（课堂录音 / 导入主项目数据 / 清除数据）',
   !(await ME.innerText()).includes('课堂录音')

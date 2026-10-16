@@ -9,7 +9,14 @@
      · stats 直接复用 review.js 的 `sanitizeStats`，保证「账」与「日精进」永远同一口径
 
    记录形状：
-     { date:'YYYY-MM-DD', stats:{courses,todosDone,todosTotal,habitsDone,habitsTotal,listenToday}, updated_at:ms } */
+     { date:'YYYY-MM-DD', stats:{courses,todosDone,todosTotal,habitsDone,habitsTotal,listenToday},
+       usage_ms:number|null, updated_at:ms }
+
+   03（2026-10-16）：`usage_ms` = 那天的手机使用时长，跟每日快照一起记。
+   为什么放这里而不是另开一份时间轴：**「时间去哪了」要的是同一条横轴上并列的几件事**，
+   课/待办/打卡/练耳已经在 stats 里了，手机时长再单独存一份就要按日期对表，对不齐的那天最难看。
+   **`null` 与 `0` 必须分开**：null = 那天没开权限/没抓到，界面照实说「未开启」；
+   0 = 真的一分钟没碰 —— 把前者画成 0 就是编数据。老记录没有这个字段，读出来就是 null。 */
 import { isDateKey, sanitizeStats } from './review.js'
 
 export const DAILY_KEY = 'web2.daily'
@@ -27,8 +34,18 @@ export function sanitizeDay(v) {
     stats: sanitizeStats(v.stats),
     /* 六期第二步：今天有没有就地问过「没做完的原因」（问过就不再问，一天只打扰一次） */
     reason_asked: v.reason_asked === true,
+    /* 03：手机使用时长。没抓到 / 没开权限一律 null，**绝不写成 0**（0 = 真的没碰手机）。 */
+    usage_ms: sanitizeUsageMs(v.usage_ms),
     updated_at: Number.isFinite(t) && t > 0 ? t : Date.now(),
   }
+}
+
+/* 只认「非负数」为有效时长；其余（含 undefined / null / '' / 'abc' / 负数）一律 null。 */
+export function sanitizeUsageMs(v) {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.round(n)
 }
 
 export function sanitizeBook(v) {
@@ -76,17 +93,23 @@ export function saveDaily(book) {
   return out
 }
 
-/* 同一天只有一条：数字没变就不算 changed（调用方据此决定要不要写盘，避免每分钟都写一遍） */
-export function upsertDay(book, { date, stats, now = Date.now(), reasonAsked = null } = {}) {
+/* 同一天只有一条：数字没变就不算 changed（调用方据此决定要不要写盘，避免每分钟都写一遍）。
+   `usageMs` 用**显式传值才动**的规矩（与 reasonAsked 同一套）：一天里大多数时候是「没有新数字」，
+   必须能表达「这次不知道、保持原样」（不传）与「确实没有权限，记成 null」（传 null）两件不同的事。 */
+export function upsertDay(book, { date, stats, now = Date.now(), reasonAsked = null, usageMs = undefined } = {}) {
   const cur = sanitizeBook(book)
   const key = date || todayKeyOf()
   const prev = cur.days[key]
   /* reasonAsked 只在**显式传了**的时候才动它 —— 每分钟一次的静默快照不能把「问过了」抹掉 */
   const asked = reasonAsked === null ? !!(prev && prev.reason_asked) : reasonAsked === true
-  const day = sanitizeDay({ date: key, stats, reason_asked: asked, updated_at: now })
+  const nextUsage = usageMs === undefined ? (prev ? prev.usage_ms : null) : sanitizeUsageMs(usageMs)
+  const day = sanitizeDay({ date: key, stats, reason_asked: asked, usage_ms: nextUsage, updated_at: now })
   if (!day) return { book: cur, day: null, changed: false }
   const same =
-    prev && JSON.stringify(prev.stats) === JSON.stringify(day.stats) && prev.reason_asked === day.reason_asked
+    prev &&
+    JSON.stringify(prev.stats) === JSON.stringify(day.stats) &&
+    prev.reason_asked === day.reason_asked &&
+    prev.usage_ms === day.usage_ms
   if (same) return { book: cur, day: prev, changed: false }
   const days = Object.assign({}, cur.days, { [day.date]: day })
   return { book: pruneDays({ version: 1, days }, DAILY_KEEP), day, changed: true }

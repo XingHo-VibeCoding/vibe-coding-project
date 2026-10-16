@@ -439,7 +439,7 @@ console.log('\n=== S5「我的」页：一屏 + 二级页返回链 ===')
     return { entries, term, hasHero: !!document.querySelector('[data-hero-wrap]') }
   })
   console.log(`    学期行「${me.term}」| 入口 ${JSON.stringify(me.entries)}`)
-  ok('S5a', '「我的」页有一行学期 + 四个入口', !!me.term && me.entries.length === 4, `entries=${JSON.stringify(me.entries)}`)
+  ok('S5a', '「我的」页有一行学期 + 六个入口', !!me.term && me.entries.length === 6, `entries=${JSON.stringify(me.entries)}`)
   ok('S5b', '「我的」页不显示今日页问候卡', !(await heroVisible()), `问候卡在视口内=${await heroVisible()}`)
 
   // 进第一个入口 → 二级页全屏（真机 CDP 上必须走 evaluate click，见 tap 注释）

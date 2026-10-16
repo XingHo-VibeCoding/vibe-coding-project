@@ -10,7 +10,7 @@ const store = {
 global.localStorage = store
 
 const { loadLectures, addLecture, updateLecture, setLectureSummary } = await import('file:///D:/Document/Project/vibe-coding-project/web2/src/data/store.js')
-const { parseSummaryJson, summarizeTranscript, loadLlmConfig, saveLlmConfig, summarizerAvailable } = await import('file:///D:/Document/Project/vibe-coding-project/web2/src/data/summarizer.js')
+const { parseSummaryJson, summarizeTranscript, loadLlmConfig, saveLlmConfig, summarizerAvailable, SUMMARY_PROMPT_VERSION } = await import('file:///D:/Document/Project/vibe-coding-project/web2/src/data/summarizer.js')
 
 let pass = 0, fail = 0
 const t = (name, ok) => { console.log((ok ? 'PASS' : 'FAIL') + ' | ' + name); ok ? pass++ : fail++ }
@@ -211,6 +211,19 @@ t('38. 主提示词要求 homework 尽量收全、拿不准照原话列', /homew
 t('39. 主提示词已去掉「只收明确提到的」旧口径', !/只收明确提到的/.test(pMain))
 t('40. 精简版提示词明确不许省略 homework', /homework 不受精简影响/.test(pConcise) && /不许省略/.test(pConcise))
 t('41. 精简版仍保留「务必精简」总体要求', /务必精简/.test(pConcise))
+
+/* ===== 五条路线 02 补充（2026-10-16）：homework 结构升级为 [{text, due_hint}] =====
+   作业会自动转成待办，截止日原来一律按「下次上课那天」估，老师说过的日期被忽略。
+   v2 多要一个 due_hint（老师原话），由 data/homework.js 解析；解析不出来才回落估算。
+   关键纪律：**要求模型照抄原话、不要自己换算成日期**——换算由代码做，模型只当录音机。 */
+t('42. 提示词版本已升到 2', SUMMARY_PROMPT_VERSION === 2)
+t('43. JSON 结构示例里 homework 是 {text,due_hint} 对象数组', /"homework":\[\{"text"/.test(pMain) && /due_hint/.test(pMain))
+t('44. 要求 due_hint 照原话、不许自己换算日期', /due_hint/.test(pMain) && /照抄原话/.test(pMain) && /不要换算/.test(pMain))
+t('45. 老师没说时 due_hint 填空字符串', /空字符串/.test(pMain))
+t('46. 精简版也要求保留 due_hint', /due_hint 也要照原话保留/.test(pConcise))
+const cleanV2 = setLectureSummary(lec.id, { overview: '重写一遍', homework: [{ text: '写高数作业', due_hint: '下周三前' }] })
+t('47. 白名单收下 {text,due_hint} 并推进到 summarized', cleanV2.ok && cleanV2.lecture.summary.homework[0].text === '写高数作业' && cleanV2.lecture.summary.homework[0].due_hint === '下周三前')
+t('48. 旧字符串 homework 重新整形后不丢（形状统一成对象）', rOk.lecture.summary.homework[0] && rOk.lecture.summary.homework[0].text === '习题 5.1 第 1-5 题' && rOk.lecture.summary.homework[0].due_hint === '')
 
 console.log(`\n结果：${pass} 过 / ${fail} 挂`)
 process.exit(fail ? 1 : 0)

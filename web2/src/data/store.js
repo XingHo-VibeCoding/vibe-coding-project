@@ -1141,7 +1141,7 @@ function sanitizeLecture(l) {
 /* 课堂纪要整形（M4）：LLM 返回的 JSON 过白名单，坏字段剔除，绝不抛错。
    口径：overview 一句话总览；key_points 要点；terms 概念术语；homework 作业/待办；
    questions 存疑点（转写可能有错，LLM 不确定的放这，不硬编）。 */
-function sanitizeSummary(s) {
+export function sanitizeSummary(s) {
   if (!s || typeof s !== 'object') return null
   const arr = (v) => (Array.isArray(v) ? v.map((x) => String(x || '').trim()).filter(Boolean) : [])
   const terms = Array.isArray(s.terms)
@@ -1149,11 +1149,25 @@ function sanitizeSummary(s) {
         .map((t) => (t && typeof t === 'object' ? { term: String(t.term || '').trim(), note: String(t.note || '').trim() } : null))
         .filter((t) => t && t.term)
     : []
+  /* homework（五条路线 02，2026-10-16）：提示词升级后 LLM 输出 [{text, due_hint}]，
+     而升级前生成的旧纪要是字符串数组。**两种都要收**——白名单只放宽不收紧，
+     否则旧纪要一被重新整形（setLectureSummary 会整体覆盖）作业就被静默丢掉。
+     统一出口形状 = {text, due_hint}（due_hint 缺失/非字符串收敛成空串）。 */
+  const homework = (Array.isArray(s.homework) ? s.homework : [])
+    .map((h) => {
+      if (h && typeof h === 'object') {
+        const text = String(h.text || '').trim()
+        return text ? { text, due_hint: typeof h.due_hint === 'string' ? h.due_hint.trim() : '' } : null
+      }
+      const text = String(h || '').trim()
+      return text ? { text, due_hint: '' } : null
+    })
+    .filter(Boolean)
   return {
     overview: String(s.overview || '').trim(),
     key_points: arr(s.key_points),
     terms,
-    homework: arr(s.homework),
+    homework,
     questions: arr(s.questions),
     created_at: String(s.created_at || ''),
   }

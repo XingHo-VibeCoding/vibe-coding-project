@@ -17,7 +17,9 @@ const GOOD = JSON.stringify({
   overview: '这堂课讲了定积分的应用，包括面积与做功两类问题。',
   key_points: ['定积分求平面图形面积', '旋转体体积公式', '变力做功的积分表达'],
   terms: [{ term: '定积分', note: '分割求和取极限' }],
-  homework: ['课本 120 页习题 3.4'],
+  /* 五条路线 02（2026-10-16）：homework 升级为 [{text, due_hint}]。这里的 due_hint
+     「下周三前」由 data/homework.js 解析成日期，用来断言「老师说的日期会被采用」。 */
+  homework: [{ text: '课本 120 页习题 3.4', due_hint: '下周三前' }],
   questions: ['「黎曼」疑似识别为「李曼」'],
   extra_field: '应被白名单剔除',
 })
@@ -78,7 +80,7 @@ try {
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.lectures')).find((x) => x.id === 'lec_t'))
   t('9. 状态推进 summarized', saved.status === 'summarized')
   t('10. 落库 summary 无 extra 字段', !('extra_field' in (saved.summary || {})))
-  t('11. 落库 homework 数组正确', Array.isArray(saved.summary.homework) && saved.summary.homework.length === 1)
+  t('11. 落库 homework 形状正确（{text,due_hint}）', saved.summary.homework.length === 1 && saved.summary.homework[0].text === '课本 120 页习题 3.4' && saved.summary.homework[0].due_hint === '下周三前')
   t('12. 按钮变「重新生成纪要」', (await rowT.getByRole('button', { name: '重新生成纪要' }).count()) === 1)
 
   // 收起 / 展开
@@ -188,6 +190,95 @@ localStorage.setItem('web2.onboarded', '1')`
   await p2.waitForTimeout(600)
   const hwTitles2 = await readTodoTitles(p2)
   t('27. 重复生成不叠出重复待办', hwTitles2.filter((s) => s.indexOf('课本 120 页习题 3.4') !== -1).length === 1)
+
+  /* ---- 五条路线 02 补充（2026-10-16）：作业带截止日 + 来源 + 「加入待办」 ----
+     老师说了 due_hint（本夹具「下周三前」）就用他说的那天，并标明「课堂提到」；
+     已经自动转进待办的显示「已在待办」，没转到的给一个按钮就地补加。 */
+  const hwItem = rowT3.locator('[data-hw-item]').first()
+  const hwDue = await hwItem.locator('[data-hw-due]').innerText()
+  t('28. 作业条目显示截止日', /^\d{4}-\d{2}-\d{2} · /.test(hwDue.trim()), hwDue)
+  t('29. 截止日来源标明「课堂提到」（老师说了 due_hint 就不估）', /课堂提到/.test(hwDue), hwDue)
+  t('30. 已自动转进待办的显示「已在待办」而不是按钮', (await hwItem.locator('[data-hw-added]').count()) === 1 && (await hwItem.locator('[data-hw-add]').count()) === 0)
+  /* due_hint「下周三前」必须真的被解析成日期并用上——当天写入的待办 due_date 应与显示一致 */
+  const todoDues = await p2.evaluate(() => {
+    const ov = JSON.parse(localStorage.getItem('web2.todos') || '{"added":[]}')
+    return (ov.added || []).filter((x) => String(x.title || '').indexOf('课本 120 页习题 3.4') !== -1).map((x) => String(x.due_date || ''))
+  })
+  t('31. 待办里的截止日 = 界面上显示的那个（due_hint 真被采用）', todoDues.length === 1 && hwDue.indexOf(todoDues[0]) === 0, { todoDues, hwDue })
+
+  /* 注意：不能在 p2 上 reload 验「删掉待办后按钮回来」——addInitScript 每次导航都会重跑，
+     会把 web2.lectures 重新播种回 transcribed（Day 12 老坑）。所以下面用独立 context 验。 */
+
+  /* ---- 「加入待办」按钮的形态：自动转已覆盖的那条显示「已在待办」； ----
+     这里再造一份**带课的、待办里没有的**纪要，验证按钮真的在、点了真能补回待办。 */
+  const p5 = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
+  const seedAdd = /* js */ `
+const lectures = [
+  { id: 'lec_add', schedule_id: null, title: '待补加的纪要', status: 'summarized', started_at: '2026-09-24T09:00:00.000Z', ended_at: '2026-09-24T09:45:00.000Z', duration_ms: 2700000, clip_count: 1, clips: [], created_at: '2026-09-24T09:00:00.000Z', updated_at: '2026-09-24T09:50:00.000Z', transcript: '一份足够长的文字稿。', summary: { overview: '有两条作业，但一条都没转进待办。', key_points: [], terms: [], homework: [{ text: '写高数作业', due_hint: '下周三前' }, { text: '读英语课文', due_hint: '' }], questions: [], created_at: '2026-09-24T09:50:00.000Z' } }
+]
+localStorage.setItem('web2.lectures', JSON.stringify(lectures))
+localStorage.setItem('web2.onboarded', '1')`
+  await p5.addInitScript(seedAdd)
+  await p5.goto(BASE, { waitUntil: 'domcontentloaded' })
+  await p5.waitForTimeout(700)
+  await p5.$eval('[data-nav="me"]', (el) => el.click())
+  await p5.waitForTimeout(400)
+  await p5.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await p5.waitForTimeout(400)
+  const rowAdd = p5.locator('li', { hasText: '待补加的纪要' })
+  await rowAdd.getByRole('button', { name: '查看纪要 ▼' }).click()
+  await p5.waitForTimeout(200)
+  t('32. 没在待办里的作业给「加入待办」按钮', (await rowAdd.locator('[data-hw-add]').count()) === 2)
+  const addItems = rowAdd.locator('[data-hw-item]')
+  t('33. 两条作业的截止日来源分别标明', /课堂提到/.test(await addItems.nth(0).locator('[data-hw-due]').innerText()) && /按下次上课日估的/.test(await addItems.nth(1).locator('[data-hw-due]').innerText()))
+  const due0 = (await addItems.nth(0).locator('[data-hw-due]').innerText()).trim().slice(0, 10)
+  await addItems.nth(0).locator('[data-hw-add]').click()
+  await p5.waitForTimeout(400)
+  t('34. 点「加入待办」补回一条（due_hint 解析出的日期）', JSON.stringify(await p5.evaluate(() => {
+    const ov = JSON.parse(localStorage.getItem('web2.todos') || '{"added":[]}')
+    return (ov.added || []).map((x) => [String(x.title || ''), String(x.due_date || '')])
+  })) === JSON.stringify([['写高数作业', due0]]), await p5.evaluate(() => localStorage.getItem('web2.todos')))
+  t('35. 加入后该条变「已在待办」，另一条仍有按钮', (await addItems.nth(0).locator('[data-hw-added]').count()) === 1 && (await addItems.nth(1).locator('[data-hw-add]').count()) === 1)
+  await p5.context().close()
+
+  /* ---- 旧纪要兼容：homework 还是字符串数组（升级提示词之前生成的） ----
+     文案照常显示、截止日照常给（回落「按下次上课日估的」）、不因为形状变了而整块消失。 */
+  const p4 = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
+  const seedOld = /* js */ `
+const lectures = [
+  { id: 'lec_old', schedule_id: null, title: '升级前的旧纪要', status: 'summarized', started_at: '2026-09-25T09:00:00.000Z', ended_at: '2026-09-25T09:45:00.000Z', duration_ms: 2700000, clip_count: 1, clips: [], created_at: '2026-09-25T09:00:00.000Z', updated_at: '2026-09-25T09:50:00.000Z', transcript: '一份足够长的文字稿。', summary: { overview: '升级前生成的纪要。', key_points: [], terms: [], homework: ['旧格式的作业条目'], questions: [], created_at: '2026-09-25T09:50:00.000Z' } }
+]
+localStorage.setItem('web2.lectures', JSON.stringify(lectures))
+localStorage.setItem('web2.onboarded', '1')`
+  await p4.addInitScript(seedOld)
+  await p4.goto(BASE, { waitUntil: 'domcontentloaded' })
+  await p4.waitForTimeout(700)
+  await p4.$eval('[data-nav="me"]', (el) => el.click())
+  await p4.waitForTimeout(400)
+  await p4.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await p4.waitForTimeout(400)
+  const rowOld = p4.locator('li', { hasText: '升级前的旧纪要' })
+  await rowOld.getByRole('button', { name: '查看纪要 ▼' }).click()
+  await p4.waitForTimeout(200)
+  t('36. 旧纪要（字符串 homework）照常显示', (await rowOld.getByText('旧格式的作业条目').count()) === 1)
+  const oldDue = await rowOld.locator('[data-hw-due]').first().innerText()
+  t('37. 旧条目照常给截止日，来源标「按下次上课日估的」', /^\d{4}-\d{2}-\d{2} · 按下次上课日估的$/.test(oldDue.trim()), oldDue)
+  t('38. 旧纪要也能「加入待办」', (await rowOld.locator('[data-hw-add]').count()) === 1)
+  /* 点「加入待办」：没在待办里的条目就地补一条；补完变「已在待办」，再点不会叠第二条 */
+  await rowOld.locator('[data-hw-add]').first().click()
+  await p4.waitForTimeout(400)
+  await p4.$eval('[data-nav="me"]', (el) => el.click())
+  await p4.waitForTimeout(300)
+  await p4.$eval('[data-me-entry="lectures"]', (el) => el.click())
+  await p4.waitForTimeout(400)
+  const rowOld2 = p4.locator('li', { hasText: '升级前的旧纪要' })
+  t('39. 点「加入待办」后按钮变「已在待办」', (await rowOld2.locator('[data-hw-added]').count()) === 1 && (await rowOld2.locator('[data-hw-add]').count()) === 0)
+  const oldTodos = await p4.evaluate(() => {
+    const ov = JSON.parse(localStorage.getItem('web2.todos') || '{"added":[]}')
+    return (ov.added || []).filter((x) => String(x.title || '').indexOf('旧格式的作业条目') !== -1).map((x) => String(x.due_date || ''))
+  })
+  t('40. 待办里确实多了一条且截止日与界面一致', oldTodos.length === 1 && oldDue.indexOf(oldTodos[0]) === 0, { oldTodos, oldDue })
+  await p4.context().close()
 
   console.log(ok() ? 'ALL PASS ' + results.length : 'FAILED: ' + failed().join(' | '))
 } finally {

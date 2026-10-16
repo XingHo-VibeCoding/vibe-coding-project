@@ -37,6 +37,12 @@ const {
   setTodoFilter,
   openTodoAdd,
   openTodoEdit,
+  todoPlan,
+  planText,
+  examPlan,
+  examSoon,
+  examText,
+  goMeTab,
   openEventAdd,
   today,
   todayCourses,
@@ -182,9 +188,81 @@ const {
         </button>
       </section>
 
+      <!-- 考试周（五条新功能线 04）：只在 14 天内有考试时出现。
+           要回答用户 m24447 那三句：看得到接下来的考试、看得到复习时间、有人催。
+           「催」的分寸：给一条具体到分钟的复习建议，不写「你再不看就来不及了」。
+           复习时段只是建议，不写课表、不建待办 —— 同反向排课的纪律。 -->
+      <section v-if="examSoon.length" data-exam-card class="mb-3">
+        <h2 class="mb-2 px-1 text-sm font-semibold text-ink">接下来要考 <span class="text-xs font-normal text-ink-dim">· 考试</span></h2>
+        <div class="rounded-2xl border border-line bg-card p-3.5 shadow-sm">
+          <p v-if="examText" data-exam-card-line class="text-[13px] font-medium text-ink">{{ examText }}</p>
+          <!-- 今天排下的复习块：具体到分钟的时段，直接可以照着做 -->
+          <ul v-if="examPlan.todayBlocks.length" class="mt-2 space-y-1">
+            <li v-for="b in examPlan.todayBlocks" :key="b.examId + b.time" :data-exam-block="b.examId" class="flex items-center gap-2.5 rounded-xl bg-primary-50 px-2 py-1.5">
+              <span class="w-[86px] flex-none text-[11px] tabular-nums text-ink-dim">{{ b.time }}</span>
+              <span class="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">复习 {{ b.examTitle }}</span>
+            </li>
+          </ul>
+          <!-- 14 天内的每一场：倒计时 + 日期，点一行进「考试与复习」 -->
+          <ul class="mt-2 space-y-0.5">
+            <li v-for="e in examSoon" :key="e.id" :data-exam-soon="e.id" class="flex items-baseline justify-between gap-3 px-2 py-0.5">
+              <span class="min-w-0 truncate text-[12px] text-ink-dim">{{ e.title }}</span>
+              <span class="shrink-0 text-[11px] font-medium text-primary-600">{{ e.text }}</span>
+            </li>
+          </ul>
+          <button
+            type="button"
+            data-exam-open
+            class="mt-2.5 w-full rounded-xl border border-line py-2 text-[12px] font-medium text-ink-dim transition active:scale-[0.99]"
+            @click="goMeTab('exams')"
+          >看考试与复习安排</button>
+        </div>
+      </section>
+
       <!-- 待办：轻量勾选 -->
       <section>
         <h2 class="mb-2 px-1 text-sm font-semibold text-ink">今天要交 <span class="text-xs font-normal text-ink-dim">· 待办</span></h2>
+
+        <!-- 反向排课（五条新功能线 01）：把「要交的事」放进「有空的时候」。
+             只建议、不落库 —— 不写课表、不发通知；预计用时按默认 30 分钟。
+             今天有空档 → 列今天的块；今天没空档但后面排上了 → 只说一句实话（不装作没事）。
+             几天都排不下时整段不出现（不占地方、也不说废话）。 -->
+        <div v-if="todoPlan.todayBlocks.length || (todoPlan.nextDay && todoPlan.nextDay.blocks.length)" data-plan-card class="mb-2 rounded-2xl border border-line bg-card p-3.5 shadow-sm">
+          <div class="flex items-baseline justify-between gap-2">
+            <p class="text-xs font-semibold text-ink">今天该动哪件</p>
+            <p v-if="planText" data-plan-line class="shrink-0 text-[11px] text-ink-dim">{{ planText }}</p>
+          </div>
+          <ul v-if="todoPlan.todayBlocks.length" class="mt-2 space-y-1">
+            <li
+              v-for="b in todoPlan.todayBlocks"
+              :key="b.todoId"
+              :data-plan-item="b.todoId"
+              class="flex items-center gap-2.5 rounded-xl px-2 py-1.5"
+              :class="b === todoPlan.next ? 'bg-primary-50' : ''"
+            >
+              <span class="w-[86px] flex-none text-[11px] tabular-nums text-ink-dim">{{ b.time }}</span>
+              <span class="min-w-0 flex-1 truncate text-[13px]" :class="b === todoPlan.next ? 'font-semibold text-ink' : 'text-ink'">{{ b.title }}</span>
+              <span
+                v-if="b.urgency === 'overdue' || b.urgency === 'today'"
+                data-plan-urgent
+                class="flex-none rounded px-1.5 py-[1px] text-[10px] font-semibold"
+                :class="b.urgency === 'overdue' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-primary-500/15 text-primary-600'"
+              >{{ b.urgency === 'overdue' ? '已过期' : '今天到期' }}</span>
+            </li>
+          </ul>
+          <!-- 今天确实没空档：不硬塞，只把「最近排到哪天几点」说清楚 -->
+          <ul v-else class="mt-2 space-y-1">
+            <li
+              v-for="b in todoPlan.nextDay.blocks"
+              :key="'n-' + b.todoId"
+              :data-plan-item="b.todoId"
+              class="flex items-center gap-2.5 rounded-xl px-2 py-1.5"
+            >
+              <span class="w-[86px] flex-none text-[11px] tabular-nums text-ink-dim">{{ b.time }}</span>
+              <span class="min-w-0 flex-1 truncate text-[13px] text-ink">{{ b.title }}</span>
+            </li>
+          </ul>
+        </div>
         <!-- 状态筛选 chips：热区 min-h-11(44px)、选中态走字重+主色、aria-pressed 供读屏；
              一条待办都没有且不在筛选态时不出现（无感易用） -->
         <div
