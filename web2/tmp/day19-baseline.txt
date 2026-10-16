@@ -1,242 +1,242 @@
-# Day 19 改版基线 2026-10-16 19:03:53
-# git: 17e2c28 Day 30｜新增协作提速约定  |  工作区改动 49 条
+# Day 19 改版基线 2026-10-16 20:58:09
+# git: 5fb7d40 Day 31｜文档状态校准：五条线已提交 afc3c10  |  工作区改动 6 条
 # 脚本数：118  |  并发 3  |  单脚本超时 90s
 
-[exit 0] [11500ms] archive-ui-check.mjs
+[exit 0] [11485ms] archive-ui-check.mjs
         === 全量归档 UI：34/34 通过 ===
-[exit 0] [70ms] archive-unit.mjs
+[exit 0] [74ms] archive-unit.mjs
         === 全量归档：44/44 通过 ===
-[exit 0] [10197ms] auto-stop-check.mjs
+[exit 0] [10236ms] auto-stop-check.mjs
         === 到点自动停录：16/16 项通过 ===
-[exit 0] [15638ms] backbutton-check.mjs
+[exit 0] [15668ms] backbutton-check.mjs
         33/33 passed
-[exit 0] [81765ms] callout-check.mjs
+[exit 0] [81694ms] callout-check.mjs
         可回嘴 + 找模式检查：39 项通过 / 0 项失败
-[exit 0] [6116ms] clear-data-check.mjs
+[exit 0] [5566ms] clear-data-check.mjs
         === 21/21 通过 ===
-[exit 0] [414ms] compress-real-check.mjs
+[exit 0] [345ms] compress-real-check.mjs
         SKIP | 全部断言 ← 需要能提供 /src/data/recognizer.js 的 Vite dev server（先 npm run dev，或用 TW_DEV_URL 指定）；已试：http://127.0.0.1:5180
-[exit 0] [8820ms] daily-account-check.mjs
+[exit 0] [8682ms] daily-account-check.mjs
         六期·今天的账：24 通过 / 0 失败
-[exit 0] [6023ms] day12b-filter-check.mjs
+[exit 0] [5898ms] day12b-filter-check.mjs
         结果：19 过，0 挂
-[exit 0] [15469ms] day24-check.mjs
+[exit 0] [15434ms] day24-check.mjs
         结果：12 通过 / 0 失败
-[exit 0] [5820ms] day27-fix-check.mjs
+[exit 0] [5703ms] day27-fix-check.mjs
         === 结果：11 过 / 0 挂 ===
-[exit 0] [9353ms] day27-online-check.mjs
+[exit 0] [10166ms] day27-online-check.mjs
         === 线上验收：6 过 / 0 挂 ===
-[exit 0] [12172ms] day27-selftest.mjs
-        三个设置行 = ["10 月 16 日 周五 · 第 4 周 晚上好呀～今天辛苦啦，摸摸头 今天收个尾 两分钟：今天怎么样、明天最重要的一件事，写完存成今天的日精进 开始复盘 今天 3 节课 待办 1/4 学期进度 · 第 4 / 18
-[exit 0] [1669ms] day28-checklist-shot.mjs
+[exit 0] [12079ms] day27-selftest.mjs
+        三个设置行 = ["10 月 16 日 周五 · 第 4 周 你好呀～ 今天收个尾 两分钟：今天怎么样、明天最重要的一件事，写完存成今天的日精进 开始复盘 今天 3 节课 待办 1/4 学期进度 · 第 4 / 18 周 今天收个尾 开
+[exit 0] [1749ms] day28-checklist-shot.mjs
         PASS | 已生成 公网打开-Day28.png — 481 KB
-[exit 0] [42293ms] day28c-today-check.mjs
+[exit 0] [42750ms] day28c-today-check.mjs
         === 时间和周次跟随系统 + 开学日期如实显示：15 项通过 / 0 项失败 ===
-[exit 0] [18327ms] dayover-check.mjs
+[exit 0] [18382ms] dayover-check.mjs
         调休检查：56 项通过 / 0 项失败
-[exit 0] [6520ms] dedup-button-check.mjs
+[exit 0] [6516ms] dedup-button-check.mjs
         === 6/6 通过 ===
-[exit 0] [3573ms] density-fade-check.mjs
+[exit 0] [3519ms] density-fade-check.mjs
         密度切换交叉淡入检查：10 项通过 / 0 项失败
-[exit 0] [30622ms] device-s1s8-check.mjs
+[exit 0] [32619ms] device-s1s8-check.mjs
         ⚠ 跳过了 5 项：S4c, S4d, S5e, S5f, S7f
-[exit 0] [8957ms] dropdown-delete-check.mjs
+[exit 0] [9004ms] dropdown-delete-check.mjs
         ALL PASS (15)
-[exit 0] [3361ms] edu-compat-check.mjs
+[exit 0] [3153ms] edu-compat-check.mjs
         老数据兼容实测：9 项通过 / 0 项失败
-[exit 0] [81ms] edu-import-check.mjs
+[exit 0] [89ms] edu-import-check.mjs
         教务课表导入检查：32 项通过 / 0 项失败
-[exit 0] [79ms] edu-login-check.mjs
+[exit 0] [86ms] edu-login-check.mjs
         教务直连检查：32 项通过 / 0 项失败
-[exit 0] [3793ms] edu-login-ui-check.mjs
+[exit 0] [3734ms] edu-login-ui-check.mjs
         教务直连界面检查：15 项通过 / 0 项失败
-[exit 0] [64899ms] edu-ui-check.mjs
+[exit 0] [34808ms] edu-ui-check.mjs
         教务导入界面检查：20 项通过 / 0 项失败
-[exit 0] [61731ms] event-smart-check.mjs
+[exit 0] [31901ms] event-smart-check.mjs
         合计：64 过 / 0 挂
-[exit 0] [13610ms] exact-alarm-check.mjs
+[exit 0] [13778ms] exact-alarm-check.mjs
         结果：19 过 / 0 挂
-[exit 0] [54157ms] exam-ui-check.mjs
+[exit 0] [24556ms] exam-ui-check.mjs
         === 考试周模式界面：47/47 通过 ===
-[exit 0] [77ms] exam-unit.mjs
+[exit 0] [94ms] exam-unit.mjs
         === 考试周模式纯函数：85/85 通过 ===
-[exit 0] [2446ms] grid-status-check.mjs
+[exit 0] [2662ms] grid-status-check.mjs
         6/6 项通过
-[exit 0] [4772ms] habit-page-check.mjs
+[exit 0] [4829ms] habit-page-check.mjs
         结果：19 过 / 0 挂
-[exit 0] [76ms] habit-unit.mjs
+[exit 0] [84ms] habit-unit.mjs
         === ALL PASS === 38 passed, 0 failed
-[exit 0] [15186ms] habits-check.mjs
+[exit 0] [15380ms] habits-check.mjs
         结果：29 过 / 0 挂
-[exit 0] [5644ms] header-status-check.mjs
+[exit 0] [5979ms] header-status-check.mjs
         6/6 项通过
-[exit 0] [8035ms] hero-collapse-check.mjs
+[exit 0] [8083ms] hero-collapse-check.mjs
         == hero-collapse-check: 28 过 / 0 挂 ==
-[exit 0] [74ms] homework-unit.mjs
+[exit 0] [73ms] homework-unit.mjs
         === 纪要作业截止日解析：31/31 通过 ===
-[exit 0] [75ms] ics-routine-check.mjs
+[exit 0] [79ms] ics-routine-check.mjs
         结果：18 通过 / 0 失败
-[exit 0] [73ms] lec-auto-unit.mjs
+[exit 0] [75ms] lec-auto-unit.mjs
         === courseCovering 单测：37/37 通过 ===
-[exit 0] [69ms] lec-todo-unit.mjs
+[exit 0] [71ms] lec-todo-unit.mjs
         === nextCourseDate 单测：14/14 通过 ===
-[exit 0] [5920ms] listen-mark-check.mjs
+[exit 0] [5780ms] listen-mark-check.mjs
         练耳记号可见可撤销检查：19 项通过 / 0 项失败
-[exit 0] [59720ms] listen-ui-check.mjs
+[exit 0] [33884ms] listen-ui-check.mjs
         碎片练耳 UI 检查：92 项通过 / 0 项失败
-[exit 0] [109ms] listen-unit.mjs
+[exit 0] [106ms] listen-unit.mjs
         碎片练耳单测：167 项通过 / 0 项失败
-[exit 0] [6831ms] live-transcribe-check.mjs
+[exit 0] [6682ms] live-transcribe-check.mjs
         === 分段转写：10/10 项通过 ===
-[exit 0] [14822ms] lively-check.mjs
+[exit 0] [14548ms] lively-check.mjs
         结果：31 过 / 0 挂
-[exit 0] [163ms] m2-lectures-test.mjs
+[exit 0] [101ms] m2-lectures-test.mjs
         结果：31 过，0 挂
-[exit 0] [10128ms] m2-record-ui-check.js
+[exit 0] [10026ms] m2-record-ui-check.js
         结果：24 过，0 挂
 [exit 0] [94ms] m2-recorder-unit.mjs
         结果：24 过，0 挂
-[exit 0] [14277ms] m25-keepalive-check.mjs
+[exit 0] [14979ms] m25-keepalive-check.mjs
         23 passed, 0 failed
-[exit 0] [3237ms] m3-bridge-timing-check.js
+[exit 0] [3440ms] m3-bridge-timing-check.js
         \n结果: 6 过 / 0 挂
-[exit 0] [3510ms] m3-reconcile-check.mjs
+[exit 0] [3763ms] m3-reconcile-check.mjs
         6/6 passed
-[exit 0] [89ms] m3-status-test.mjs
+[exit 0] [144ms] m3-status-test.mjs
         结果：10 过，0 挂
-[exit 0] [9745ms] m3-transcribe-ui-check.js
+[exit 0] [10001ms] m3-transcribe-ui-check.js
         结果：16 过，0 挂
-[exit 0] [18448ms] m4-summarize-ui-check.mjs
+[exit 0] [18336ms] m4-summarize-ui-check.mjs
         ALL PASS 40
-[exit 0] [71ms] m4-summarizer-test.mjs
+[exit 0] [85ms] m4-summarizer-test.mjs
         结果：48 过 / 0 挂
-[exit 0] [10325ms] me-index-check.mjs
+[exit 0] [10374ms] me-index-check.mjs
         === 我的页索引：30 项通过 / 0 项失败 ===
-[exit 0] [5572ms] me-lectures-check.mjs
+[exit 0] [4531ms] me-lectures-check.mjs
         == me-lectures-check: 14 过 / 0 挂 ==
-[exit 0] [11004ms] me-nest-check.mjs
+[exit 0] [10964ms] me-nest-check.mjs
         == me-nest-check: 27 过 / 0 挂 ==
-[exit 0] [8093ms] mine-rec-check.mjs
+[exit 0] [8029ms] mine-rec-check.mjs
         20/20 passed
-[exit 0] [5675ms] motion-check.mjs
+[exit 0] [5518ms] motion-check.mjs
         === 美术收口自检：9 项通过 / 0 项失败 ===
-[exit 0] [1991ms] nav-badge-check.mjs
+[exit 0] [1816ms] nav-badge-check.mjs
         8/8 项通过
-[exit 0] [14212ms] notify-ui-check.mjs
+[exit 0] [14124ms] notify-ui-check.mjs
         28 passed, 0 failed
-[exit 0] [73ms] notify-unit-check.mjs
+[exit 0] [80ms] notify-unit-check.mjs
         21 passed, 0 failed
-[exit 0] [30780ms] numberwheel-touch-check.mjs
+[exit 0] [31011ms] numberwheel-touch-check.mjs
         19/19 passed
-[exit 0] [19296ms] ob-ai-cfg-check.mjs
+[exit 0] [19095ms] ob-ai-cfg-check.mjs
         33/33 passed
-[exit 0] [6268ms] ob-timepage-check.mjs
+[exit 0] [6295ms] ob-timepage-check.mjs
         13/13 passed
-[exit 0] [20495ms] obrec-flow-check.mjs
+[exit 0] [22121ms] obrec-flow-check.mjs
         46/46 passed
-[exit 0] [7347ms] obrec-periods-check.mjs
+[exit 0] [7414ms] obrec-periods-check.mjs
         14/14 passed
-[exit 0] [10026ms] onboard-choice-check.mjs
+[exit 0] [10086ms] onboard-choice-check.mjs
         引导页三入口自检：37 项通过 / 0 项失败
-[exit 0] [4387ms] onboard-import-check.mjs
+[exit 0] [4064ms] onboard-import-check.mjs
         10/10 passed
-[exit 0] [8812ms] p8-online-check.mjs
+[exit 0] [9173ms] p8-online-check.mjs
         合计：6 过 / 0 挂
-[exit 0] [14041ms] pattern-ai-check.mjs
+[exit 0] [13696ms] pattern-ai-check.mjs
         AI 判读检查：21 项通过 / 0 项失败
-[exit 0] [11165ms] periods-editor-ui-check.mjs
+[exit 0] [11493ms] periods-editor-ui-check.mjs
         38/38 passed
-[exit 0] [72ms] periods-unit.mjs
+[exit 0] [70ms] periods-unit.mjs
         73/73 passed
-[exit 0] [7643ms] planner-ui-check.mjs
+[exit 0] [7570ms] planner-ui-check.mjs
         === 反向排课界面：26/26 通过 ===
-[exit 0] [74ms] planner-unit.mjs
+[exit 0] [78ms] planner-unit.mjs
         === 反向排课纯函数：56/56 通过 ===
-[exit 0] [18162ms] rec-assoc-check.mjs
+[exit 0] [18246ms] rec-assoc-check.mjs
         === 开录关联判定（DOM）：18/18 通过 ===
-[exit 0] [6859ms] rec-dedup-check.mjs
+[exit 0] [6924ms] rec-dedup-check.mjs
         === 识别导入去重：9/9 通过 ===
-[exit 0] [11588ms] rec-entry-check.mjs
+[exit 0] [11729ms] rec-entry-check.mjs
         === 录音入口归位：16 项通过 / 0 项失败 ===
-[exit 0] [17852ms] rec-preview-check.mjs
+[exit 0] [17744ms] rec-preview-check.mjs
         === 核对页整周预览：48/48 通过 ===
-[exit 0] [19886ms] recognize-ui-check.mjs
+[exit 0] [19468ms] recognize-ui-check.mjs
         30/30 passed
-[exit 0] [69ms] recognizer-unit.mjs
+[exit 0] [68ms] recognizer-unit.mjs
         61/61 passed
-[exit 0] [520ms] resampler-mock-check.mjs
+[exit 0] [502ms] resampler-mock-check.mjs
         ✓ 双声道均值混缩 = (1000+3000)/2/32768
-[exit 0] [12895ms] review-check.mjs
+[exit 0] [12867ms] review-check.mjs
         结果：44 过 / 0 挂
-[exit 0] [15535ms] routine-add-check.mjs
+[exit 0] [15538ms] routine-add-check.mjs
         40/40 项通过
-[exit 0] [67ms] routine-conflict-unit.mjs
+[exit 0] [71ms] routine-conflict-unit.mjs
         结果：27 通过 / 0 失败
-[exit 0] [77ms] routine-gate-check.mjs
+[exit 0] [70ms] routine-gate-check.mjs
         结果：17 过，0 挂
-[exit 0] [6602ms] routine-grid-check.mjs
+[exit 0] [6550ms] routine-grid-check.mjs
         22/22 项通过
-[exit 0] [14613ms] routine-today-check.mjs
+[exit 0] [14323ms] routine-today-check.mjs
         结果：26 通过 / 0 失败
 [exit 0] [85ms] routine-unit.mjs
         结果：29 过，0 挂
-[exit 0] [2536ms] row-spec-check.mjs
+[exit 0] [2378ms] row-spec-check.mjs
         === 今天页时间卡规格：11/11 项通过 ===
-[exit 0] [10126ms] safe-area-check.mjs
+[exit 0] [10372ms] safe-area-check.mjs
         === 状态栏让位（二级页 / 引导页）：10 通过 / 0 失败 ===
-[exit 0] [78ms] secure-store-check.mjs
+[exit 0] [85ms] secure-store-check.mjs
         系统密钥库检查：29 项通过 / 0 项失败
-[exit 0] [78ms] seg-crosscheck.mjs
+[exit 0] [89ms] seg-crosscheck.mjs
         结果：4 过，0 挂
 [exit 0] [77ms] seg4-repro-check.mjs
         == 11 pass / 0 fail ==
-[exit 0] [13376ms] slots-notify-check.mjs
+[exit 0] [13120ms] slots-notify-check.mjs
         结果：28 过 / 0 挂
-[exit 0] [22281ms] status-frame-check.mjs
+[exit 0] [22329ms] status-frame-check.mjs
         结果：63 过 / 0 挂
-[exit 0] [6951ms] step1-check.mjs
+[exit 0] [6440ms] step1-check.mjs
         Step 1 自检：15 项通过 / 0 项失败
-[exit 0] [3986ms] step2-check.mjs
+[exit 0] [4034ms] step2-check.mjs
         今日页行动流检查：19 项通过 / 0 项失败
-[exit 0] [4344ms] step3-check.mjs
+[exit 0] [4335ms] step3-check.mjs
         今天要听（练耳）检查：15 项通过 / 0 项失败
-[exit 0] [9084ms] step4-check.mjs
+[exit 0] [8874ms] step4-check.mjs
         结果：28 过 / 0 挂
-[exit 0] [11280ms] step5-check.mjs
+[exit 0] [11281ms] step5-check.mjs
         结果：28 过 / 0 挂 / 1 跳过（日期敏感）
-[exit 0] [15894ms] subterm-check.mjs
+[exit 0] [15966ms] subterm-check.mjs
         小学期检查：22 项通过 / 0 项失败
-[exit 0] [8081ms] swipe-tab-check.mjs
+[exit 0] [8143ms] swipe-tab-check.mjs
         === 左右滑动切 tab：10/10 通过 ===
-[exit 0] [48902ms] sync-check.mjs
+[exit 0] [48880ms] sync-check.mjs
         69 过 / 0 挂
-[exit 0] [10387ms] tab-switch-check.mjs
+[exit 0] [10290ms] tab-switch-check.mjs
         == tab-switch-check: 13 过 / 0 挂 ==
-[exit 0] [11155ms] timeline-ui-check.mjs
+[exit 0] [10984ms] timeline-ui-check.mjs
         === 时间去哪了界面：33/33 通过 ===
-[exit 0] [74ms] timeline-unit.mjs
+[exit 0] [80ms] timeline-unit.mjs
         === 时间去哪了纯函数：71/71 通过 ===
-[exit 0] [5093ms] timewheel-loop-check.mjs
+[exit 0] [5074ms] timewheel-loop-check.mjs
         11/11 passed
-[exit 0] [7916ms] today-expand-check.mjs
+[exit 0] [9661ms] today-expand-check.mjs
         === 今天页 D↔F 密度切换：23 项通过 / 0 项失败 ===
-[exit 0] [7974ms] today-rec-entry-check.mjs
+[exit 0] [8028ms] today-rec-entry-check.mjs
         === 今日页录音入口：17/17 项通过 ===
-[exit 0] [4621ms] today-shell-check.mjs
+[exit 0] [4719ms] today-shell-check.mjs
         == today-shell-check: 17 过 / 0 挂 ==
-[exit 0] [76ms] usage-stats-check.mjs
+[exit 0] [99ms] usage-stats-check.mjs
         42 过 / 0 挂
-[exit 0] [8007ms] usage-ui-check.mjs
+[exit 0] [8132ms] usage-ui-check.mjs
         27 过 / 0 挂
-[exit 0] [8893ms] week-fit-check.mjs
+[exit 0] [9102ms] week-fit-check.mjs
         === 周课表一屏/多行：22/22 通过 ===
-[exit 0] [6773ms] week-grid-check.mjs
+[exit 0] [6794ms] week-grid-check.mjs
         === 周课表网格：30/30 通过 ===
-[exit 0] [9865ms] week-menu-check.mjs
+[exit 0] [9943ms] week-menu-check.mjs
         === 课表页 ＋ 选单：22 项通过 / 0 项失败 ===
-[exit 0] [69ms] wheel-physics-unit.mjs
+[exit 0] [67ms] wheel-physics-unit.mjs
         43/43 passed
-[exit 0] [44797ms] wheel-touch-gesture-check.mjs
+[exit 0] [44963ms] wheel-touch-gesture-check.mjs
         18/18 passed
 
 ### 非 0 退出的脚本（0 个）：
