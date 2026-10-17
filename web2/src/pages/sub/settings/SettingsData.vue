@@ -25,7 +25,8 @@ import {
   ARCHIVE_INCLUDE,
   ARCHIVE_EXCLUDE,
 } from '../../../data/archive.js'
-import { downloadText } from '../../../data/ics.js'
+/* Day 32：导出改走 saveTextFile（App 里 <a download> 不落盘，WebView 没有下载器） */
+import { saveTextFile } from '../../../data/saveFile.js'
 
 const app = useApp()
 /* 这段 markup 是从 App.vue 逐字搬过来的：绑定名一个没改，靠 toRefs 按原名接出（模板里自动解包）。
@@ -100,17 +101,21 @@ function archRefresh() {
   archSummary.value = localArchiveSummary()
 }
 
-/* 导出：生成 → 下载。文件名带日期，方便用户自己攒几份不同时间点的备份。 */
-function onExportArchive() {
+/* 导出：生成 → 存盘。文件名带日期，方便用户自己攒几份不同时间点的备份。
+   App 里落到手机的「文档/下载」目录（见 data/saveFile.js），浏览器里仍走下载。 */
+async function onExportArchive() {
   const built = buildArchive()
   const d = new Date()
   const p = (n) => String(n).padStart(2, '0')
   const ds = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
-  downloadText(`日程助手-全量归档-${ds}.json`, archiveToText(built.archive), 'application/json')
+  const name = `日程助手-全量归档-${ds}.json`
+  const saved = await saveTextFile(name, archiveToText(built.archive), 'application/json')
+  /* 回执里必须写清存在哪儿：真机上文件不在浏览器下载目录，用户找不到等于没导出 */
+  const where = saved.where === 'browser' ? '' : ` 已存到「${saved.where}」，文件名 ${name}。`
   archMsgBad.value = false
   archMsg.value = built.empty
-    ? '已导出，但这台设备还没有数据（归档里是空的）。'
-    : `已导出 ${built.keys} 项（${archSizeText.value}）。机密项没有进文件：${ARCHIVE_EXCLUDE.map((x) => x.k.replace('web2.', '')).join('、')}。`
+    ? `已导出，但这台设备还没有数据（归档里是空的）。${where}`
+    : `已导出 ${built.keys} 项（${archSizeText.value}）。${where}机密项没有进文件：${ARCHIVE_EXCLUDE.map((x) => x.k.replace('web2.', '')).join('、')}。`
 }
 
 /* 选文件：读进来只做「预览」，一个字都不写本机。 */

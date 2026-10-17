@@ -172,15 +172,43 @@ body {
 }
 
 /* 二级页推入（美术收口，约定 2a）：从右整屏推进来、返回时推回去。
-   与 .slide 同曲线家族（0.28s cubic-bezier(.32,.72,.35,1)），只是方向换成 X。
-   只做 transform，不动布局，所以推入过程中点里面的东西也稳。 */
+   与 .slide 同曲线家族（0.28s cubic-bezier(.32, .72, .35, 1)），只是方向换成 X。
+   只做 transform，不动布局，所以推入过程中点里面的东西也稳。
+
+   2026-10-16（用户 m00030）：原来只有 push 一套，且 Transition 里的节点没写 :key，
+   所以栈内推进（设置 → 外观与主题）根本不触发进出动画。现在按方向分两套：
+     push  往深一层走 —— 新页从右整屏推进，旧页向左退 28%（视差，iOS 导航栈的手感）；
+     pop   返回上一层 —— 当前页向右滑出，上一页从左侧 -28% 回到原位。
+   两套曲线与时长必须一致，否则来回一趟节奏会变。
+   离开中的那一页压到 z-30 并吃掉指针事件：push 时它被新页完全盖住看不出来，
+   pop 时它在上面滑走才露出底下的上一页，顺序反了会看到「上一层被抹掉」。 */
 .push-enter-active,
-.push-leave-active {
+.push-leave-active,
+.pop-enter-active,
+.pop-leave-active {
   transition: transform 0.28s cubic-bezier(0.32, 0.72, 0.35, 1);
 }
+/* 层序（这两行决定「谁盖谁」，写反就是一个界面闪一下被子页面板挡住的怪相）：
+   push：新页（enter）盖住旧页（leave）—— 旧页压到 30，新页保持页面自带的 40；
+   pop ：当前页（leave）在上面滑出、上一页（enter）在下面归位 —— 上一页压到 20。 */
+.push-leave-active {
+  z-index: 30;
+  pointer-events: none;
+}
+.pop-enter-active {
+  z-index: 20;
+}
+.pop-leave-active {
+  z-index: 30;
+  pointer-events: none;
+}
 .push-enter-from,
-.push-leave-to {
+.pop-leave-to {
   transform: translateX(100%);
+}
+.push-leave-to,
+.pop-enter-from {
+  transform: translateX(-28%);
 }
 
 /* 今天页密度切换（动效约定 1a）：D（折叠一行 + 接下来 3 行）↔ F（全天 26px 表）

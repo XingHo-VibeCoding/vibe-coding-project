@@ -40,13 +40,20 @@ const sheetAttrs = computed(() => (props.sheetAttr ? { [props.sheetAttr]: '' } :
   <Transition name="fade">
     <div v-if="open" v-bind="maskAttrs" class="fixed inset-0 z-20 bg-black/40" @click="$emit('close')"></div>
   </Transition>
+  <!-- 键盘让位（Day 32）：--kb 是 data/keyboard.js 写在 <html> 上的键盘实测高度，没键盘时不存在（取 0）。
+       面板 bottom 抬到键盘上沿、max-height 同步收掉同样高度，底部输入框就不会被输入法盖住；
+       内层滚动区跟着变矮，聚焦的输入框会被浏览器滚进可视区。 -->
   <Transition name="slide">
     <div
       v-if="open"
       v-bind="sheetAttrs"
       class="fixed inset-x-0 bottom-0 z-30 mx-auto flex max-h-[86vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border-t border-line bg-card shadow-2xl"
       :class="panelClass"
-      :style="{ paddingBottom: 'max(24px, calc(var(--sab, 0px) + 24px))' }"
+      :style="{
+        bottom: 'var(--kb, 0px)',
+        maxHeight: 'calc(86vh - var(--kb, 0px))',
+        paddingBottom: 'max(24px, calc(var(--sab, 0px) + 24px))',
+      }"
     >
       <!-- 滚动放在**内层**，面板自己不滚（2026-10-06 改）。
            为什么：质量扫描的 E6「浮层超屏」量的是**面板自己**的 scrollHeight vs clientHeight，

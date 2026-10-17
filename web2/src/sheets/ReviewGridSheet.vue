@@ -16,6 +16,11 @@ const app = useApp()
       v-if="app.recCell"
       data-sheet-cell
       class="fixed inset-x-0 bottom-0 z-[60] mx-auto w-full max-w-md rounded-t-3xl border-t border-line bg-card p-5 pb-10 shadow-2xl"
+      :style="{
+        bottom: 'var(--kb, 0px)',
+        maxHeight: 'calc(100vh - var(--kb, 0px) - 8px)',
+        overflowY: 'auto',
+      }"
     >
       <div class="mx-auto mb-3 h-1 w-9 rounded-full bg-soft-2"></div>
       <p class="text-base font-bold" data-cell-where>{{ app.recCellWhere }}</p>
