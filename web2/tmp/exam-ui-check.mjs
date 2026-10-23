@@ -162,10 +162,11 @@ try {
   /* ================= C 复习时间安排 ================= */
   console.log('\n--- C 复习时间安排 ---')
   const e3 = d.rows.find((r) => r.id === 'e3')
-  t('C1 快到了的考试给了复习建议', /建议复习/.test(e3.review), e3.review.replace(/\n/g, ' | '))
+  /* 2026-10-23 口径改动：一天一整块（90 分钟），文案从「建议复习 N 段」改成「考前 N 天各留 90 分钟」。 */
+  t('C1 快到了的考试给了复习建议', /各留 90 分钟/.test(e3.review), e3.review.replace(/\n/g, ' | '))
   const times = [...e3.review.matchAll(/(\d{2}):(\d{2})[–-](\d{2}):(\d{2})/g)].map((m) => ({ s: +m[1] * 60 + +m[2], e: +m[3] * 60 + +m[4] }))
   t('C2 复习块不止一段（考前几天每天一段）', times.length >= 2, times.length)
-  t('C3 每段都是 30 分钟', times.every((x) => x.e - x.s === 30), times.map((x) => x.e - x.s).join(','))
+  t('C3 每段都是 90 分钟（一天一整块，不再切 30 分钟小块）', times.every((x) => x.e - x.s === 90), times.map((x) => x.e - x.s).join(','))
   t('C4 优先晚上：所有段都在 19:00 之后', times.every((x) => x.s >= 19 * 60), times.map((x) => x.s).join(','))
   t('C5 不与课表冲突（避开 08:00–12:00 与 14:00–18:00）', times.every((x) => x.e <= 12 * 60 || (x.s >= 12 * 60 && x.e <= 14 * 60) || x.s >= 18 * 60), JSON.stringify(times))
   t('C6 远期考试的条目根本没给复习建议（不给用户制造焦虑）', !/建议复习/.test(d.rows.find((r) => r.id === 'e30').review), d.rows.find((r) => r.id === 'e30').review)
@@ -280,6 +281,10 @@ try {
     t('I1 今日页出现考试卡', !!card, card ? card.text.slice(0, 60) : '缺')
     t('I2 卡里能看到接下来的考试', card && card.soon.some((x) => /高等数学/.test(x)), card ? card.soon.join(' | ') : '')
     t('I3 卡里能看到今天建议复习的时段', card && card.blocks.some((x) => /\d{2}:\d{2}/.test(x)), card ? card.blocks.join(' | ') : '')
+    /* 2026-10-23：S1 改「一天一整块」时把 todayBlocks.examTitle 弄丢过，今日页那行变成
+       「复习 （空白）」——S4 才补回字段。这两条就是钉住它，别哪天又悄悄掉。 */
+    t('I4 复习那一行写清了复习哪门（不是空白）', card && card.blocks.every((x) => x.replace(/[\d:\s–-]/g, '').length > 2), card ? card.blocks.join(' | ') : '')
+    t('I5 一天只有一段（不重复列两段同一天的）', card && card.blocks.length === 1, card ? card.blocks.length : '')
     await p5.context().close()
   }
 
@@ -336,6 +341,98 @@ try {
     await p7.waitForTimeout(600)
     t('K7 用户点保存后才真的进 web2.exams', await p7.evaluate(() => (localStorage.getItem('web2.exams') || '').indexOf('期末考试') >= 0))
     await p7.context().close()
+  }
+
+  /* ================= L 考场待公布（06 同步进来的考试考场为空） =================
+     真机依据：2026-10-23 教务返回的 6 场未来考试 jsmc/zwxh 全空（学校考前 2-3 周才排）。
+     界面必须写「考场待公布」，而不是整项消失 —— 否则用户会以为我们漏拿了考场。 */
+  console.log('\n--- L 考场待公布 ---')
+  {
+    const synced = [
+      { id: 'ks_(2026-2027-1)-031E0011-01_final', title: '结构力学Ⅰ', date: D3, start: '10:30', end: '12:30', place: '', note: '', created_at: 3 },
+      { id: 'ex_manual', title: '自己加的考试', date: D5, start: '09:00', end: '', place: '', note: '', created_at: 4 },
+    ]
+    const p8 = await openPage(browser, seed({ 'web2.exams': synced }), { seedKey: 'ex-pending' })
+    await openExams(p8)
+    await p8.waitForTimeout(400)
+    const rows = await dumpExams(p8)
+    const s = rows.rows.find((r) => r.id.indexOf('ks_') === 0) || {}
+    const m = rows.rows.find((r) => r.id === 'ex_manual') || {}
+    t('L1 同步来的考试、考场为空 → 显示「考场待公布」', /考场待公布/.test(s.when || ''), s.when)
+    t('L2 手填的考试、考场为空 → 不写「考场待公布」（不催）', !/考场待公布/.test(m.when || ''), m.when)
+    t('L3 时间照样在（只是补了考场那句）', /10:30/.test(s.when || ''), s.when)
+    await p8.context().close()
+  }
+
+  /* ================= M 今晚这一段 + AI 一句话（S4）=================
+     口径（用户 m00554）：复习时间「先划出整块时间」，看哪门「让 AI 给建议」。
+     所以这一组只验两件事：整块时间说清了、AI 那句在/不在都对。
+     ⚠ AI 那句**不靠真联网**：这里直接种「当天缓存」到 localStorage，
+       验的是「有这句就显示、没这句就不占位」——提示词与清洗在 review-advice-unit.mjs 里验。 */
+  console.log('\n--- M 今晚这一段 + AI 一句话 ---')
+  {
+    const advice = { date: D0, line: '今晚先看高等数学，把上次的错题过一遍。', at: Date.now() }
+    const p9 = await openPage(browser, seed({ 'web2.review.advice': advice }), { seedKey: 'ex-today' })
+    await openExams(p9)
+    await p9.waitForTimeout(500)
+    const card = await p9.evaluate(() => {
+      const el = document.querySelector('[data-exam-today]')
+      if (!el) return null
+      return {
+        text: el.innerText.replace(/\s+/g, ' ').trim(),
+        time: (el.querySelector('[data-exam-today-time]') || {}).textContent || '',
+        who: (el.querySelector('[data-exam-today-who]') || {}).textContent || '',
+        advice: (el.querySelector('[data-exam-advice]') || {}).textContent || '',
+      }
+    })
+    t('M1 今天排下了一段 → 页面出现「今晚留给复习」', !!card, card ? card.text.slice(0, 40) : '缺')
+    t('M2 时段是整块 90 分钟（19:00–20:30）', /19:00–20:30/.test(card ? card.time : ''), card ? card.time : '')
+    t('M3 说清先看哪门、还有几天', /先看 高等数学（还有 3 天）/.test(card ? card.who : ''), card ? card.who : '')
+    t('M4 AI 那句显示出来了', /今晚先看高等数学/.test(card ? card.advice : ''), card ? card.advice : '')
+
+    /* 没有那句时（没配 Key / 断网）→ 不占位、也不写「加载失败」 */
+    const p10 = await openPage(browser, seed(), { seedKey: 'ex-noadvice' })
+    await openExams(p10)
+    await p10.waitForTimeout(500)
+    const noAdv = await p10.evaluate(() => ({
+      advice: !!document.querySelector('[data-exam-advice]'),
+      today: !!document.querySelector('[data-exam-today]'),
+      body: document.body.innerText,
+    }))
+    t('M5 拿不到那句话时不占位（整行不出现）', !noAdv.advice)
+    t('M6 整块时间照常显示（建议拿不到不影响复习时间）', noAdv.today)
+    t('M7 不写「加载失败」这类噪音', !/加载失败|出错了|请求失败/.test(noAdv.body))
+    await p10.context().close()
+    await p9.context().close()
+  }
+
+  /* 多场考试共用同一段：必须明说还有几场，别让人以为今晚只复习一门 */
+  {
+    const two = [
+      { id: 'e3', title: '高等数学', date: D3, start: '09:00', end: '11:00', place: '', note: '', created_at: 1 },
+      { id: 'e5', title: '大学物理', date: D5, start: '09:00', end: '11:00', place: '', note: '', created_at: 2 },
+    ]
+    const p11 = await openPage(browser, seed({ 'web2.exams': two }), { seedKey: 'ex-two' })
+    await openExams(p11)
+    await p11.waitForTimeout(500)
+    const one = await p11.evaluate(() => {
+      const els = [...document.querySelectorAll('[data-exam-today]')]
+      const who = document.querySelector('[data-exam-today-who]')
+      return { cards: els.length, who: who ? who.textContent : '' }
+    })
+    t('M8 两场考试共用一段时，只出现一张「今晚」卡（不重复两段）', one.cards === 1, one.cards)
+    t('M9 明说这段还有别的考试要准备', /这段还有 1 场要准备/.test(one.who), one.who)
+    await p11.context().close()
+  }
+
+  /* 今天没安排（只有 30 天后的考试）→ 整块不出现，不占地方 */
+  {
+    const far = [{ id: 'e30', title: '大学物理', date: D30, start: '', end: '', place: '', note: '', created_at: 2 }]
+    const p12 = await openPage(browser, seed({ 'web2.exams': far }), { seedKey: 'ex-far' })
+    await openExams(p12)
+    await p12.waitForTimeout(500)
+    t('M10 今天没安排 → 「今晚」那块整块不出现', !(await p12.evaluate(() => !!document.querySelector('[data-exam-today]'))))
+    await p12.context().close()
   }
 } finally {
   await browser.close()

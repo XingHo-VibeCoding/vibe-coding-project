@@ -57,6 +57,7 @@ export const ARCHIVE_EXCLUDE = [
   { k: 'web2.eduAccount', why: '统一身份认证账号' },
   { k: 'web2.sync', why: '同步串（能读写你云端数据）' },
   { k: 'web2.holidayCache', why: '节假日缓存，联网会自己重新抓' },
+  { k: 'web2.examSyncAt', why: '考试同步的时间戳，联网会自己重新来' },
 ]
 
 const INCLUDE_SET = new Set(ARCHIVE_INCLUDE.map((x) => x.k))

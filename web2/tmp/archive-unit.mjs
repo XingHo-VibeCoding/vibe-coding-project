@@ -30,7 +30,8 @@ const reset = () => Object.keys(store).forEach((k) => delete store[k])
 
 /* 本机真实存在的键（2026-10-16 从源码里 grep 出来的权威清单，29 个）。
    任何时刻新增了键而忘了加进 ARCHIVE_INCLUDE，这条会红 —— 这正是它存在的意义。
-   2026-10-16 五条线 04 新增两个键：web2.exams（考试安排）、web2.exam.set（考前提醒设置）。 */
+   2026-10-16 五条线 04 新增两个键：web2.exams（考试安排）、web2.exam.set（考前提醒设置）。
+   2026-10-23 06 新增 web2.examSyncAt（考试自动同步的时间戳，进「不归档」那一列）。 */
 const ALL_KEYS = [
   'web2.accent', 'web2.added', 'web2.courseOv', 'web2.daily', 'web2.data',
   'web2.dayOverrides', 'web2.eduAccount', 'web2.eduSnapshot', 'web2.events',
@@ -39,6 +40,7 @@ const ALL_KEYS = [
   'web2.lectures', 'web2.listen', 'web2.listen.set', 'web2.llm', 'web2.notify',
   'web2.onboarded', 'web2.reasons', 'web2.review', 'web2.review.set',
   'web2.sync', 'web2.theme', 'web2.theme.auto', 'web2.todos', 'web2.usage',
+  'web2.examSyncAt',
 ]
 const SECRET_KEYS = ['web2.llm', 'web2.eduAccount', 'web2.sync']
 
@@ -96,7 +98,7 @@ console.log('--- C 导出 → 清空 → 恢复 ---')
   reset()
   /* 造一份「什么都有」的本机状态 */
   for (const k of ALL_KEYS) {
-    if (SECRET_KEYS.includes(k) || k === 'web2.holidayCache') continue
+    if (SECRET_KEYS.includes(k) || A.isExcludedKey(k)) continue /* 机密与「不归档」的键本来就不该往返 */
     store[k] = JSON.stringify({ tag: k, n: k.length })
   }
   store['web2.theme'] = 'dark'          // 裸字符串（不是 JSON）也要能往返

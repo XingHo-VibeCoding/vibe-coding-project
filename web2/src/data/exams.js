@@ -11,7 +11,7 @@
      · 纯逻辑：不碰 DOM / localStorage（除自己那个键）/ 原生插件。node 单测直接喂假数据。
      · **只建议，不落库**：复习安排只是「建议哪段空档」，不自动写课表、不自动建待办。
      · 空档口径复用 listen.js 的 freeSlots()，与练耳、反向排课共用同一套 —— 不另算一套。
-     · 不评判：写「期末还有 3 天」「今天建议复习 20:00–20:30」，
+     · 不评判：写「期末还有 3 天」「今晚 19:00–20:30 复习」，
        绝不写「你怎么还不复习」「再不看就来不及了」。
      · 复习时段优先落在晚上（19:00 之后）；晚上实在没空档才退回白天 —— 白天有课是常态。
      · 一个新键 `web2.exams`，老数据没有它 ⇒ 空列表，行为与加这层之前一致（不动 store.js，
@@ -25,14 +25,20 @@ export const EXAMS_KEY = 'web2.exams'
 export const EXAM_SET_KEY = 'web2.exam.set'
 /* 提醒批次标记与渠道：applySchedule 只清 extra.src === 自己 的那批，所以必须独立
    （同 LISTEN_TAG / REVIEW_TAG 的纪律 —— 共用一个标记会互相清掉）。 */
+/* 教务同步进来的考试，id 以它开头（'ks_' = 考试）。**这里是唯一真源**：
+   zdbkExam.js 的 EXAM_ID_PREFIX 直接引用本常量，所以界面上「这是同步来的」与
+   数据层「这是同步来的」永远是同一个判断，不会各写一份然后走偏。 */
+export const EXAM_SYNC_PREFIX = 'ks_'
+
 export const EXAM_TAG = 'web2-exam'
 export const EXAM_CHANNEL = 'exam-reminder'
 
 /* 看多远：14 天内有考试才进「考试周」口径，也只排这 14 天的提醒。 */
 export const EXAM_LEAD_DAYS = 14
-/* 一次复习建议多长时间（分钟）。与 01 的默认待办时长分开：
-   复习是「坐下来看一门课」，30 分钟起步比 30 分钟一件活更合理。 */
-export const REVIEW_BLOCK_MIN = 30
+/* 每天那一段复习时间多长（分钟）。2026-10-23 用户改口径：不再按考试切成 30 分钟小块，
+   而是**一天划一整块**，看哪门交给 AI 建议（reviewAdvice.js）。
+   90 分钟 = 坐下来能真正看进去一段的长度；比 30 分钟更接近「复习」这件事本身。 */
+export const REVIEW_BLOCK_MIN = 90
 /* 复习时段优先从几点开始找（晚上）。晚上排不下才退回白天。 */
 export const REVIEW_EVENING_FROM = 19 * 60
 /* 一场考试最多给几天的复习安排（只看考前 MAX_REVIEW_DAYS 天）。 */
@@ -196,13 +202,29 @@ export function examTitleFrom(text, max = 40) {
   return (cut.length >= 2 ? cut : raw).slice(0, max)
 }
 
+/**
+ * 考场那一格该写什么。
+ *   · 有就写有；
+ *   · 手填的没填 → 返回空串（**不催**：自己加的时候知道自己在干嘛）；
+ *   · 教务同步来的却是空 → 写「考场待公布」。
+ * 最后一条是 2026-10-23 真机实测逼出来的：6 场未来考试的 jsmc/zwxh 全为空，
+ * 因为学校通常考前 2-3 周才排考场。若整项不显示，用户会以为我们漏拿了考场。
+ */
+export function examPlaceText(exam) {
+  if (!exam) return ''
+  const p = String(exam.place || '').trim()
+  if (p) return p
+  return String(exam.id || '').indexOf(EXAM_SYNC_PREFIX) === 0 ? '考场待公布' : ''
+}
+
 /* 一条考试的完整一行：地点 · 时间（缺的项自动略过，不拼出「· ·」） */
 export function examMetaText(exam) {
   if (!exam) return ''
   const parts = []
   const t = examTimeText(exam)
   if (t) parts.push(t)
-  if (exam.place) parts.push(exam.place)
+  const place = examPlaceText(exam)
+  if (place) parts.push(place)
   if (exam.note) parts.push(exam.note)
   return parts.join(' · ')
 }
@@ -238,60 +260,94 @@ export function saveExamSettings(patch) {
   return next
 }
 
-/* ---------- 复习时间安排 ----------
-   一场考试排未来 days 天的复习块：每天最多一块（一天塞两块等于排了也不会做），
-   优先晚上 19:00 之后，晚上没有 ≥ REVIEW_BLOCK_MIN 的空档才退回白天。
-   整块从空档里挖走，同一天不会与已排下的块重叠（carveSlots 保证）。
+/* ---------- 复习时间安排（2026-10-23 改口径：一天一整块，不再按考试切碎） ----------
+   旧做法：**每场考试各自**去课表空档里挖 30 分钟，挖的时候互相看不见。
+   实测三场考试 → 全都落在同一天同一个 19:00–19:30，7 处重叠（真机复现）。
+
+   新做法：**一天只挖一块**（REVIEW_BLOCK_MIN = 90 分钟），所有考试共用这一块。
+   一天之内只有一个人挖、只挖一次 ⇒ 重叠在结构上不可能发生，不需要冲突检测。
+   到点先看哪一门交给 AI 建议（reviewAdvice.js），这一层只负责「把时间留出来」。
+
+   纪律不变：
+     · 优先晚上（19:00 之后），晚上排不下才退回白天 —— 白天有课是常态；
+     · 考试当天及之后，那场考试不再排复习（那天在考场，不在书桌）；
+     · 排不下就明说没空档，不硬塞、不编假安排。
 
    itemsOfDay(dayKey) 由调用方提供（App 里现算 notify.js 的 buildScheduleItems），
    纯函数不碰插件 / 存储，node 单测可喂假数据。 */
-export function reviewPlanFor(exam, {
+
+/* 每天一段的复习块。返回 [{ date, start, end, time, mins, exams:[{id,title,daysLeft,text}] }]，
+   exams 是「这一天还算得上的考试」，按日期升序（最近的排最前 = 兜底句说的「先看」）。 */
+export function reviewDaysFor({
+  exams = [],
   today = todayKey(),
   days = MAX_REVIEW_DAYS,
   itemsOfDay = null,
   settings = null,
   nowMin = null,
   durationOf = null,
-  reviewMin = REVIEW_BLOCK_MIN,
+  blockMin = REVIEW_BLOCK_MIN,
 } = {}) {
-  if (!exam || typeof itemsOfDay !== 'function') return []
-  const need = Number.isFinite(Number(reviewMin)) && Number(reviewMin) > 0 ? Math.round(Number(reviewMin)) : REVIEW_BLOCK_MIN
+  if (typeof itemsOfDay !== 'function') return []
+  const need = Number.isFinite(Number(blockMin)) && Number(blockMin) > 0
+    ? Math.round(Number(blockMin)) : REVIEW_BLOCK_MIN
   /* days：正数照用；显式 0 或负数抬到 1 天（跑一次总得给出个安排）；
      不是数字（调用方没传）才回落 MAX_REVIEW_DAYS。
      ⚠ 不能写成 `Number(days) || MAX` —— 0 是有限数却被 `||` 当成「没传」。 */
   const rawDays = Number(days)
   const span = Number.isFinite(rawDays) ? Math.max(1, Math.round(rawDays)) : MAX_REVIEW_DAYS
-  const blocks = []
+  const list = (Array.isArray(exams) ? exams : [])
+    .filter((e) => e && isDateKey(e.date))
+    .slice()
+    .sort((a, b) => compareDateKey(a.date, b.date))
+  if (!list.length) return []
+  const out = []
   for (let i = 0; i < span; i += 1) {
     const dKey = addDaysKey(today, i)
-    /* 考试当天及之后不再排复习（那天在考场，不在书桌）。
-       注意：考试当天**不反对**，但「复习安排」只到考前一天 —— 当天另有提醒。 */
-    if (compareDateKey(dKey, exam.date) >= 0) break
+    /* 这一天「还算得上」的考试 = 考试日在这天之后的（考试当天不给那场排复习）。 */
+    const eligible = list.filter((e) => compareDateKey(dKey, e.date) < 0)
+    if (!eligible.length) continue
     const items = itemsOfDay(dKey)
-    /* 先看晚上，再退回白天。freeSlots 只认「这天还剩哪些空档」。 */
     const base = Number.isFinite(Number(nowMin)) ? Math.max(0, Math.round(Number(nowMin))) : 0
     const notBefore = i === 0 ? base : 0
-    let slots = freeSlots(items, settings, { durationOf })
-    let got = carveSlots(slots, need, Math.max(notBefore, REVIEW_EVENING_FROM))
-    if (!got) {
-      slots = freeSlots(items, settings, { durationOf })
-      got = carveSlots(slots, need, notBefore)
-    }
+    /* 先看晚上，再退回白天。freeSlots 只认「这天还剩哪些空档」。 */
+    let got = carveSlots(freeSlots(items, settings, { durationOf }), need, Math.max(notBefore, REVIEW_EVENING_FROM))
+    if (!got) got = carveSlots(freeSlots(items, settings, { durationOf }), need, notBefore)
     if (!got) continue
-    blocks.push({
+    out.push({
       date: dKey,
       start: got.start,
       end: got.end,
       time: hhmm(got.start) + '–' + hhmm(got.end),
-      examId: exam.id,
-      examTitle: exam.title,
+      mins: got.end - got.start,
+      exams: eligible.map((e) => {
+        const dl = Number.isFinite(Number(e.daysLeft)) ? Number(e.daysLeft) : daysLeftOf(e.date, today)
+        return { id: String(e.id || ''), title: String(e.title || ''), daysLeft: dl, text: countdownText(dl) }
+      }),
     })
   }
-  return blocks
+  return out
 }
 
-/* 「考试周」视图：把接下来的考试与它们的复习块拼在一起。
-   返回 { exams:[{...exam, blocks, todayBlocks:[], blockCount, reviewMins}], todayBlocks, next, line }。 */
+/* 单场考试的复习块（保留给「只想看这一场」的调用方与老单测）。
+   内部走 reviewDaysFor，所以口径与界面上的「一天一整块」永远一致。 */
+export function reviewPlanFor(exam, opts = {}) {
+  if (!exam || !isDateKey(exam.date)) return []
+  return reviewDaysFor(Object.assign({}, opts, { exams: [exam] })).map((d) => ({
+    date: d.date,
+    start: d.start,
+    end: d.end,
+    time: d.time,
+    examId: exam.id,
+    examTitle: exam.title,
+  }))
+}
+
+/* 「考试周」视图：把接下来的考试与「每天那一段复习时间」拼在一起。
+   返回 { exams:[{...exam, blocks, todayBlocks, blockCount, reviewMins}], reviewDays,
+          todayReview, todayBlocks, next, nearest, line }。
+   blocks 是**过渡字段**：这场考试参与的那几天（共享同一块时间），
+   界面上的「建议复习 N 段」到 S4 改成页面顶部那段共用时间，此字段届时再撤。 */
 export function planExams({
   exams = [],
   today = todayKey(),
@@ -304,24 +360,40 @@ export function planExams({
   reviewMin = REVIEW_BLOCK_MIN,
 } = {}) {
   const list = upcomingExams(exams, { today, leadDays })
-  const out = []
-  for (const e of list) {
-    /* 只有「快到了」（soon）的考试才排复习 —— 还有 25 天就开始每天复习不合理，
-       列出来让人看得到就够了（同 examNotices 的口径）。 */
-    const blocks = e.soon
-      ? reviewPlanFor(e, { today, days, itemsOfDay, settings, nowMin, durationOf, reviewMin })
-      : []
-    const todayBlocks = blocks.filter((b) => b.date === today)
-    out.push(Object.assign({}, e, {
-      blocks,
-      todayBlocks,
-      blockCount: blocks.length,
-      reviewMins: blocks.length * reviewMin,
-    }))
+  /* 只有「快到了」（soon）的考试才排复习 —— 还有 25 天就开始每天复习不合理，
+     列出来让人看得到就够了（同 examNotices 的口径）。 */
+  const soonList = list.filter((e) => e.soon)
+  const reviewDays = soonList.length
+    ? reviewDaysFor({ exams: soonList, today, days, itemsOfDay, settings, nowMin, durationOf, blockMin: reviewMin })
+    : []
+  /* 每场考试 → 它参与的那几天（同一块时间，谁也不会和谁撞）。 */
+  const byExam = {}
+  for (const d of reviewDays) {
+    for (const x of d.exams) {
+      if (!byExam[x.id]) byExam[x.id] = []
+      byExam[x.id].push(d)
+    }
   }
-  const todayBlocks = []
-  for (const e of out) for (const b of e.todayBlocks) todayBlocks.push(Object.assign({}, b, { examText: e.text }))
-  todayBlocks.sort((a, b) => a.start - b.start)
+  const out = list.map((e) => {
+    const mine = byExam[e.id] || []
+    return Object.assign({}, e, {
+      blocks: mine,
+      todayBlocks: mine.filter((b) => b.date === today),
+      blockCount: mine.length,
+      reviewMins: mine.reduce((s, b) => s + Number(b.mins || 0), 0),
+    })
+  })
+  const todayReview = reviewDays.find((d) => d.date === today) || null
+  const first = todayReview && todayReview.exams.length ? todayReview.exams[0] : null
+  /* 今天那一段（0 或 1 条）。examId / examTitle / examText 都指向「最近那一场」，方便一行显示；
+     exams 数组仍是这段里**全部**考试（多场共用一块，谁也别以为今晚只复习一门）。 */
+  const todayBlocks = todayReview
+    ? [Object.assign({}, todayReview, {
+      examId: first ? first.id : '',
+      examTitle: first ? first.title : '',
+      examText: first ? first.text : '',
+    })]
+    : []
   const next = out.find((e) => e.todayBlocks.length) || null
   /* 「最近一场」指的是**快到了**的第一场：远期考试排在列表里给人看，
      但不该占着今日页那条「还有 25 天」的口径（那时还没到复习的时候）。 */
@@ -330,6 +402,8 @@ export function planExams({
     today,
     exams: out,
     soonExams: soon,
+    reviewDays,
+    todayReview,
     todayBlocks,
     next,
     nearest: (soon.length ? soon : out)[0] || null,
@@ -339,9 +413,11 @@ export function planExams({
 
 /* 一句人话。**只陈述**，三种情况都给实话：
      · 今天有考试 → 「今天 09:00 高数」
-     · 有复习块 → 「期末还有 3 天，今天建议复习 20:00–20:30」
+     · 有复习块 → 「期末还有 3 天，今天建议复习 19:00–20:30（这段还有 2 场要准备）」
      · 有考试但今天排不下 → 「期末还有 3 天，今天没空档了」
-   没有考试在窗口内 → 空串（调用方据此不显示卡片）。 */
+   没有考试在窗口内 → 空串（调用方据此不显示卡片）。
+   ⚠ 2026-10-23：一天只剩一整块之后，这块是**多场考试共用**的。只报最近那一场会让人
+     以为今晚只复习那一门，所以这段里还有别的考试时明说还有几场（只报数，不评判）。 */
 export function examPlanLine(plan) {
   if (!plan || !plan.exams || !plan.exams.length) return ''
   /* 「考试周」口径只对**快到了**的考试说话；只有远期考试时给一句不催的实情，
@@ -360,7 +436,8 @@ export function examPlanLine(plan) {
   const head = first.title + ' ' + first.text
   if (plan.todayBlocks && plan.todayBlocks.length) {
     const b = plan.todayBlocks[0]
-    return head + '，今天建议复习 ' + b.time
+    const rest = Array.isArray(b.exams) ? b.exams.length - 1 : 0
+    return head + '，今天建议复习 ' + b.time + (rest > 0 ? '（这段还有 ' + rest + ' 场要准备）' : '')
   }
   return head + '，今天没空档了'
 }
@@ -368,7 +445,15 @@ export function examPlanLine(plan) {
 /* ---------- 每晚一句轻提醒 ----------
    与复盘提醒、练耳提醒**各用各的标记**（EXAM_TAG），applySchedule 只清自己那一批。
    不带按钮：点通知回 App（onNotificationAction 按 extra.src === EXAM_TAG 判）。
-   返回 [{key, at:Date, title, body}]；没有考试在窗口内就返回 []（不发空提醒）。 */
+   返回 [{key, at:Date, title, body}]；没有考试在窗口内就返回 []（不发空提醒）。
+
+   ⚠ 2026-10-23 改口径（用户 m00666「新口径合成一条」）：
+     旧做法**每场考试各发一条**，三场考试 20:00 连响三次，正文还都是同一段时间。
+     现在「一天一整块」了，所以提醒也**一天一条**：
+       · 标题 = 最近那一场（还没考的第一场）+ 倒计时；
+       · 正文 = 今天那一段 + 这段里还有几场要准备；
+       · key 去掉考试 id（`ex_${today}`）—— 时间点固定，同一天不会因为改了考试而重复推。
+     考试当天早上那条 `exd_` 保持**每场一条**：那天就是考那场，时间地点必须点名。 */
 export function examNotices({
   exams = [],
   plan = null,
@@ -377,49 +462,41 @@ export function examNotices({
   now = new Date(),
 } = {}) {
   const cfg = sanitizeExamSettings(settings)
-  const list = upcomingExams(exams, { today, leadDays: cfg.leadDays }).filter((e) => e.soon)
+  /* upcomingExams 只过滤不排序（它的调用方各自要不同顺序），这里要「最近那一场」，先按日期排。 */
+  const list = upcomingExams(exams, { today, leadDays: cfg.leadDays })
+    .filter((e) => e.soon)
+    .sort((a, b) => compareDateKey(a.date, b.date))
   if (!list.length) return []
   const atMin = minOf(cfg.at)
   if (atMin < 0) return []
-  const byDate = {}
-  for (const e of list) {
-    if (!byDate[e.date]) byDate[e.date] = []
-    byDate[e.date].push(e)
-  }
   const out = []
+  /* ① 考试当天早上：每场一条（时间地点比倒计时有用，两场就两条）。 */
   for (const e of list) {
-    /* 考试当天早上单独一条：时间地点比倒计时更有用。 */
-    if (e.daysLeft === 0) {
-      const when = new Date(`${e.date}T${EXAM_DAY_AT}:00`)
-      if (!Number.isNaN(when.getTime()) && when.getTime() > now.getTime()) {
-        const t = examTimeText(e)
-        out.push({
-          key: `exd_${e.id}_${e.date}`,
-          at: when,
-          title: '今天有考试：' + e.title,
-          body: [t, e.place].filter(Boolean).join(' · ') || '加油（这条只是提醒，别紧张）',
-        })
-      }
-    }
-    /* 每晚一条：最近那一场 + 今天的复习建议（今天没排下就说明天再排）。 */
-    const when = new Date(`${e.date}T${cfg.at}:00`)
-    const at = new Date(new Date(`${today}T${cfg.at}:00`).getTime())
-    if (Number.isNaN(at.getTime())) continue
-    if (e.daysLeft === 0 && when.getTime() <= now.getTime()) continue
-    /* 每晚只发最近那一场，不按考试数刷屏。 */
-    if (byDate[e.date][0].id !== e.id) continue
-    if (at.getTime() <= now.getTime()) continue
-    const block = plan && plan.exams
-      ? (plan.exams.find((x) => x.id === e.id) || {}).todayBlocks
-      : null
-    const tip = block && block.length ? '今天建议复习 ' + block[0].time : '今天没空档也没关系，明天再说'
+    if (e.daysLeft !== 0) continue
+    const when = new Date(`${e.date}T${EXAM_DAY_AT}:00`)
+    if (Number.isNaN(when.getTime()) || when.getTime() <= now.getTime()) continue
+    const t = examTimeText(e)
     out.push({
-      key: `ex_${e.id}_${today}`,
-      at,
-      title: e.title + ' ' + e.text,
-      body: tip,
+      key: `exd_${e.id}_${e.date}`,
+      at: when,
+      title: '今天有考试：' + e.title,
+      body: [t, e.place].filter(Boolean).join(' · ') || '加油（这条只是提醒，别紧张）',
     })
-    if (out.length >= MAX_NOTICES) break
+    if (out.length >= MAX_NOTICES) return out
   }
+  /* ② 每晚一条（合成）。「最近那一场」只认**还没考**的：今天刚考完还催今晚复习是错的。 */
+  const next = list.find((e) => e.daysLeft > 0)
+  if (!next) return out
+  const at = new Date(`${today}T${cfg.at}:00`)
+  if (Number.isNaN(at.getTime()) || at.getTime() <= now.getTime()) return out
+  const block = plan
+    ? (plan.todayReview || (plan.todayBlocks && plan.todayBlocks[0]) || null)
+    : null
+  let tip = '今天没空档也没关系，明天再说'
+  if (block) {
+    const rest = Array.isArray(block.exams) ? block.exams.length - 1 : 0
+    tip = '今天建议复习 ' + block.time + (rest > 0 ? ' · 还有 ' + rest + ' 场要准备' : '')
+  }
+  out.push({ key: `ex_${today}`, at, title: next.title + ' ' + next.text, body: tip })
   return out
 }

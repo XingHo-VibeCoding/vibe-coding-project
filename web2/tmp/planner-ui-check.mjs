@@ -16,11 +16,28 @@ function t(name, cond, detail) {
 
 const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
 
-/* 固定基准日：2026-10-16 是周五（第 1 周）。课表用「周五」的课，
-   09:00–09:30 之间故意留一个空档（08:00–09:00 一节课、09:30–23:00 一节课），
-   这样「今天该动哪件」必然落在 09:00–09:30。
-   时区无关：脚本内所有时间都是本地时刻，不跨零点。 */
-const BASE_DAY = '2026-10-16'
+/* 基准日必须跟着真实今天走（2026-10-23 修）。
+   原来这里写死 2026-10-16 / 2026-10-17 当「今天 / 明天」，但 ?t=09:00 只钉「现在几点」，
+   **日期仍然取真实系统日期** —— 真日期走过 10-17 之后，「明天到期」变成「已过期」，
+   截止日约束不再生效，J1 就红了。这不是产品 bug，是**夹具随日历腐烂**。
+   现在改成按真实今天算星期与日期，写的还是同一件事，但永远不会过期。 */
+function dayKeyOf(offset) {
+  const d = new Date()
+  d.setDate(d.getDate() + offset)
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+}
+function weekdayOf(offset) { /* 1=周一 … 7=周日 */
+  const d = new Date()
+  d.setDate(d.getDate() + offset)
+  return d.getDay() === 0 ? 7 : d.getDay()
+}
+const TODAY_KEY = dayKeyOf(0)
+const TOMORROW_KEY = dayKeyOf(1)
+const WD_TODAY = weekdayOf(0)
+const WD_TOMORROW = weekdayOf(1)
+/* 学期第一周周一 = 本周一（保证「今天」永远落在学期内） */
+const FIRST_MONDAY = dayKeyOf(-(WD_TODAY - 1))
+const BASE_DAY = TODAY_KEY
 const SEED = `
 if (!sessionStorage.getItem('plan-seeded')) {
 sessionStorage.setItem('plan-seeded', '1');
@@ -28,10 +45,10 @@ localStorage.setItem('web2.onboarded', '1');
 localStorage.setItem('web2.theme', 'light');
 localStorage.setItem('web2.data', JSON.stringify({
   app: 'sched',
-  semester: { name: '排课测试学期', first_monday: '2026-10-12', total_weeks: 18 },
+  semester: { name: '排课测试学期', first_monday: window.__T.FIRST_MONDAY, total_weeks: 18 },
   schedules: [
-    { id: 'c1', type: 'course', weekday: 5, title: '早课', start_time: '08:00', duration: 60, week_rule: 'every' },
-    { id: 'c2', type: 'course', weekday: 5, title: '下午课', start_time: '09:30', duration: 810, week_rule: 'every' }
+    { id: 'c1', type: 'course', weekday: ${WD_TODAY}, title: '早课', start_time: '08:00', duration: 60, week_rule: 'every' },
+    { id: 'c2', type: 'course', weekday: ${WD_TODAY}, title: '下午课', start_time: '09:30', duration: 810, week_rule: 'every' }
   ],
   todos: [
     { id: 'td1', title: '写高数作业', due_date: '${BASE_DAY}', done: false },
@@ -56,6 +73,7 @@ await page.route('**/*', (route) => {
   if (u.startsWith('http://127.0.0.1:4177') || u.startsWith('data:') || u.startsWith('blob:')) return route.continue()
   return route.abort()
 })
+await ctx.addInitScript((t) => { window.__T = t }, { TODAY_KEY, TOMORROW_KEY, WD_TODAY, WD_TOMORROW, FIRST_MONDAY })
 await page.addInitScript(SEED)
 /* ?t=09:00 把 App 的「现在」钉在 09:00（App.vue:4004 的测试后门）：
    这样空档 09:00–09:30 一定排得下，断言不随真实时刻漂移。 */
@@ -137,7 +155,7 @@ console.log('\n--- G 没有待办时整段不出现 ---')
 await page.evaluate(() => {
   localStorage.setItem('web2.data', JSON.stringify({
     app: 'sched',
-    semester: { name: '排课测试学期', first_monday: '2026-10-12', total_weeks: 18 },
+    semester: { name: '排课测试学期', first_monday: window.__T.FIRST_MONDAY, total_weeks: 18 },
     schedules: [],
     todos: [],
     events: [], routines: [],
@@ -152,8 +170,8 @@ console.log('\n--- H 待办全部完成时也不出现 ---')
 await page.evaluate(() => {
   localStorage.setItem('web2.data', JSON.stringify({
     app: 'sched',
-    semester: { name: '排课测试学期', first_monday: '2026-10-12', total_weeks: 18 },
-    schedules: [{ id: 'c1', type: 'course', weekday: 5, title: '早课', start_time: '08:00', duration: 60, week_rule: 'every' }],
+    semester: { name: '排课测试学期', first_monday: window.__T.FIRST_MONDAY, total_weeks: 18 },
+    schedules: [{ id: 'c1', type: 'course', weekday: window.__T.WD_TODAY, title: '早课', start_time: '08:00', duration: 60, week_rule: 'every' }],
     todos: [{ id: 'td1', title: '已完成的', due_date: '2026-10-16', done: true }],
     events: [], routines: [],
   }))
@@ -168,12 +186,12 @@ console.log('\n--- I 今天没空档但后面排得上：只说实话，不装�
 await page.evaluate(() => {
   localStorage.setItem('web2.data', JSON.stringify({
     app: 'sched',
-    semester: { name: '排课测试学期', first_monday: '2026-10-12', total_weeks: 18 },
+    semester: { name: '排课测试学期', first_monday: window.__T.FIRST_MONDAY, total_weeks: 18 },
     schedules: [
-      { id: 'c1', type: 'course', weekday: 5, title: '早课', start_time: '08:00', duration: 60, week_rule: 'every' },
-      { id: 'c2', type: 'course', weekday: 5, title: '满课', start_time: '09:00', duration: 840, week_rule: 'every' },
+      { id: 'c1', type: 'course', weekday: window.__T.WD_TODAY, title: '早课', start_time: '08:00', duration: 60, week_rule: 'every' },
+      { id: 'c2', type: 'course', weekday: window.__T.WD_TODAY, title: '满课', start_time: '09:00', duration: 840, week_rule: 'every' },
     ],
-    todos: [{ id: 'td1', title: '明天要交的', due_date: '2026-10-17', done: false }],
+    todos: [{ id: 'td1', title: '明天要交的', due_date: window.__T.TOMORROW_KEY, done: false }],
     events: [], routines: [],
   }))
 })
@@ -201,13 +219,13 @@ console.log('\n--- J 未来到期的件不许被排到截止日之后 ---')
 await page.evaluate(() => {
   localStorage.setItem('web2.data', JSON.stringify({
     app: 'sched',
-    semester: { name: '排课测试学期', first_monday: '2026-10-12', total_weeks: 18 },
+    semester: { name: '排课测试学期', first_monday: window.__T.FIRST_MONDAY, total_weeks: 18 },
     schedules: [
-      { id: 'c1', type: 'course', weekday: 5, title: '周五早课', start_time: '07:00', duration: 60, week_rule: 'every' },
-      { id: 'c2', type: 'course', weekday: 5, title: '周五满课', start_time: '08:00', duration: 900, week_rule: 'every' },
-      { id: 'c3', type: 'course', weekday: 6, title: '周六满课', start_time: '07:00', duration: 960, week_rule: 'every' },
+      { id: 'c1', type: 'course', weekday: window.__T.WD_TODAY, title: '今天早课', start_time: '07:00', duration: 60, week_rule: 'every' },
+      { id: 'c2', type: 'course', weekday: window.__T.WD_TODAY, title: '今天满课', start_time: '08:00', duration: 900, week_rule: 'every' },
+      { id: 'c3', type: 'course', weekday: window.__T.WD_TOMORROW, title: '明天满课', start_time: '07:00', duration: 960, week_rule: 'every' },
     ],
-    todos: [{ id: 'td1', title: '明天要交的', due_date: '2026-10-17', done: false }],
+    todos: [{ id: 'td1', title: '明天要交的', due_date: window.__T.TOMORROW_KEY, done: false }],
     events: [], routines: [],
   }))
 })

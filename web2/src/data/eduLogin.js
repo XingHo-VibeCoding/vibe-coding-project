@@ -250,6 +250,12 @@ async function httpRequest({ method = 'GET', url, headers, body, timeoutMs = 200
   return { status: res.status, text: await res.text(), url: res.url || url }
 }
 
+/* 同一条登录链上的其它模块（zdbkExam.js 的考试查询）复用这两件：
+   请求器与它和登录**共用同一个 cookie 罐**（原生 CapacitorHttp 自己记 cookie），
+   所以「登录一次，课表 + 考试都能拉」，不需要第二套账号密码。 */
+export const eduRequest = httpRequest
+export const eduFormBody = formBody
+
 /* 表单体：教务这套接口吃 application/x-www-form-urlencoded */
 function formBody(obj) {
   const usp = new URLSearchParams()
@@ -271,11 +277,11 @@ export function kbUrlOf(username) {
   return `${EDU_KB_URL}?gnmkdm=${EDU_GNMKDM}&su=${encodeURIComponent(String(username || ''))}`
 }
 
-/**
- * 登录并抓课表。返回 { ok, courses, term, error, stage }。
- * onStage(stage) 用来让界面显示「正在做什么」（get_token / get_key / login / sso / kb）。
- */
-export async function loginAndFetchKb({ username, password, xnm, xqm, onStage } = {}) {
+/** 拿到教务网会话（① 令牌 ② 公钥 ③ 登录 ④ 换会话）。
+ *  抽出来是为了让挂在同一条 CAS 链上的其它接口（考试查询）复用**同一次登录** ——
+ *  不用第二套账号密码，也不用把「取公钥 + RSA 加密」再写一遍。
+ *  返回 { ok:true, username } 或 { ok:false, error, stage }。 */
+export async function loginEduSession({ username, password, onStage } = {}) {
   const say = (s) => {
     if (typeof onStage === 'function') onStage(s)
   }
@@ -325,6 +331,25 @@ export async function loginAndFetchKb({ username, password, xnm, xqm, onStage } 
     const sso = await httpRequest({ url: EDU_SERVICE })
     if (sso.status >= 400) return { ok: false, error: `进教务网失败（HTTP ${sso.status}）。`, stage: 'sso' }
 
+    return { ok: true, username: u, stage: 'session' }
+  } catch (e) {
+    return { ok: false, error: '请求失败：' + ((e && e.message) || '未知原因'), stage: 'error' }
+  }
+}
+
+/**
+ * 登录并抓课表。返回 { ok, list, term, error, stage }。
+ * onStage(stage) 用来让界面显示「正在做什么」（get_token / get_key / login / sso / kb）。
+ */
+export async function loginAndFetchKb({ username, password, xnm, xqm, onStage } = {}) {
+  const say = (s) => {
+    if (typeof onStage === 'function') onStage(s)
+  }
+  const u = String(username || '').trim()
+  /* ①–④ 交给人人共用的那一段（考试查询也走它） */
+  const sess = await loginEduSession({ username: u, password, onStage })
+  if (!sess.ok) return sess
+  try {
     /* ⑤ 拉课表 */
     say('kb')
     const kb = await httpRequest({
@@ -352,6 +377,7 @@ export async function loginAndFetchKb({ username, password, xnm, xqm, onStage } 
     return { ok: false, error: '请求失败：' + ((e && e.message) || '未知原因'), stage: 'error' }
   }
 }
+
 
 /* ---------------- kbList → 课程（与 eduImport 同形） ----------------
    原始记录字段（调研得来）：

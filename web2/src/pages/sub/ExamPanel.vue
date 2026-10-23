@@ -9,9 +9,9 @@
      · 不假装完整 —— 没排下就明说「这几天没空档」，不编一个假安排。
      · 不评判 —— 写「还有 3 天」「今天建议复习 19:00–19:30」，
        绝不写「你怎么还不复习」「再不看就来不及了」。 */
-import { toRefs } from 'vue'
+import { computed, toRefs } from 'vue'
 import { useApp } from '../../composables/app-ctx.js'
-import { examMetaText } from '../../data/exams.js'
+import { examMetaText, REVIEW_BLOCK_MIN } from '../../data/exams.js'
 
 const app = useApp()
 const {
@@ -30,8 +30,26 @@ const {
   setExamAt,
   openDateField,
   openTimeField,
+  reviewAdviceLine,
   WEEKDAY_CN,
 } = toRefs(app)
+
+/* ---------- 今晚这一段（S4）----------
+   用户 m00554：「复习时间可以先划出整块时间，然后让 ai 给出复习建议，就不用严格划分了」。
+   所以这块卡只做两件事：说清「几点到几点」+ 把 AI 那句「先看哪门」原样摆出来。
+   三条界面纪律：
+     · 时间由程序算，AI 只说先看哪门 —— 不让模型编时段，编出来的时段用户照着做会撞课。
+     · 没有那句就不留空位 —— 没配 Key / 断网 / 说错天数时不显示这一行，卡片本身照常。
+     · 不评判 —— 那句话的收尾在 data/reviewAdvice.js 里已经过滤过催促词，这里只渲染。 */
+const todayBlock = computed(() => (examPlan.value && examPlan.value.todayReview) || null)
+/* 「先看 高等数学（还有 3 天）· 这段还有 2 场要准备」——只报事实，不排优先级之外的话 */
+const todayWho = computed(() => {
+  const b = todayBlock.value
+  if (!b || !Array.isArray(b.exams) || !b.exams.length) return ''
+  const first = b.exams[0]
+  const rest = b.exams.length - 1
+  return '先看 ' + first.title + '（' + first.text + '）' + (rest > 0 ? ' · 这段还有 ' + rest + ' 场要准备' : '')
+})
 
 /* ⚠ WEEKDAY_CN 是从 toRefs(app) 接出来的 ref，在这个普通函数里必须 .value 取数组，
    写 `WEEKDAY_CN[i]` 会得到 undefined（模板里才会自动解包）。 */
@@ -65,6 +83,21 @@ function reviewDays(e) {
     还没有加考试。加完之后这里会列出考试安排，并给出考前几天的复习时间。
   </p>
 
+  <!-- 今晚这一段：整块时间 + AI 一句「先看哪门」。
+       只在「今天真排下了一段」时出现；没有就整块不出现，不占地方。 -->
+  <section v-if="todayBlock" data-exam-today class="mt-3 rounded-2xl border border-line bg-card p-3.5 shadow-sm">
+    <div class="flex items-baseline justify-between gap-3">
+      <span class="min-w-0 text-sm font-semibold text-ink">今晚留给复习</span>
+      <span data-exam-today-time class="shrink-0 text-[12px] font-medium tabular-nums text-primary-600">{{ todayBlock.time }}</span>
+    </div>
+    <p data-exam-today-who class="mt-1 text-[11.5px] leading-relaxed text-ink-dim">{{ todayWho }}</p>
+    <p
+      v-if="reviewAdviceLine"
+      data-exam-advice
+      class="mt-2 rounded-xl bg-canvas px-3 py-2 text-[12.5px] leading-relaxed text-ink"
+    >{{ reviewAdviceLine }}</p>
+  </section>
+
   <div class="mt-3 flex gap-2.5">
     <button
       type="button"
@@ -78,7 +111,7 @@ function reviewDays(e) {
   <p v-if="examMsg" data-exam-msg class="mt-2.5 text-[11px] leading-relaxed text-primary-600">{{ examMsg }}</p>
 
   <p v-if="!examPlan.exams.length" data-exam-empty class="mt-4 rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
-    还没有考试。教务导出里没有考试安排，所以要在这里自己加。
+    还没有考试。配过课表直连（勾了记住密码）的话，打开 App 会自动从教务网同步；也可以在这里自己加。
   </p>
 
   <section v-else data-exam-list class="mt-3 space-y-2.5">
@@ -96,7 +129,7 @@ function reviewDays(e) {
 
       <!-- 复习时间安排：只有「快到了」的考试才给（还有 25 天就开始每天排不合理） -->
       <div v-if="e.soon && e.blockCount" :data-exam-review="e.id" class="mt-2 rounded-xl bg-canvas p-2.5">
-        <p class="text-[11px] font-medium text-ink">建议复习 {{ e.blockCount }} 段 · 共 {{ e.reviewMins }} 分钟</p>
+        <p class="text-[11px] font-medium text-ink">考前 {{ e.blockCount }} 天各留 {{ REVIEW_BLOCK_MIN }} 分钟 · 共 {{ e.reviewMins }} 分钟</p>
         <p v-for="r in reviewDays(e)" :key="r.date" class="mt-0.5 text-[11px] tabular-nums text-ink-dim">
           {{ dateLabel(r.date) }} · {{ r.times.join(' / ') }}
         </p>
@@ -143,7 +176,7 @@ function reviewDays(e) {
   </section>
 
   <p class="mt-2 px-1 text-[11px] leading-relaxed text-ink-dim">
-    复习时段是建议：从当天空档里挑一段，优先晚上。不会动你的课表和待办。
+    复习时段是建议：从当天空档里挑一整段，优先晚上；先看哪门由 AI 说一句，说不出来就不显示。不会动你的课表和待办。
   </p>
 
   <!-- 添加 / 编辑考试 -->

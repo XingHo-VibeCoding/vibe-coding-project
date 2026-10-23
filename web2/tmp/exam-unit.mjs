@@ -5,8 +5,8 @@
    基准日：2026-10-16（周五），与 planner-unit / homework-unit 同一套。 */
 import {
   sanitizeExam, sanitizeExamList, newExam, daysLeftOf, countdownText,
-  upcomingExams, examTimeText, examMetaText, sanitizeExamSettings,
-  reviewPlanFor, planExams, examPlanLine, examNotices, examTitleFrom,
+  upcomingExams, examTimeText, examMetaText, examPlaceText, EXAM_SYNC_PREFIX, sanitizeExamSettings,
+  reviewPlanFor, reviewDaysFor, planExams, examPlanLine, examNotices, examTitleFrom,
   EXAM_DEFAULTS, REVIEW_BLOCK_MIN, REVIEW_EVENING_FROM,
 } from '../src/data/exams.js'
 
@@ -116,15 +116,22 @@ ok('E3 每块整 ' + REVIEW_BLOCK_MIN + ' 分钟', p1.every((b) => b.end - b.sta
 ok('E4 每块不与课重叠（19:00–19:30）', p1.every((b) => b.start >= 19 * 60 && b.end <= 23 * 60))
 ok('E5 每块带考试信息（下游渲染用）', p1.every((b) => b.examId === 'e1' && b.examTitle === '高等数学'))
 ok('E6 不带 nowMin 也能跑（回落 0）', reviewPlanFor(exam('e1', '高数', '2026-10-20'), { today: DAY, days: 1, itemsOfDay: busyItems, durationOf }).length === 1)
-/* E7：晚上被占满 → 退回白天。08–12 与 14–18 占满，13:00–14:00 是午休空档（60 分钟）。 */
+/* E7：晚上被占满 → 退回白天。
+   ⚠ 这条用例 2026-10-23 修过：原来把 08:00–23:00 全占满，只剩 07:00–08:00（60 分钟），
+   在「一块 30 分钟」的年代靠这 60 分钟侥幸通过，**根本没走到「退回白天」那条分支**；
+   一块改成 90 分钟后立刻红 —— 不是回归，是旧断言一直在自欺。
+   现在把 12:00–14:00 留空（120 分钟），晚上仍然 19:00 之后全占，才真正验证「晚上排不下退白天」。 */
 const eveningFull = (dKey) => [
   { at: new Date(`${dKey}T08:00:00`), start: '08:00', end: '12:00', title: '上午课', mins: 240 },
-  { at: new Date(`${dKey}T12:00:00`), start: '12:00', end: '14:00', title: '午间', mins: 120 },
   { at: new Date(`${dKey}T14:00:00`), start: '14:00', end: '23:00', title: '下午到晚上', mins: 540 },
 ]
 const p2 = reviewPlanFor(exam('e1', '高数', '2026-10-20'), { today: DAY, days: 1, itemsOfDay: eveningFull, nowMin: 0, durationOf })
 ok('E7 晚上排不下 → 退回白天（不等同于无解）', p2.length === 1, p2.map((b) => b.time))
-ok('E8 退回白天时也不与课重叠、且 ≥30 分钟', p2.every((b) => b.end - b.start >= REVIEW_BLOCK_MIN), p2.map((b) => b.time))
+ok('E8 退回白天时落在 12:00–14:00 空档里、整 ' + REVIEW_BLOCK_MIN + ' 分钟', (() => {
+  const b = p2[0]
+  return b && b.start >= 12 * 60 && b.end <= 14 * 60 && b.end - b.start === REVIEW_BLOCK_MIN
+})(), p2.map((b) => b.time))
+ok('E8b 退回白天时确实不在晚上（真走了兜底分支）', p2.every((b) => b.start < REVIEW_EVENING_FROM), p2.map((b) => b.time))
 /* E9：今天已经过了晚上 20:00 之后 → 今天的块必须落在这之后 */
 const p3 = reviewPlanFor(exam('e1', '高数', '2026-10-20'), {
   today: DAY, days: 1, itemsOfDay: busyItems, nowMin: 20 * 60, durationOf,
@@ -157,11 +164,14 @@ const P = planExams({
 })
 ok('F1 两场考试都在（都在窗口内）', P.exams.length === 2)
 ok('F2 每场都带复习块', P.exams.every((e) => e.blocks.length === 2), P.exams.map((e) => e.blocks.length))
-ok('F3 reviewMins = 块数 × 30', P.exams[0].reviewMins === 60)
-ok('F4 todayBlocks 汇总今天所有考试的复习块，按时刻升序', (() => {
-  const xs = P.todayBlocks.map((b) => b.start)
-  return xs.length === 2 && xs[0] <= xs[1]
-})())
+ok('F3 reviewMins = 块数 × ' + REVIEW_BLOCK_MIN + '（一天一整块后按分钟累加）', P.exams[0].reviewMins === P.exams[0].blocks.length * REVIEW_BLOCK_MIN)
+/* 2026-10-23 改口径：todayBlocks 从「今天所有考试的块平铺」变成「今天那一段（0 或 1 条）」。
+   两场考试同一天 → 仍然只有一段，两门都在这一段的 exams 里 —— 这正是「不重叠」的结构保证。 */
+ok('F4 今天只有一段（多场考试共用，不再平铺成多块）', P.todayBlocks.length === 1, P.todayBlocks.map((b) => b.time))
+ok('F4b 这一段里两场考试都在', (() => {
+  const ids = P.todayBlocks[0].exams.map((x) => x.id).sort()
+  return ids.length === 2 && ids[0] === 'e1' && ids[1] === 'e2'
+})(), P.todayBlocks[0] && P.todayBlocks[0].exams.map((x) => x.id))
 ok('F5 todayBlocks 带 examText 方便一行显示', P.todayBlocks.every((b) => typeof b.examText === 'string' && b.examText.length > 0))
 ok('F6 nearest = 最近一场（不要求今天有块）', P.nearest && P.nearest.id === 'e1')
 ok('F7 没有考试时 exams 为空、line 为空串', (() => {
@@ -233,6 +243,42 @@ ok('H11 没有复习块时正文给的是「明天再说」而不是沉默或硬
   return l.length === 1 && l[0].body === '今天没空档也没关系，明天再说'
 })())
 
+/* ---------- H12~H16 每晚合成一条（2026-10-23 用户 m00666「新口径合成一条」） ----------
+   旧做法每场考试各发一条：三场考试 20:00 连响三次，正文还都是同一段时间。
+   一天只剩一整块之后，提醒也必须是一天一条。 */
+console.log('\n--- H 合成一条 ---')
+const threeExams = [
+  exam('x1', '结构力学Ⅰ', '2026-10-19', '10:30', '12:30', ''),
+  exam('x2', '结构设计原理', '2026-10-20', '10:30', '12:30', ''),
+  exam('x3', '工程水文学', '2026-10-22', '08:00', '10:00', ''),
+]
+const threePlan = planExams({ exams: threeExams, today: DAY, itemsOfDay: freeAll, nowMin: 0, durationOf, days: 7 })
+const Hn = examNotices({
+  exams: threeExams, plan: threePlan, today: DAY, settings: { at: '20:00' }, now: at(12, 0),
+})
+ok('H12 三场考试 → 每晚只发一条（不再连响三次）', Hn.length === 1, Hn.map((n) => n.key))
+ok('H13 标题是最近那一场 + 倒计时', Hn[0] && Hn[0].title === '结构力学Ⅰ 还有 3 天', Hn[0] && Hn[0].title)
+ok('H14 正文给今天那一段，并说清这段还有几场', (() => {
+  const b = Hn[0] && Hn[0].body
+  return /今天建议复习 \d{2}:\d{2}–\d{2}:\d{2}/.test(b) && b.includes('还有 2 场要准备')
+})(), Hn[0] && Hn[0].body)
+ok('H15 key 不带考试 id（同一天稳定，改考试不会重复推）', Hn[0] && Hn[0].key === 'ex_' + DAY, Hn[0] && Hn[0].key)
+ok('H16 今天刚考完、之后没有别的考试 → 晚上那条不发（早上那条已经发过）', (() => {
+  const l = examNotices({
+    exams: [exam('only', '高数', DAY, '09:00', '11:00')],
+    today: DAY, settings: { at: '20:00' }, now: at(12, 0),
+  })
+  return l.filter((n) => n.key.startsWith('ex_')).length === 0 && l.filter((n) => n.key.startsWith('exd_')).length === 0
+})())
+ok('H17 今天考完但后面还有一场 → 晚上那条指向后面那场（不指向今天这场）', (() => {
+  const l = examNotices({
+    exams: [exam('a', '高数', DAY, '09:00', '11:00'), exam('b', '大物', '2026-10-19')],
+    today: DAY, settings: { at: '20:00' }, now: at(12, 0),
+  })
+  const night = l.find((n) => n.key.startsWith('ex_'))
+  return night && night.title.startsWith('大物')
+})())
+
 /* ================= I 从纪要那句话里削出标题 ================= */
 console.log('\n--- I 标题削词 ---')
 ok('I1 「期末考试 11 月 20 日 09:30 东1-101」→ 只留科目名与教室', (() => {
@@ -250,6 +296,64 @@ ok('I6 中文冒号与全角写法也认', examTitleFrom('英语期末 09：30 �
 ok('I7 超长标题截到 40 字', examTitleFrom('考'.repeat(80)).length === 40)
 ok('I8 空值不炸', examTitleFrom(null) === '' && examTitleFrom(undefined) === '' && examTitleFrom('') === '')
 ok('I9 前后残留的标点被削掉', examTitleFrom('· 期末考试 · 11 月 20 日') === '期末考试')
+
+/* ---------- J 考场文案（06 同步进来的考试考场为空时，必须明说「待公布」） ----------
+   依据 2026-10-23 真机：6 场未来考试的 jsmc/zwxh 全空（学校考前 2-3 周才排）。
+   整项不显示会让用户以为我们漏拿了考场。 */
+eq('J1 有考场就写考场', examPlaceText({ id: 'ks_a_final', place: '东1-101' }), '东1-101')
+eq('J2 同步来的、考场空 → 考场待公布', examPlaceText({ id: 'ks_a_final', place: '' }), '考场待公布')
+eq('J3 手填的、考场空 → 空串（不催）', examPlaceText({ id: 'ex_1', place: '' }), '')
+ok('J4 空值不炸', examPlaceText(null) === '' && examPlaceText(undefined) === '' && examPlaceText({}) === '')
+ok('J5 一行摘要里出现「考场待公布」', examMetaText({ id: 'ks_a_final', title: 'A', date: '2027-01-06', start: '14:00', end: '16:00', place: '' }) === '14:00–16:00 · 考场待公布')
+ok('J6 前缀与 zdbkExam 的 EXAM_ID_PREFIX 是同一个值', await (async () => {
+  const z = await import('../src/data/zdbkExam.js')
+  return z.EXAM_ID_PREFIX === EXAM_SYNC_PREFIX
+})())
+
+/* ---------- K 复习时间不再重叠（2026-10-23 用户报的真 bug 的回归测试） ----------
+   旧实现：每场考试各自去同一份空档里挖 30 分钟，互相看不见 → 三场考试全落在
+   同一天同一个 19:00–19:30，真机复现 7 处重叠。
+   新实现：一天只挖一块。这里断言的就是「无论几场考试，块与块之间不重叠」。 */
+console.log('\n--- K 复习不重叠（真机 bug 回归）---')
+const KEX = [
+  exam('k1', '结构力学Ⅰ', '2026-10-19'),
+  exam('k2', '结构设计原理和方法Ⅰ', '2026-10-20'),
+  exam('k3', '工程水文学', '2026-10-22'),
+]
+const KP = planExams({ exams: KEX, today: DAY, itemsOfDay: freeAll, nowMin: 0, durationOf, days: 7 })
+ok('K1 三场考试 → 复习天数 = 去重后的日期数（一天一段）', (() => {
+  const dates = KP.reviewDays.map((d) => d.date)
+  return dates.length > 0 && new Set(dates).size === dates.length
+})(), KP.reviewDays.map((d) => d.date))
+ok('K2 相邻两段不重叠（这是旧实现塌掉的地方）', (() => {
+  const s = KP.reviewDays.slice().sort((a, b) => a.start - b.start || a.date.localeCompare(b.date))
+  for (let i = 1; i < s.length; i += 1) {
+    if (s[i].date === s[i - 1].date) return false // 同一天还出现两段 = 又重叠了
+  }
+  return true
+})(), KP.reviewDays.map((d) => d.date + ' ' + d.time))
+ok('K3 每场考试都拿得到「自己参与的那几天」', KP.exams.every((e) => e.blocks.length > 0), KP.exams.map((e) => [e.id, e.blocks.length]))
+ok('K4 同一段里不会出现重复的考试', KP.reviewDays.every((d) => {
+  const ids = d.exams.map((x) => x.id)
+  return new Set(ids).size === ids.length
+}))
+ok('K5 考试当天不给那场考试排复习（当天在考场，不在书桌）', (() => {
+  const byId = {}
+  KEX.forEach((e) => { byId[e.id] = e.date })
+  return KP.reviewDays.every((d) => d.exams.every((x) => byId[x.id] > d.date))
+})())
+ok('K6 reviewDaysFor 空输入不炸', reviewDaysFor({}).length === 0 && reviewDaysFor({ exams: [], itemsOfDay: freeAll }).length === 0)
+ok('K7 一天只挖一次：同一天的 start/end 在所有考试视角下一致', (() => {
+  const seen = {}
+  for (const e of KP.exams) {
+    for (const b of e.blocks) {
+      if (seen[b.date] === undefined) seen[b.date] = b.time
+      else if (seen[b.date] !== b.time) return false
+    }
+  }
+  return true
+})())
+ok('K8 块长就是 REVIEW_BLOCK_MIN（不被别的考试挤短）', KP.reviewDays.every((d) => d.mins === REVIEW_BLOCK_MIN), KP.reviewDays.map((d) => d.mins))
 
 console.log('\n=== 考试周模式纯函数：' + pass + '/' + (pass + fail) + ' 通过 ===')
 if (fail) console.log('失败项：' + fails.join(' / '))
