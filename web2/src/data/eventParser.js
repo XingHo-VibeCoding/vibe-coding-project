@@ -20,7 +20,9 @@ import { compressImage } from './recognizer.js'
 
 export const EVENT_PARSE_PROMPT_VERSION = 2
 
-/* 表单只支持这四档时长（App.vue 的 DURATIONS），识别出的分钟数吸附到最近一档 */
+/* 表单的「快捷档」（App.vue 的 DURATIONS）只是常用值，不是可选范围 ——
+   2026-10-23 起表单支持任意时长（自定义走数字滚轮），所以这里不再吸附到那四档，
+   改成**吸附到 5 分钟**（表单步进就是 5）并夹进 10–720。 */
 export const EVENT_DURATIONS = [40, 45, 60, 90]
 
 /* 输出上限：日程是短任务，一条记录，给足冗余即可 */
@@ -124,15 +126,16 @@ function normDate(raw) {
   return d
 }
 
-/* 时长吸附到表单支持的档位：取最近的一档，并列时取小的（宁可短一点） */
+/* 时长归一：吸附到 5 分钟（表单步进），并夹进 10–720 分钟（12 小时）。
+   原来吸附到 40/45/60/90 四档 —— 那会让「大概三小时」变成 90 分钟，直接丢信息
+   （2026-10-23 用户报「日程时间只有几档，更长时间搞不了」）。 */
+export const DUR_MIN = 10
+export const DUR_MAX = 720
 export function snapDuration(min) {
   const n = Number(min)
   if (!Number.isFinite(n) || n <= 0) return 60
-  let best = EVENT_DURATIONS[0]
-  for (const d of EVENT_DURATIONS) {
-    if (Math.abs(d - n) < Math.abs(best - n)) best = d
-  }
-  return best
+  const snapped = Math.round(n / 5) * 5
+  return Math.min(DUR_MAX, Math.max(DUR_MIN, snapped))
 }
 
 /* 单条收敛：把一个原始对象（无论来自单条还是批量）变成 {event, notes, warnings}。
@@ -151,7 +154,7 @@ function oneEventFrom(obj) {
     warnings.push('时长不是数字，先按 60 分钟填')
   } else {
     duration = snapDuration(obj.duration)
-    if (duration !== Number(obj.duration)) warnings.push('时长吸附到最接近的一档（' + duration + ' 分钟）')
+    if (duration !== Number(obj.duration)) warnings.push('时长取整到 5 分钟（' + duration + ' 分钟）')
   }
   const place = String(obj.place == null ? '' : obj.place).trim()
   const notes = Array.isArray(obj.notes) ? obj.notes.map((n) => String(n).trim()).filter(Boolean) : []

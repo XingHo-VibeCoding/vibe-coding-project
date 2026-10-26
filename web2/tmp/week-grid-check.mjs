@@ -91,10 +91,9 @@ try {
   const cols = await page.locator('[data-grid] [data-cell]').evaluateAll((els) =>
     [...new Set(els.map((e) => e.dataset.cell.split('-')[0]))].length
   )
-  /* 2026-10-04：网格永远给「今天」留一列。今天若是周日、而周日无课，就会多出这一列
-     （6 → 7）。旧断言写死 6，于是每逢周日必红。期望值改成按「今天是否补列」算。 */
-  const expectColsA2 = 6 + (TODAY_WD === 7 ? 1 : 0)
-  t('A2. 列数 = 6（周一~周五 + 周六有课自动补）；今天=周日时再补今天列 = 7', cols === expectColsA2, String(cols))
+  /* 2026-10-23：改成恒定七列（用户 m01326 拍板 A）。旧断言按「有没有周末课」算列数，
+     现在列数不再随安排变化 —— 恒 7，与今天星期几、周末有没有课都无关。 */
+  t('A2. 列数恒为 7（周一至周日，不随安排增减）', cols === 7, String(cols))
   t('A3. 行数 = 13 节（每列 13 个格子）', cells / cols === 13, `${cells}/${cols} = ${cells / cols}`)
   const axis1 = await page.locator('[data-axis="1"]').innerText()
   const axis13 = await page.locator('[data-axis="13"]').innerText()
@@ -182,27 +181,22 @@ try {
 
   await ctx.close()
 
-  /* ============ 无周末课：只 5 列 ============ */
+  /* ============ 恒列：周末没课也画满 7 列（2026-10-23 用户 m01326 拍板 A） ============ */
   const { ctx: ctx2, page: page2 } = await openWeek(COURSES)
   const cols2 = await page2.locator('[data-grid] [data-cell]').evaluateAll((els) =>
     [...new Set(els.map((e) => e.dataset.cell.split('-')[0]))].length
   )
-  const g2 = await box(page2, '[data-grid]')
-  if (TODAY_WD > 5) {
-    t('G0. 今天就是周末 → 列数含今天（跳过 5 列断言）', cols2 >= TODAY_WD, String(cols2))
-  } else {
-    t('G1. 无周末课时只显示周一~周五 5 列', cols2 === 5, String(cols2))
-  }
-  t('G2. 5 列时无横向滚动', (await page2.evaluate(() => {
+  const head2 = (await page2.locator('[data-grid]').evaluate((el) => el.parentElement.querySelector('.grid').innerText)).replace(/\s+/g, '')
+  t('G1. 周末没课也画满 7 列（列不再随安排增减）', cols2 === 7, String(cols2))
+  t('G2. 表头七列都在（含周六周日）', head2.includes('周六') && head2.includes('周日'), head2)
+  t('G3. 7 列时仍无横向滚动', (await page2.evaluate(() => {
     const s = document.querySelector('[data-grid]').closest('section')
     return s.scrollWidth <= s.clientWidth + 1
   })))
   const cell2 = await box(page2, '[data-cell="1-0"]')
-  if (TODAY_WD > 5) {
-    skip('G3. 5 列时每列更宽（≥60px，课名容得下）', '今天是周末 → 网格为今天补一列，本轮不是 5 列，宽度断言不适用')
-  } else {
-    t('G3. 5 列时每列更宽（≥60px，课名容得下）', cell2.width >= 60, `${cell2.width.toFixed(1)}px`)
-  }
+  const cellSat = await box(page2, '[data-cell="6-0"]')
+  t('G4. 工作日列宽仍看得清（≥44px；七列后必然比五列窄，课名靠换行兜）', cell2.width >= 44, `${cell2.width.toFixed(1)}px`)
+  t('G5. 周末列比工作日窄（把宽度让给工作日）', cellSat.width < cell2.width, `周六 ${cellSat.width.toFixed(1)}px < 周一 ${cell2.width.toFixed(1)}px`)
   await ctx2.close()
 } catch (e) {
   console.log('ERROR:', e.message)

@@ -181,10 +181,16 @@ await page.waitForTimeout(600)
 /* 导入成功走 reloadDataset 统一刷新（含 habits），就地更新——回今日页看浮层即最新 */
 await page.waitForTimeout(300)
 /* Stage 6 两层导航：现在退两层（settings-data → 设置索引页 → 关闭）才回得到主界面 */
-await page.locator('[data-sub-back]').click()
-await page.waitForTimeout(300)
-await page.locator('[data-sub-back]').click()
-await page.waitForTimeout(300)
+/* 2026-10-23：二级页退场有过渡，过渡中 DOM 里会短暂同时存在两个 [data-sub-back]，
+   Playwright 严格模式会报「resolved to 2 elements」。等回到只剩一个再点 ——
+   不拿动画时序当断言（这是测试自己的问题，不是产品的）。 */
+const backOnce = async () => {
+  await page.waitForFunction(() => document.querySelectorAll('[data-sub-back]').length === 1)
+  await page.locator('[data-sub-back]').click()
+  await page.waitForTimeout(300)
+}
+await backOnce()
+await backOnce()
 await page.$eval('[data-nav="today"]', (el) => el.click())
 await page.waitForTimeout(300)
 await openHabitSheet()

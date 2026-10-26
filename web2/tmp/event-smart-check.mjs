@@ -117,8 +117,10 @@ const timeBtnText = async (page) => (await btnTexts(page)).find((x) => /^\d{2}:\
   t('B4 日期被回填为明天', dateTxt === tomorrow, dateTxt)
   const timeTxt = await timeBtnText(page)
   t('B5 开始时间被回填 15:00', timeTxt === '15:00', timeTxt)
-  const durCls = await page.locator('[data-sheet-evt] button', { hasText: '90分' }).getAttribute('class').catch(() => '')
-  t('B6 时长吸附到 90 分并选中', durCls.includes('text-white'), durCls)
+  /* 2026-10-23 改口径：识别出的时长不再吸附到 40/45/60/90 四档，改吸附到 5 分钟。
+     AI 给 100 分 → 表单就是 100 分（100 本来就在 5 的格子上）。 */
+  const durTxt = await page.$eval('[data-evt-dur-text]', (el) => el.innerText.trim()).catch(() => '')
+  t('B6 时长原样落到 5 分钟格子（100 → 100 分钟，不再压成 90）', durTxt === '1 小时 40 分钟', durTxt)
   t('B7 有「已填入 + 请核对」提示', (await page.locator('[data-event-smart-hint]').count()) === 1)
   t('B8 文字面板识别后收起', (await page.locator('[data-event-smart-input]').count()) === 0)
   const after = await page.evaluate(() => JSON.parse(localStorage.getItem('web2.data')).events || [])

@@ -109,9 +109,9 @@ t('B2 切到下一周后单/双周互换', odd2 !== odd && even2 !== even, `单�
 const weekLabel = (await A.page.locator('[data-week-label]').innerText()).replace(/\s+/g, ' ').trim()
 t('B3 周次标签确实前进了（证明上面那次切换有效）', weekLabel.includes('第 2 周'), weekLabel)
 
-/* 周末列：周六有循环日程 → 表头补出「周六」 */
+/* 周末列：恒定七列之后周六列总在；这里验证它真的画出来、且循环日程落进去 */
 const headText = (await A.page.locator('[data-grid]').evaluate((el) => el.parentElement.querySelector('.grid').innerText)).replace(/\s+/g, '')
-t('C1 周六有循环日程 → 表头补出周六列', headText.includes('周六'), headText)
+t('C1 表头有周六列（2026-10-23 起恒定七列）', headText.includes('周六'), headText)
 
 /* 详情弹层 */
 await A.page.locator('[data-week-prev]').click()
@@ -147,12 +147,19 @@ t('F1 课程详情里没有循环日程的删除按钮', (await A.page.locator('
 t('F2 课程详情仍有编辑/删除两键', (await A.page.locator('[data-sheet-detail] button', { hasText: '编辑' }).count()) === 1)
 await A.ctx.close()
 
-/* ============ 对照组：同样的课，但不含循环日程 → 不应补出周六列 ============ */
+/* ============ 对照组：同样的课，但不含循环日程 → 周六列照样在、只是空的 ============ */
 const B = await openWeek(browser, [...COURSES, ...EVENTS])
 const headNoRoutine = (await B.page.locator('[data-grid]').evaluate((el) => el.parentElement.querySelector('.grid').innerText)).replace(/\s+/g, '')
-t('G1 没有循环日程时不补出周六列（今天就是周末时天然豁免）',
-  !headNoRoutine.includes('周六') || TODAY_WD >= 6,
-  `表头=${headNoRoutine}｜今天周${TODAY_WD}${TODAY_WD >= 6 ? '（今天本来就是周末，豁免）' : ''}`)
+const cellsNoRoutine = await B.page.locator('[data-grid] [data-cell]').evaluateAll((els) =>
+  [...new Set(els.map((e) => e.dataset.cell.split('-')[0]))].length
+)
+t('G1 没有循环日程时周六列照样在（恒定七列，列不随安排消失）',
+  headNoRoutine.includes('周六') && cellsNoRoutine === 7,
+  `表头=${headNoRoutine}｜列数=${cellsNoRoutine}`)
+const satCard = await B.page.locator('[data-grid] article').evaluateAll((els) =>
+  els.filter((e) => e.closest('[data-grid]') && e.style.gridColumn === '7').length
+)
+t('G2 周六那一列是空的（没安排就不画卡，不是画个假卡）', satCard === 0, String(satCard))
 await B.ctx.close()
 
 await browser.close()

@@ -85,7 +85,10 @@ const past = rows.find((r) => r.state === 'done')
 t('R5 已过的行有一条（state=done）', !!past, past && past.text)
 t('R6 已过 = 整行实色灰（rgb(98, 107, 125)，不是 alpha 档）', !!past && past.rowColor === 'rgb(98, 107, 125)' && past.titleColor === 'rgb(98, 107, 125)', past && `${past.rowColor} / ${past.titleColor}`)
 const nowRow = rows.find((r) => r.state === 'now')
-t('R7 进行中的卡标 state=now 且右侧给剩余分钟', !!nowRow && /还剩 \d+ 分/.test(nowRow.text), nowRow && nowRow.text)
+/* 2026-10-23 补：bug 06 起「还剩 150 分」写成「还剩 2 小时 30 分」，
+   原来的 /还剩 \d+ 分/ 只认纯分钟数 —— 傍晚以后剩余时间凑满一小时就匹配不上，
+   变成一条随钟点翻车的假红（23:40 复跑时实测 10/11）。 */
+t('R7 进行中的卡标 state=now 且右侧给剩余时间', !!nowRow && /还剩 \d+/.test(nowRow.text), nowRow && nowRow.text)
 t('R11 进行中的卡用浅蓝底（区别于其余卡片底色）', !!nowRow && nowRow.bg === 'rgb(238, 244, 254)', nowRow && nowRow.bg)
 t('R9 未来条目右侧留空、不倒计时刷屏（只有 next 那条报分钟）', rows.filter((r) => r.state === 'plain').length >= 1, JSON.stringify(rows.filter((r) => r.state === 'plain').map((r) => r.text)))
 t('R10 全程无 pageerror', errs.length === 0, errs.join(' | '))

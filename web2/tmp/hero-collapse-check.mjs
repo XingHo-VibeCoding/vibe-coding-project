@@ -1,6 +1,7 @@
 /* 今日页头部上拉收缩（乙：压成一行，折到底后钉住）检查——playwright，走 dist 静态服务。
    需求（m26207）：上拉时顶卡压缩成一行。
    拍板（m26282）：乙方案 + 「录音 / 复盘时锁住，停在展开态」。
+   修订（m01326，2026-10-23）：**录音不再锁**（录着也能收），复盘浮层仍锁 —— I 组钉住。
    拍板（m01369，2026-10-10）：折到底后那一行不再跟着继续上滑走掉，钉在顶上。
    拍板（m02029，2026-10-12）：① 浮层铺页面底色（折到底钉住后内容会从状态条背后透上来叠字）；
                            ② 浮层底部留 8px，把状态条按钮的触区从 39px 补到 44px。
@@ -270,6 +271,66 @@ const H = await p.evaluate(() => {
 })
 t('H1. 折到底时状态条按钮可点高度 ≥44px（WCAG 2.5.8）',
   H.ok, `可点跨度=${H.span}px 按钮盒=${H.h}px 中心=${H.center}`)
+
+/* ================= I. 录音中也能收（2026-10-23 用户 m01326） =================
+   原来 heroLocked 里有 recActiveId ⇒ 录音时头卡锁死在展开态、上拉不收。
+   现在录音不再锁：收到底后状态条里必须有一颗「停止并保存」，否则用户得先把卡拉开才能停。
+   假插件照 auto-stop-check.mjs 的做法注入（平台判定只看 Plugins 存不存在）。 */
+const FAKE_REC = `
+window.Capacitor = {
+  isNativePlatform: function () { return true },
+  Plugins: {
+    VoiceRecorder: {
+      canDeviceVoiceRecord: async () => ({ value: true }),
+      hasAudioRecordingPermission: async () => ({ value: true }),
+      requestAudioRecordingPermission: async () => ({ value: true }),
+      startRecording: async () => ({ value: true }),
+      stopRecording: async () => ({ value: { path: 'lectures/fake.aac', mimeType: 'audio/aac', msDuration: 60000 } }),
+    },
+    RecorderService: {
+      start: async () => ({ running: true }),
+      stop: async () => ({}),
+      isRunning: async () => ({ running: false }),
+      scheduleAutoStop: async () => ({}),
+      consumeAutoStop: async () => ({ consumed: false }),
+    },
+  },
+}
+`
+const i = await open()
+await i.page.addInitScript(FAKE_REC)
+await i.page.reload({ waitUntil: 'load' })
+await i.page.waitForSelector('[data-page="today"]')
+await i.page.waitForTimeout(900)
+const recBtn = i.page.locator('[data-today-rec-start]').first()
+t('I1. 假原生环境下出现「录音」按钮', (await recBtn.count()) > 0)
+if (await recBtn.count() > 0) {
+  await recBtn.click()
+  await i.page.waitForTimeout(800)
+  const iOpen = await i.page.evaluate(PROBE)
+  t('I2. 录音确实开了（展开卡里出现「停止并保存」）', (await i.page.locator('[data-today-rec-stop]').count()) > 0)
+  t('I3. 录音中初始仍是展开态', iOpen.wrapH > 200, `wrapH=${iOpen.wrapH}`)
+  await scrollTo(i.page, iOpen.wrapH - MINH)
+  await i.page.waitForTimeout(300)
+  const iC = await i.page.evaluate(PROBE)
+  t('I4. 录音中上拉也能收（这是本轮修的 bug）', iOpen.wrapH - iC.wrapH > 100, `${iOpen.wrapH} → ${iC.wrapH}`)
+  t('I5. 收到底后状态条露出来', iC.barOpacity > 0.9, `barOpacity=${iC.barOpacity}`)
+  t('I6. 收起的这一行里有「停止并保存」（不用把卡拉回去才能停）',
+    (await i.page.locator('[data-hero-bar-rec-stop]').count()) > 0)
+  const iHit = await i.page.evaluate(() => {
+    const b = document.querySelector('[data-hero-bar-rec-stop]')
+    if (!b) return { ok: false }
+    const r = b.getBoundingClientRect()
+    const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+    return { ok: el === b || b.contains(el), tag: el ? el.tagName : 'null' }
+  })
+  t('I7. 那颗按钮点得中（中心命中自己）', iHit.ok, `hit=${iHit.tag}`)
+  await i.page.evaluate(() => document.querySelector('[data-hero-bar-rec-stop]').click())
+  await i.page.waitForTimeout(600)
+  t('I8. 点它能真停（停止按钮消失）', (await i.page.locator('[data-hero-bar-rec-stop]').count()) === 0)
+}
+t('I9. 这一组没有 pageerror', i.errors.length === 0, JSON.stringify(i.errors))
+await i.ctx.close()
 
 /* ================= Z. 报错 ================= */
 t('Z1. 全程无 pageerror / console.error',

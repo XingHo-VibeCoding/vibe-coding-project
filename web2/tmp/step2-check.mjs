@@ -122,11 +122,27 @@ if (!hasToday) {
      要么还没开始（→ 报「N 分钟后」，对着 start 算）。两种都在这里自洽校验：
      「还剩 N 分」时算不出下课时刻（行里只有开始时刻），就退回「N 小于等于一节课的时长」这条弱断言。 */
   const txt = marked[0]?.text || ''
-  const mLeft = txt.match(/还剩 (\d+) 分/)
-  const mIn = txt.match(/(\d+) 分钟后/)
-  const okA12 = mLeft
-    ? Number(mLeft[1]) > 0 && Number(mLeft[1]) <= 180
-    : !!mIn && Number(mIn[1]) === toMin(marked[0].start) - nowMin
+  /* 2026-10-23 补：bug 06 起剩余时间会写成「还剩 1 小时 10 分」，
+     只匹配 /还剩 (\d+) 分/ 在傍晚以后整组失效（随钟点翻车的假红）。 */
+  const leftMin = (s) => {
+    const h = s.match(/还剩 (\d+) 小时(?: (\d+) 分)?/)
+    if (h) return Number(h[1]) * 60 + Number(h[2] || 0)
+    const m = s.match(/还剩 (\d+) 分/)
+    return m ? Number(m[1]) : null
+  }
+  const mLeft = leftMin(txt)
+  /* 2026-10-23 再补：还没开始的那条，bug 06 起也会写「1 小时后」（原先是「60 分钟后」），
+     所以「N 分钟后」的正则同样要认小时 —— 两个方向一起放宽，别再随钟点翻车。 */
+  const inMin = (s) => {
+    const h = s.match(/(\d+) 小时(?: (\d+) 分)?后/)
+    if (h) return Number(h[1]) * 60 + Number(h[2] || 0)
+    const m = s.match(/(\d+) 分钟后/)
+    return m ? Number(m[1]) : null
+  }
+  const mIn = inMin(txt)
+  const okA12 = mLeft !== null
+    ? mLeft > 0 && mLeft <= 180
+    : mIn !== null && mIn === toMin(marked[0].start) - nowMin
   t('A12. 被标记的那条与「还剩 N 分 / N 分钟后」自洽（对着它自己的时刻算）', okA12, txt)
 }
 t('A13. 全程无页面报错 / 4xx', a.errors.length === 0, JSON.stringify(a.errors))
@@ -143,7 +159,8 @@ if (!hasToday) {
      有课就验「进行中报进度」，没课就验「未来那条报倒计时」——两种都是正确行为，
      不写死课名，避免变成随日期翻车的假红。 */
   const nextTxt = (await p2.locator('[data-today-next]').innerText()).replace(/\s+/g, ' ')
-  const inClass = /还剩 \d+ 分/.test(nextTxt)
+  /* 同上：满一小时会写成「还剩 1 小时 10 分」 */
+  const inClass = /还剩 \d+/.test(nextTxt)
   t(inClass ? 'B1. 进行中时报「还剩 N 分」而不是倒计时' : 'B1. 没有课在进行中时，「接下来」那条报倒计时',
     inClass ? !/分钟后/.test(nextTxt) : /分钟后/.test(nextTxt), nextTxt)
   /* B2 必须和 B1 走同一个分支：10:30 有没有课在进行中取决于今天星期几

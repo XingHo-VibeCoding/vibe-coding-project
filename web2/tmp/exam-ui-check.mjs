@@ -6,7 +6,12 @@
    ⚠ 本机 headless Chrome 必须带 --disable-gpu，否则 rAF 不产帧、点什么都超时。 */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
-const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
+/* 2026-10-23 修：这个脚本原来跟着真实钟点跑 —— 晚上 22 点以后「今天还剩的 90 分钟空档」
+   根本不存在，于是「今天排下了一段」全部落空（23:43 跑 = 52/62，白天跑 = 62/62）。
+   用项目既有的 ?t= 时间后门把钟点钉在 14:00：它只冻结钟点、不动日期，
+   所以「还有 N 天」这类断言不受影响。 */
+const BASE = process.env.TW_URL || 'http://127.0.0.1:4177/'
+const URL = BASE + '?t=14:00'
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 
 let ok = 0, bad = 0
@@ -83,7 +88,7 @@ async function openPage(browser, kv, { page = null, seedKey = 'ex-seeded' } = {}
     const ctx = await browser.newContext(ctxOpts)
     await ctx.route('**/*', (route) => {
       const u = route.request().url()
-      if (u.startsWith(URL) || u.startsWith('data:') || u.startsWith('blob:')) return route.continue()
+      if (u.startsWith(BASE) || u.startsWith('data:') || u.startsWith('blob:')) return route.continue()
       return route.abort()
     })
     p = await ctx.newPage()
@@ -245,7 +250,10 @@ try {
   console.log('\n--- G 措辞不评判 ---')
   {
     const banned = ['加油', '努力', '赶紧', '必须', '来不及', '怎么办', '懒', '拖延', '你应该', '你怎么', '还不']
-    const hit = banned.filter((w) => d.body.indexOf(w) >= 0)
+    /* 「还没有加考试」这类空态说明里的「还没」是陈述事实，不是催 —— 先摘掉再扫，
+       否则这条永远假红（2026-10-23 修）。 */
+    const bodyNoHai = d.body.replace(/还没(有)?/g, '')
+    const hit = banned.filter((w) => bodyNoHai.indexOf(w) >= 0)
     t('G1 整页没有催促或评判词', hit.length === 0, hit.join(','))
     t('G2 没有把自己摆成打分/排名的样子', !/第\s*\d+\s*名|评分|得分/.test(d.body))
   }

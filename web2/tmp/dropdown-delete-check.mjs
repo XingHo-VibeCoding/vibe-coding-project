@@ -79,10 +79,14 @@ try {
   // ---- B. 长按删除 ----
   /* Stage 6：录音场次列表在「我的 → 录音历史」二级页。2026-10-12 后设置是压栈两层，
      要连退两次（录音子页 → 设置索引 → 我的页）才能回到索引页找 lectures 入口。 */
-  await page.locator('[data-sub-back]').click()
-  await page.waitForTimeout(300)
-  await page.locator('[data-sub-back]').click()
-  await page.waitForTimeout(300)
+  /* 退场过渡中会短暂同时存在两个 [data-sub-back]（严格模式报 2 elements）⇒ 等只剩一个再点 */
+  const backOnce = async () => {
+    await page.waitForFunction(() => document.querySelectorAll('[data-sub-back]').length === 1)
+    await page.locator('[data-sub-back]').click()
+    await page.waitForTimeout(300)
+  }
+  await backOnce()
+  await backOnce()
   await page.$eval('[data-me-entry="lectures"]', (el) => el.click())
   await page.waitForTimeout(400)
   // 短按不触发

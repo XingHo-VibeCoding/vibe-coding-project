@@ -341,7 +341,15 @@ async function open({ overrides, label, shot }) {
      断言会因为看不见标题而假失败（这是测试的前提问题，不是代码问题）。 */
   await page.goto(BASE + '?t=07:00', { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(800)
-  const todayText = () => page.$eval('main[data-page="today"]', (el) => el.innerText.replace(/\s+/g, ' '))
+  const todayText = () =>
+    page.$eval('main[data-page="today"]', (el) => {
+      /* 2026-10-23：今日页多了「之后 = 下一件要办的事」那一段（F33），它显示的是**明天**的安排。
+         这个 helper 叫 todayText，判据应该只看今天 —— 先把那一段摘掉，
+         否则「今天放假 → 看不见任何课」会被明天的课误伤（C1 就是这么红的）。 */
+      const c = el.cloneNode(true)
+      c.querySelectorAll('[data-today-nextday], [data-today-nextday-item]').forEach((n) => n.remove())
+      return c.innerText.replace(/\s+/g, ' ')
+    })
   const out = { page, errors, todayText, label }
   if (shot) {
     await page.screenshot({ path: 'tmp/dayover-' + shot + '.png', fullPage: false })

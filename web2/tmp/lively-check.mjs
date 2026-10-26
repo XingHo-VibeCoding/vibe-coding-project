@@ -110,8 +110,10 @@ t('B2. 进度条宽度 ≈ 已过 41%', Math.abs(ratio - 0.41) < 0.04, String(ra
 const todayTxt = flat(await pb.locator('[data-page="today"]').innerText())
 /* Stage 2 起「现在」卡搬进共享 header（不在 [data-page="today"] 里），所以课上信息分两处读 */
 const heroTxt = flat(await pb.locator('[data-today-now]').innerText())
-t('B3. 「现在」卡给出课名（卡上「进行中 · 环境工程概论」）+ 列表行剩余分钟（「还剩 85 分」）',
-  heroTxt.includes('进行中 · 环境工程概论') && heroTxt.includes('还剩 85 分钟') && todayTxt.includes('还剩 85 分'),
+/* 2026-10-23：bug 06 把满 60 分的剩余时间改成「N 小时 M 分」—— 85 分现在显示「1 小时 25 分」。
+   断言改成认新格式，而不是钉死旧文案。 */
+t('B3. 「现在」卡给出课名（卡上「进行中 · 环境工程概论」）+ 剩余时间（85 分 →「1 小时 25 分」）',
+  heroTxt.includes('进行中 · 环境工程概论') && /还剩 1 小时 25 分/.test(heroTxt) && /还剩 1 小时 25 分/.test(todayTxt),
   JSON.stringify({ hero: heroTxt.slice(0, 120), today: todayTxt.slice(0, 160) }))
 t('B4. 无报错', B.errors.length === 0, B.errors.join(' | '))
 await B.ctx.close()

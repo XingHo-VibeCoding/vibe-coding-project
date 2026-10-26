@@ -78,6 +78,7 @@ const props = defineProps({
     </span>
     <span
       v-if="meta"
+      data-row-meta
       class="flex-none pt-0.5 text-[11px] leading-[20px] tabular-nums"
       :class="state === 'due' ? 'font-medium text-amber-600' : 'text-ink-dim'"
     >{{ meta }}</span>

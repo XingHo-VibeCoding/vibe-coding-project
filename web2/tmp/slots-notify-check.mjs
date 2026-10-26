@@ -70,10 +70,14 @@ function watchErrors(page) {
   /* 其余功能照常：切页签能切、今日页有内容。
      Stage 6：设置是 fixed 二级覆盖层，切页签前先退回「我的」页，否则真实点击会被覆盖层拦下。
      两层导航后要退两层：remind 子页 → 设置索引页 → 我的页。 */
-  await page.locator('[data-sub-back]').click()
-  await page.waitForTimeout(300)
-  await page.locator('[data-sub-back]').click()
-  await page.waitForTimeout(300)
+  /* 退场过渡中会短暂存在两个 [data-sub-back]（严格模式会报 2 elements）⇒ 等只剩一个再点 */
+  const backOnce = async () => {
+    await page.waitForFunction(() => document.querySelectorAll('[data-sub-back]').length === 1)
+    await page.locator('[data-sub-back]').click()
+    await page.waitForTimeout(300)
+  }
+  await backOnce()
+  await backOnce()
   await page.locator('nav button', { hasText: '周课表' }).click()
   await page.waitForTimeout(400)
   t('A4. App 其余功能照常（能切到周课表）', (await page.locator('[data-page="week"]').count()) === 1)

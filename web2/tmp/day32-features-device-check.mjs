@@ -139,13 +139,14 @@ t('B1 二级页标题是「时间去哪了」', tlTitle === '时间去哪了', t
 const b2 = await page.evaluate(() => {
   const raw = JSON.parse(localStorage.getItem('web2.daily') || 'null')
   const have = raw && raw.days ? Object.keys(raw.days) : []
-  const d = new Date()
-  const p2 = (n) => String(n).padStart(2, '0')
-  const keys = []
-  for (let i = 0; i < 7; i++) { const x = new Date(d); x.setDate(x.getDate() - i); keys.push(x.getFullYear() + '-' + p2(x.getMonth() + 1) + '-' + p2(x.getDate())) }
-  return { expected: keys.filter((k) => have.indexOf(k) >= 0).length, total: have.length }
+  const recent = have.slice().sort().reverse().slice(0, 7)
+  return { expected: recent.length, total: have.length }
 })
-t('B2 行数 = 最近 7 天里有快照的天数（缺的天不补空行）', days === b2.expected && days > 0, '行数 ' + days + ' / 有快照 ' + b2.expected + ' 天（库里共 ' + b2.total + ' 天）')
+/* 2026-10-23 修正：口径是「**最近 n 条记录**」不是「最近 n 个日历日」——
+   daily.js 的 recentDays() 是按日期排序后 slice(0, n)，中间断掉的日子不占名额。
+   原断言按日历日数，真机上历史记录超过 7 天时就会假红（真机实测：库 7 天 / 近七日交集 4 天）。
+   现在直接数「界面画的那些日期 = 库里最近 7 条日期」，这才是设计口径。 */
+t('B2 行数 = 库里最近 7 条快照（缺的天不补空行）', days === b2.expected && days > 0, '行数 ' + days + ' / 期望 ' + b2.expected + '（库里共 ' + b2.total + ' 天）')
 t('B3 手机时长如实标注（有「未开启」或真实时长，不画 0）', usageTexts.every((x) => !/^\s*0\s*分/.test(x)), JSON.stringify(usageTexts.slice(0, 3)))
 t('B4 卡片有一句总结文案', !!lineText && lineText.length > 4, JSON.stringify(lineText))
 console.log('截图: ' + tlShot)
@@ -214,6 +215,9 @@ await home()
 await openMe('exams')
 const examTitle = await page.evaluate(() => window.__txt('[data-sub-title]'))
 t('E1 二级页标题是「考试与复习」', examTitle === '考试与复习', examTitle)
+/* 2026-10-23：真机上教务网自动同步已经先塞进 N 场真考试了（E 组原假设「表是空的」已过期），
+   所以先记基线，再断言「加完 = 基线 + 1」。这条能真抓住「加了没生效」和「把别人的数据冲掉」。 */
+const examBase = await page.evaluate(() => window.__n('[data-exam-item]'))
 await click('[data-exam-add]')
 await page.waitForTimeout(500)
 await setVal('[data-exam-title]', '真机验收测试科目')
@@ -232,7 +236,7 @@ const items = await page.evaluate(() => window.__n('[data-exam-item]'))
 const cd = await page.evaluate(() => { const el = document.querySelector('[data-exam-countdown]'); return el ? (el.textContent || '').trim() : null })
 const examShot = await shot('f-04-exam-panel')
 t('E2 日历可选到 +4 天那天', pickedDay, target)
-t('E3 考试加进去了（列表 1 条）', items === 1, '条数 ' + items)
+t('E3 考试加进去了（基线 ' + examBase + ' → ' + items + ' 条）', items === examBase + 1, '基线 ' + examBase + ' / 现在 ' + items)
 t('E4 倒计时显示「N 天」', !!cd && /天/.test(cd), JSON.stringify(cd))
 console.log('截图: ' + examShot)
 
@@ -255,8 +259,13 @@ await page.waitForTimeout(300)
 const exDel2 = await click('[data-exam-del]')
 await page.waitForTimeout(900)
 const itemsLeft = await page.evaluate(() => window.__n('[data-exam-item]'))
+/* 不能扫整页文字：「已加进考试表：真机验收测试科目」这行回执还挂在页面上（那是操作反馈，不是考试条目），
+   所以只看考试条目本身有没有留下这条测试数据。 */
+const testGone = await page.evaluate(() => ![...document.querySelectorAll('[data-exam-item]')].some((el) => (el.textContent || '').includes('真机验收测试科目')))
 const emptyShown = await page.evaluate(() => !!document.querySelector('[data-exam-empty]'))
-t('E7 测试考试已删除、回到空状态', exDel1 && exDel2 && itemsLeft === 0 && emptyShown, JSON.stringify([exDel1, exDel2, itemsLeft, emptyShown]))
+t('E7 测试考试已删除、剩余回到基线（空表时才看空状态）',
+  exDel1 && exDel2 && itemsLeft === examBase && testGone && (examBase > 0 || emptyShown),
+  JSON.stringify([exDel1, exDel2, itemsLeft, examBase, testGone, emptyShown]))
 
 await backToToday()
 const finalExamCard = await page.evaluate(() => window.__n('[data-exam-card]'))

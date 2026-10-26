@@ -36,11 +36,22 @@ const app = useApp()
           :key="d"
           class="rounded-full px-2.5 py-1.5 text-xs font-medium transition active:scale-95"
           :class="app.addForm.duration === d ? 'bg-primary-500 text-white' : 'bg-soft text-ink-dim'"
+          :data-add-dur="d"
           @click="app.addForm.duration = d"
         >
           {{ d }}分
         </button>
       </div>
+      <!-- 自定义时长：快捷档只覆盖常见几种，更长/更短的走这里（2026-10-23 用户报「更长时间搞不了」） -->
+      <button
+        class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm transition active:scale-[0.99]"
+        :class="app.DURATIONS.includes(app.addForm.duration) ? 'text-ink-dim' : 'text-ink'"
+        data-add-dur-custom
+        @click="app.pickDuration(app.addForm.duration, (v) => (app.addForm.duration = v))"
+      >
+        <span>持续时长</span>
+        <span class="font-semibold tabular-nums" data-add-dur-text>{{ app.durText(app.addForm.duration) }}</span>
+      </button>
       <input
         v-model="app.addForm.place"
         placeholder="地点（选填）"

@@ -95,7 +95,10 @@ const {
         </button>
 
         <!-- ＋ 选单：就地弹在 ＋ 下方（absolute 相对本行，不跟平移层的 transform 打架）。
-             选中任一项、点别处（document 监听）、按返回键都会收起。 -->
+             选中任一项、点别处（document 监听）、按返回键都会收起。
+             2026-10-23 用户报「周课表右上角加号点开没有动画」：原来 v-if 直接显隐 = 硬闪，
+             套 .ddpop 过渡（从触发器方向淡入 + 轻缩放 0.16s），与下拉面板同一套观感。 -->
+        <Transition name="ddpop">
         <div
           v-if="weekMenuOpen"
           data-week-menu
@@ -138,6 +141,7 @@ const {
             特殊日期
           </button>
         </div>
+        </Transition>
       </div>
 
       <!-- 节次网格：行 = 节次、列 = 星期、课程 = 格子 —— 一屏看完，不用上下左右滑。

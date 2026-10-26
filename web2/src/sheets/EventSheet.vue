@@ -16,6 +16,8 @@ const {
   submitEvent,
   submitEvents,
   DURATIONS,
+  durText,
+  pickDuration,
   todayStr,
 } = toRefs(app)
 
@@ -349,6 +351,15 @@ function addSelected() {
             >
               {{ d }}分
             </button>
+            <button
+              type="button"
+              class="flex-1 rounded-full py-0.5 text-[10px] font-medium transition active:scale-95"
+              :class="DURATIONS.includes(it.event.duration) ? 'bg-soft text-ink-dim' : 'bg-primary-500 text-white'"
+              data-batch-dur-custom
+              @click="pickDuration(it.event.duration, (v) => (it.event.duration = v))"
+            >
+              {{ DURATIONS.includes(it.event.duration) ? '自定义' : durText(it.event.duration) }}
+            </button>
           </div>
           <input
             v-model="it.event.place"
@@ -414,6 +425,15 @@ function addSelected() {
             {{ d }}分
           </button>
         </div>
+        <button
+          class="flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-3.5 py-2.5 text-sm transition active:scale-[0.99]"
+          :class="DURATIONS.includes(evtForm.duration) ? 'text-ink-dim' : 'text-ink'"
+          data-evt-dur-custom
+          @click="pickDuration(evtForm.duration, (v) => (evtForm.duration = v))"
+        >
+          <span>持续时长</span>
+          <span class="font-semibold tabular-nums" data-evt-dur-text>{{ durText(evtForm.duration) }}</span>
+        </button>
         <input
           v-model="evtForm.place"
           placeholder="地点（选填）"
@@ -430,6 +450,7 @@ function addSelected() {
           取消
         </button>
         <button
+          data-evt-submit
           class="flex-1 rounded-xl bg-primary-500 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition active:scale-[0.98]"
           @click="submitEvent"
         >

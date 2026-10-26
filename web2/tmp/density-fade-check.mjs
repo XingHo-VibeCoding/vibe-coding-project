@@ -54,24 +54,42 @@ const rowKeys = () => page.evaluate(() =>
 const keysBefore = await rowKeys()
 await section.screenshot({ path: `${OUT}/density-fade-before.png` })
 
+/* 2026-10-24 重写采样：原来按固定 40/80/120/160/200ms 抓 5 个点，
+   在机器忙的时候点击到开始淡之间会拖过 160ms ⇒ 前四点全是 1.00、最后一点直接 0.00，
+   B/C 双双假红（单跑也可能挂）。改为**用页面里的 requestAnimationFrame 连续采 400ms**，
+   采样器先起跑再点击，不管淡入从第几帧开始都能抓到中间态。 */
+const samplesPromise = page.evaluate(() => new Promise((resolve) => {
+  const out = []
+  const t0 = performance.now()
+  const step = () => {
+    const sec = document.querySelector('[data-page="today"] section')
+    const op = sec
+      ? [...sec.querySelectorAll('div, ul, ol')]
+          .filter((el) => el.querySelector('[data-today-item]'))
+          .map((el) => Number(getComputedStyle(el).opacity))
+      : []
+    out.push({ t: Math.round(performance.now() - t0), op })
+    if (performance.now() - t0 < 400) requestAnimationFrame(step)
+    else resolve(out)
+  }
+  requestAnimationFrame(step)
+}))
 await page.locator('[data-today-expand]').click()
-/* 采样 0.2s 淡出窗口：每 40ms 读一次不透明度 */
-const samples = []
-const t0 = Date.now()
-for (const ms of [40, 80, 120, 160, 200]) {
-  const wait = ms - (Date.now() - t0)
-  if (wait > 0) await page.waitForTimeout(wait)
-  samples.push({ ms, op: await fadingBlocks() })
-}
+const samples = await samplesPromise
 t('B. 淡出窗口里确实有半透明层（在交叉淡入，不是硬切）',
   samples.some((s) => s.op.some((o) => o > 0 && o < 1)),
-  samples.map((s) => `${s.ms}ms=[${s.op.map((o) => o.toFixed(2)).join(',')}]`).join(' '))
-/* 被采样的是「装着行的那层」，它自己的 opacity 恒为 1；
-   正在淡的是它内部 Transition 包的子层 —— 取每个区块里最小的不透明度看趋势。 */
-const minOps = samples.map((s) => Math.min(...s.op))
-t('C. 淡出是单调下降（0.2s 内一路走到 0）',
-  minOps[0] > 0 && minOps[0] < 1 && minOps.every((o, i) => i === 0 || o <= minOps[i - 1]) && minOps.at(-1) < 0.05,
-  minOps.map((o) => o.toFixed(2)).join(' → '))
+  samples.filter((s) => s.op.some((o) => o > 0 && o < 1)).slice(0, 3)
+    .map((s) => `${s.t}ms=[${s.op.map((o) => o.toFixed(2)).join(',')}]`).join(' ') || '整段没抓到中间态')
+/* 被采样的是「装着行的那层」，它自己的 opacity 恒为 1；正在淡的是它内部
+   Transition 包的子层 —— 取每个样本里最小的不透明度看趋势。
+   判据收窄到「从开始淡到最暗那一刻一路下降」，不含淡完之后回弹到 1 的帧。 */
+const minOps = samples.map((s) => (s.op.length ? Math.min(...s.op) : NaN)).filter((o) => !Number.isNaN(o))
+const startedAt = minOps.findIndex((o) => o < 1)
+const darkAt = minOps.indexOf(Math.min(...minOps))
+const seq = startedAt >= 0 ? minOps.slice(startedAt, Math.max(darkAt, startedAt) + 1) : []
+t('C. 淡出是单调下降（开始淡起一路暗到接近 0）',
+  startedAt >= 0 && seq.every((o, i) => i === 0 || o <= seq[i - 1] + 1e-9) && Math.min(...minOps) < 0.05,
+  seq.map((o) => o.toFixed(2)).join(' → ') || '没抓到淡出')
 
 await page.waitForTimeout(600)
 t('D. 终态是 F 视图（折叠行消失、行铺全、不透明度回到 1）',

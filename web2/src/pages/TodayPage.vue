@@ -56,6 +56,7 @@ const {
   pastSpan,
   livePreview,
   hiddenCount,
+  nextFuture,
   isRoutine,
   pal,
   courseStatus,
@@ -158,6 +159,28 @@ const {
               />
             </div>
           </Transition>
+          <!-- 今天全过完了：接上「下一件要办的事」（2026-10-23 用户 m02477）。
+               今天还有没过的就不显示这一段 —— 那时候「接下来」本来就是今天那几条。 -->
+          <template v-if="!livePreview.length && nextFuture">
+            <div data-today-nextday class="flex items-center gap-2 py-[3px] text-[11px] leading-[20px] text-ink-dim">
+              <span class="w-10 flex-none text-right">之后</span>
+              <span class="min-w-0 flex-1 truncate">{{ nextFuture.label }}</span>
+            </div>
+            <RowItem
+              data-today-item
+              data-today-nextday-item
+              :data-item-type="nextFuture.item.type || 'course'"
+              :time="nextFuture.item.start"
+              :title="nextFuture.item.name"
+              :sub="[nextFuture.item.place, nextFuture.item.tag].filter(Boolean).join(' · ')"
+              meta=""
+              state="plain"
+              :tone="isRoutine(nextFuture.item) ? pal(nextFuture.item).text : ''"
+              :routine="isRoutine(nextFuture.item)"
+              clickable
+              @click="openDetail(nextFuture.item)"
+            />
+          </template>
           <!-- 展开全部 = 就地换密度（D → F），不换页、行高不变；收起后回到「已过一行 + 接下来 3 行」
                —— 密度切换的交叉淡入见上面 <Transition name="density">（动效约定 1a） -->
           <button
@@ -177,7 +200,27 @@ const {
             <span class="flex-none text-ink-dim">{{ todayExpanded ? '▴' : '▾' }}</span>
           </button>
         </div>
-        <p v-else class="rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
+        <div v-else-if="nextFuture" class="space-y-1">
+          <div data-today-nextday class="flex items-center gap-2 py-[3px] text-[11px] leading-[20px] text-ink-dim">
+            <span class="w-10 flex-none text-right">之后</span>
+            <span class="min-w-0 flex-1 truncate">{{ nextFuture.label }}</span>
+          </div>
+          <RowItem
+            data-today-item
+            data-today-nextday-item
+            :data-item-type="nextFuture.item.type || 'course'"
+            :time="nextFuture.item.start"
+            :title="nextFuture.item.name"
+            :sub="[nextFuture.item.place, nextFuture.item.tag].filter(Boolean).join(' · ')"
+            meta=""
+            state="plain"
+            :tone="isRoutine(nextFuture.item) ? pal(nextFuture.item).text : ''"
+            :routine="isRoutine(nextFuture.item)"
+            clickable
+            @click="openDetail(nextFuture.item)"
+          />
+        </div>
+        <p v-else data-today-empty class="rounded-2xl border border-dashed border-line bg-card/60 p-6 text-center text-sm text-ink-dim">
           今天没有课程安排
         </p>
         <button

@@ -6,7 +6,11 @@
      · 失败路径不崩、不落库、不弹任何东西。 */
 import { chromium } from 'file:///C:/Users/26502/.workbuddy/binaries/node/workspace/node_modules/playwright-core/index.mjs'
 
-const URL = process.env.TW_URL || 'http://127.0.0.1:4177/'
+/* 2026-10-23 修：钟点必须钉死。晚上 22 点后「今天还剩的 90 分钟空档」不存在 ⇒
+   todayReview 为空 ⇒ 压根不会去问 AI，A/C/G/H 四组会集体假红（不是功能坏了）。
+   ?t= 是项目既有后门，只冻结钟点、不动日期。 */
+const BASE = process.env.TW_URL || 'http://127.0.0.1:4177/'
+const URL = BASE + '?t=14:00'
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 const ADVICE_KEY = 'web2.review.advice'
 
@@ -79,7 +83,7 @@ async function openPage(browser, kv, { reply = 'ok', seedKey = 'adv' } = {}) {
       }
       return route.abort()
     }
-    if (u.startsWith(URL) || u.startsWith('data:') || u.startsWith('blob:')) return route.continue()
+    if (u.startsWith(BASE) || u.startsWith('data:') || u.startsWith('blob:')) return route.continue()
     return route.abort()
   })
   const p = await ctx.newPage()

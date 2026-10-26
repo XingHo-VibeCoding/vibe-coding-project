@@ -8,7 +8,10 @@
    - buildScheduleItems：纯函数——展开未来 7 天「每节课 / 每个独立日程」的课前提醒
      时间点（课程按 weekday + week_rule + 学期周次，日程按具体日期）。
      不碰插件、不碰 localStorage，node 单测友好。
-   - applySchedule：幂等重排——先 cancel 本应用排过的（extra.src 标记）再排新的。
+   - applySchedule：幂等重排——先 cancel 本应用排过的（extra.src 标记）再排新的；
+     同一个 src 的多次调用**串行**（见 serialize），避免 cancel/schedule 交错成半状态。
+   - pruneDelivered：把通知栏里**我们自己那几组**已发出的通知按组收干净（每组只留最新一条）。
+     「提醒一条条堆起来」有一半是它 —— 发出去的没人收，第二天又发一条。
    - notifyDone：转写/纪要完成通知（App 在前台 document.hidden=false 时不发，避免打扰）。
    - testNotify：设置区「发一条测试通知」（带「开始录音」按钮，5 秒后弹出，真机验收用）。
    - ensureNotifyEnv：建两个通知渠道（课前提醒=高优先级会响会弹横幅；完成通知=默认级）
@@ -31,6 +34,8 @@ const SCHEDULE_TAG = 'web2-m5' // 课前提醒排程的 extra.src 标记（重�
 export const LISTEN_TAG = 'web2-listen' // 练耳复习提醒自己的标记——**必须与课前提醒分开**：重排只清自己这一批
 export const LISTEN_CHANNEL = 'listen-reminder' // 练耳复习提醒的独立渠道
 const HORIZON_DAYS = 7 // 只排未来 7 天，App 启动/变动时重排即可覆盖
+/* 通知栏里每组最多留几条（pruneDelivered 用）。留 1 条 = 最新那条，其余收走。 */
+export const DELIVERED_KEEP = 1
 const MAX_SCHEDULE = 64 // 单次排程上限（7 天 × 每天最多 8 节 ≈ 56，64 是保险线）
 
 /* ---------- 设置（本机） ---------- */
@@ -253,13 +258,32 @@ function makeItem(kind, id, dKey, day, start, lead, leadLabel, name, place, end)
    - channelId / actionTypeId：渠道与按钮类型；`actionTypeId: null` = 通知不带按钮
      （练耳就是这种：点通知只回 App，**不自动播放**）。
    - enabled：开关。缺省沿用课前提醒的设置。 */
+/* 同一个 src 的排程串行跑。
+   为什么需要：applySchedule 是「先 cancel 自己那批 → 再 schedule 新的」两步，中间不是原子的。
+   watch 抖一下会连着调两次，两次交错时会出现「A 排完 → B 把它 cancel 了 → B 再排」这种半状态，
+   极端情况下一条都没排上 —— 那正好表现为「该响的时候没响」。串行之后，最后一次赢。 */
+const chains = new Map()
+function serialize(src, job) {
+  const prev = chains.get(src) || Promise.resolve()
+  const next = prev.then(job, job)
+  chains.set(src, next.then(() => {}, () => {}))
+  return next
+}
+
 export async function applySchedule(items, opts = {}) {
   const p = plugin()
   if (!p || typeof p.schedule !== 'function') return { ok: false, unsupported: true }
   const src = opts.src || SCHEDULE_TAG
+  return serialize(src, () => applyScheduleNow(p, items, opts, src))
+}
+
+async function applyScheduleNow(p, items, opts, src) {
   const channelId = opts.channelId || 'class-reminder'
   const actionTypeId = opts.actionTypeId === undefined ? 'class-reminder' : opts.actionTypeId
   const enabled = opts.enabled === undefined ? loadNotifySettings().enabled : !!opts.enabled
+  /* 分组：Android 会把同一个 group 的通知自动折成一条组（不用自己再造 summary）。
+     这是「提醒一条条堆起来」的正解 —— 之前每条都独立铺开，三节课就是三条并排。 */
+  const group = opts.group || 'web2-' + src
   // 先清掉自己排过的（不管开关状态——关掉开关 = 清空）
   try {
     const pending = await p.getPending()
@@ -278,6 +302,7 @@ export async function applySchedule(items, opts = {}) {
         body: it.body,
         schedule: { at: it.at, allowWhileIdle: true }, // 无精确闹钟权限时插件自动降级
         channelId,
+        group,
         extra: { src, key: it.key },
       }
       if (actionTypeId) n.actionTypeId = actionTypeId // 不带按钮时整个字段都不写
@@ -292,6 +317,44 @@ export async function applySchedule(items, opts = {}) {
   }
 }
 
+/* ---------- 通知栏清理（去重） ----------
+   「提醒一条条堆起来，不会更新」的另一半：已经发出去的通知躺在通知栏里没人收，
+   第二天又发一条，就一条条叠着。这里在 App 起来后把**我们自己那几组**收干净，
+   每组只留最新一条（DELIVERED_KEEP）。
+   刻意**不用** removeAllDeliveredNotifications —— 那是 cancelAll，会把录音中的常驻
+   状态框通知一起抹掉。只按 group 认自己的，别人的一条不碰。 */
+export async function pruneDelivered({ keep = DELIVERED_KEEP } = {}) {
+  const p = plugin()
+  if (!p || typeof p.getDeliveredNotifications !== 'function') return { ok: false, unsupported: true }
+  try {
+    const r = await p.getDeliveredNotifications()
+    const ours = ((r && r.notifications) || []).filter(
+      (n) => n && typeof n.group === 'string' && n.group.indexOf('web2-') === 0,
+    )
+    if (!ours.length) return { ok: true, removed: 0, kept: 0 }
+    const byGroup = new Map()
+    for (const n of ours) {
+      const arr = byGroup.get(n.group) || []
+      arr.push(n)
+      byGroup.set(n.group, arr)
+    }
+    const drop = []
+    for (const arr of byGroup.values()) {
+      /* 插件按通知栏顺序返回，新的一般在后面；留尾部 keep 条、丢前面的。
+         id 是 key 的哈希、跟时间无关，所以**不能**拿 id 大小当先后。 */
+      drop.push(...arr.slice(0, Math.max(0, arr.length - Math.max(1, keep))))
+    }
+    if (!drop.length) return { ok: true, removed: 0, kept: ours.length }
+    if (typeof p.removeDeliveredNotifications !== 'function') return { ok: false, unsupported: true }
+    await p.removeDeliveredNotifications({
+      notifications: drop.map((n) => ({ id: n.id, tag: n.tag || null })),
+    })
+    return { ok: true, removed: drop.length, kept: ours.length - drop.length }
+  } catch (e) {
+    return { ok: false, error: errMsg(e) }
+  }
+}
+
 /* ---------- 完成通知（转写/纪要） ---------- */
 
 /* App 在前台时不发（document.hidden=false）——用户正看着呢，就地提示已足够 */
@@ -301,7 +364,10 @@ export async function notifyDone(title, body) {
   if (typeof document !== 'undefined' && !document.hidden) return { ok: false, skipped: true }
   try {
     await p.schedule({
-      notifications: [{ id: Date.now() % 2000000000, title, body, channelId: 'task-done' }],
+      notifications: [
+        /* 完成通知也归一组：连着转写两段录音会弹两条，折起来只占一行。 */
+        { id: Date.now() % 2000000000, title, body, channelId: 'task-done', group: 'web2-done' },
+      ],
     })
     return { ok: true }
   } catch (e) {
@@ -324,6 +390,7 @@ export async function testNotify() {
           schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true },
           channelId: 'class-reminder',
           actionTypeId: 'class-reminder',
+          group: 'web2-test', // 测试通知单独一组，别混进课前提醒那条组里
           extra: { src: SCHEDULE_TAG, test: true },
         },
       ],
