@@ -46,10 +46,12 @@ await page.addInitScript(() => localStorage.setItem('web2.onboarded', '1'))
 await page.addInitScript(() => localStorage.setItem('web2.theme', 'light'))
 await page.goto(URL + '?t=11:00', { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(900)
-/* 「接下来」默认把已过压成一行；这里要先展开全部，才量得到那条已过的卡 */
-if (await page.locator('[data-today-expand]').count()) {
-  await page.click('[data-today-expand]')
-  await page.waitForTimeout(300)
+/* 「接下来」默认把已过压成一行；点开「已过 N 件」才量得到那条已过的卡。
+   2026-10-27（用户 m00452）：D↔F 双密度的「展开全部」那一行已删，改点折叠行；
+   折叠行只在今天有已过条目时存在，用 count 守卫。拉开的动画 280ms，等 450ms 再量。 */
+if (await page.locator('[data-today-past-fold]').count()) {
+  await page.click('[data-today-past-fold]')
+  await page.waitForTimeout(450)
 }
 
 const rows = await page.evaluate(() => {

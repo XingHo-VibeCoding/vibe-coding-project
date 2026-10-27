@@ -51,17 +51,45 @@ const {
   nextTodayId,
   rowMeta,
   todayPast,
-  todayExpanded,
   pastOpen,
-  pastSpan,
   livePreview,
-  hiddenCount,
   nextFuture,
   isRoutine,
   pal,
   courseStatus,
   openDetail,
 } = toRefs(app)
+
+/* 2026-10-27（用户 m00452「点展开做一个向下拉开的动画」）：已过明细的拉开 / 收回。
+   不用纯 CSS 的 max-height：展开几行是变的，写死高度要么拉一半就停、要么拉完留空。
+   JS 钩子里量真实 scrollHeight 赋给 height；先把 0 钉住再强制一次重排（void offsetHeight），
+   否则浏览器会把「0 → 真实高度」合成一帧，动画一帧都看不到。 */
+const FOLD_MS = 280
+const FOLD_EASE = 'cubic-bezier(.32,.72,.35,1)'
+function onFoldEnter(el) {
+  el.style.overflow = 'hidden'
+  el.style.height = '0px'
+  void el.offsetHeight
+  el.style.transition = `height ${FOLD_MS}ms ${FOLD_EASE}`
+  el.style.height = `${el.scrollHeight}px`
+}
+function onFoldAfterEnter(el) {
+  el.style.transition = ''
+  el.style.height = ''
+  el.style.overflow = ''
+}
+function onFoldLeave(el) {
+  el.style.overflow = 'hidden'
+  el.style.height = `${el.scrollHeight}px`
+  void el.offsetHeight
+  el.style.transition = `height ${FOLD_MS}ms ${FOLD_EASE}`
+  el.style.height = '0px'
+}
+function onFoldAfterLeave(el) {
+  el.style.transition = ''
+  el.style.height = ''
+  el.style.overflow = ''
+}
 </script>
 
 <template>
@@ -90,40 +118,32 @@ const {
           <!-- Stage 4：已过压成一行（点开就地展开成卡片，内容一条不丢）
                2026-10-09 W：明细行改卡片后，这一行保持 26px 文字行 —— 它是「控制」，不是「要做的事」 -->
           <button
-            v-if="!todayExpanded && todayPast.length"
+            v-if="todayPast.length"
             data-today-past-fold
             class="relative flex w-full items-center gap-2 py-[3px] text-left text-[11px] leading-[20px] text-ink-dim after:absolute after:inset-x-0 after:-inset-y-[9px] after:content-[''] active:opacity-70"
             :aria-expanded="pastOpen"
             @click="pastOpen = !pastOpen"
           >
-            <span class="w-10 flex-none text-right tabular-nums">已过</span>
-            <span class="min-w-0 flex-1 truncate">{{ todayPast.length }} 件 · {{ pastSpan }}</span>
-            <span class="flex-none">{{ pastOpen ? '收起 ▴' : '展开 ▾' }}</span>
+            <span class="min-w-0 flex-1 truncate">已过 {{ todayPast.length }} 件</span>
+            <span
+              class="flex-none transition-transform duration-200"
+              :class="pastOpen ? 'rotate-180' : ''"
+              data-today-past-caret
+            >▾</span>
           </button>
-          <!-- 动效约定 1a：D（折叠一行）↔ F（全天 26px 表）在同一位置交叉淡入 0.2s，
-               滚动位置不动。key 挂在 Transition 上：换密度时旧列表整体淡出、新列表淡入；
-               行高两种密度完全一样，所以淡入淡出期间容器高度不跳。 -->
-          <Transition name="density" mode="out-in">
-            <div v-if="todayExpanded" key="dense" class="space-y-1">
-              <RowItem
-                v-for="c in todayCourses"
-                :key="c.id"
-                data-today-item
-                :data-today-next="c.id === nextTodayId || undefined"
-                :data-item-type="c.type || 'course'"
-                :time="c.start"
-                :title="c.name"
-                :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
-                :meta="rowMeta(c)"
-                :state="courseStatus(c) === 'past' ? 'done' : courseStatus(c) === 'now' ? 'now' : 'plain'"
-                :tone="isRoutine(c) ? pal(c).text : ''"
-                :routine="isRoutine(c)"
-                clickable
-                @click="openDetail(c)"
-              />
-            </div>
-            <div v-else key="list" class="space-y-1">
-              <template v-if="pastOpen">
+          <div class="space-y-1">
+            <!-- 动效 1d（2026-10-27 用户 m00452「点展开做一个向下拉开的动画」）：已过明细向下拉开。
+                 高度 0 → 真实 scrollHeight，0.28s cubic-bezier(.32,.72,.35,1)（同周切换的手感）。
+                 用 JS 钩子量高度而不是 CSS 写死 max-height —— 展开几条是变的（今天可能 1 条也可能 5 条），
+                 写死会拉到一半就停，或者拉完留一段空白。 -->
+            <Transition
+              name="fold"
+              @enter="onFoldEnter"
+              @after-enter="onFoldAfterEnter"
+              @leave="onFoldLeave"
+              @after-leave="onFoldAfterLeave"
+            >
+              <div v-if="pastOpen" class="space-y-1" data-today-past-body>
                 <RowItem
                   v-for="c in todayPast"
                   :key="c.id"
@@ -140,31 +160,30 @@ const {
                   clickable
                   @click="openDetail(c)"
                 />
-              </template>
-              <RowItem
-                v-for="c in livePreview"
-                :key="c.id"
-                data-today-item
-                :data-today-next="c.id === nextTodayId || undefined"
-                :data-item-type="c.type || 'course'"
-                :time="c.start"
-                :title="c.name"
-                :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
-                :meta="rowMeta(c)"
-                :state="courseStatus(c) === 'now' ? 'now' : 'plain'"
-                :tone="isRoutine(c) ? pal(c).text : ''"
-                :routine="isRoutine(c)"
-                clickable
-                @click="openDetail(c)"
-              />
-            </div>
-          </Transition>
+              </div>
+            </Transition>
+            <RowItem
+              v-for="c in livePreview"
+              :key="c.id"
+              data-today-item
+              :data-today-next="c.id === nextTodayId || undefined"
+              :data-item-type="c.type || 'course'"
+              :time="c.start"
+              :title="c.name"
+              :sub="[c.place, c.tag].filter(Boolean).join(' · ')"
+              :meta="rowMeta(c)"
+              :state="courseStatus(c) === 'now' ? 'now' : 'plain'"
+              :tone="isRoutine(c) ? pal(c).text : ''"
+              :routine="isRoutine(c)"
+              clickable
+              @click="openDetail(c)"
+            />
+          </div>
           <!-- 今天全过完了：接上「下一件要办的事」（2026-10-23 用户 m02477）。
                今天还有没过的就不显示这一段 —— 那时候「接下来」本来就是今天那几条。 -->
           <template v-if="!livePreview.length && nextFuture">
             <div data-today-nextday class="flex items-center gap-2 py-[3px] text-[11px] leading-[20px] text-ink-dim">
-              <span class="w-10 flex-none text-right">之后</span>
-              <span class="min-w-0 flex-1 truncate">{{ nextFuture.label }}</span>
+              <span class="min-w-0 flex-1 truncate">之后 {{ nextFuture.short }}</span>
             </div>
             <RowItem
               data-today-item
@@ -181,29 +200,10 @@ const {
               @click="openDetail(nextFuture.item)"
             />
           </template>
-          <!-- 展开全部 = 就地换密度（D → F），不换页、行高不变；收起后回到「已过一行 + 接下来 3 行」
-               —— 密度切换的交叉淡入见上面 <Transition name="density">（动效约定 1a） -->
-          <button
-            v-if="hiddenCount > 0 || todayExpanded"
-            data-today-expand
-            class="relative flex w-full items-center gap-2 py-[3px] text-left text-[11px] leading-[20px] text-ink-dim after:absolute after:inset-x-0 after:-inset-y-[9px] after:content-[''] active:opacity-70"
-            :aria-expanded="todayExpanded"
-            @click="
-              todayExpanded = !todayExpanded;
-              if (todayExpanded) pastOpen = false
-            "
-          >
-            <span class="w-10 flex-none text-right tabular-nums">{{ todayExpanded ? '收起' : '全部' }}</span>
-            <span class="min-w-0 flex-1 truncate">
-              {{ todayExpanded ? '只看接下来' : `共 ${todayCourses.length} 件 · 展开全部` }}
-            </span>
-            <span class="flex-none text-ink-dim">{{ todayExpanded ? '▴' : '▾' }}</span>
-          </button>
         </div>
         <div v-else-if="nextFuture" class="space-y-1">
           <div data-today-nextday class="flex items-center gap-2 py-[3px] text-[11px] leading-[20px] text-ink-dim">
-            <span class="w-10 flex-none text-right">之后</span>
-            <span class="min-w-0 flex-1 truncate">{{ nextFuture.label }}</span>
+            <span class="min-w-0 flex-1 truncate">之后 {{ nextFuture.short }}</span>
           </div>
           <RowItem
             data-today-item
@@ -224,7 +224,7 @@ const {
           今天没有课程安排
         </p>
         <button
-          class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-2.5 text-xs font-medium text-ink-dim transition active:bg-soft"
+          class="mt-2 flex w-full items-center justify-center rounded-2xl border border-dashed border-line bg-card/60 py-3 text-sm font-medium text-ink-dim transition active:bg-soft"
           @click="openEventAdd"
         >
           ＋ 添加日程

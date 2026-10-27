@@ -4237,27 +4237,17 @@ function rowMeta(c) {
   return ''
 }
 
-/* ---------------- Stage 4：D↔F 两种密度 ----------------
-   D（默认）：已过压成一行「已过 N 件 · 首–末」+ 接下来最多 3 行，其余进「展开全部」；
-   点「展开全部」就地换 F：26px 全天表，一行一条，已过就是整行灰字（信息一条不丢，只换密度）。
-   · 行高两种密度完全一样（都是 RowItem 的 26px），切换时列表不跳高度；
-   · 「已过 N 件」点开是就地展开（不换页、不动别处），再点收起；
+/* ---------------- 「接下来」的折叠口径（2026-10-27 用户 m00452 定稿） ----------------
+   旧的 D↔F 双密度取消了：用户要「把『全部』那一行删掉」，折叠态就是「已过一行 + 接下来最多 3 条」。
+   第 4 条以后不再给入口（要看就等前面几条过去），所以 todayExpanded / hiddenCount / rowsShown /
+   pastSpan 这几个只为旧形态服务的计算一并删掉 —— 留着就是够不着的开关，读代码的人会以为还能用。
+   · 「已过 N 件」点开是就地展开（2026-10-27 加了向下拉开的动画，见 TodayPage 的 onFoldEnter）；
    · 顶上「现在」卡与页脚计数不参与折叠——首屏第一眼永远是「现在做什么」。 */
 const LIVE_PREVIEW = 3
 const todayPast = computed(() => todayCourses.value.filter((c) => courseStatus(c) === 'past'))
 const todayLive = computed(() => todayCourses.value.filter((c) => courseStatus(c) !== 'past'))
-const todayExpanded = ref(false) // false = D 形态；true = F 全天表
 const pastOpen = ref(false) // 「已过 N 件」就地展开
-const pastSpan = computed(() => {
-  const list = todayPast.value
-  if (!list.length) return ''
-  return `${list[0].start}–${fmtTime(minOf(list[list.length - 1].end))}`
-})
-const livePreview = computed(() => (todayExpanded.value ? todayLive.value : todayLive.value.slice(0, LIVE_PREVIEW)))
-const hiddenCount = computed(
-  () => (todayExpanded.value ? 0 : todayPast.value.length + Math.max(0, todayLive.value.length - LIVE_PREVIEW)),
-)
-const rowsShown = computed(() => (todayExpanded.value || pastOpen.value ? todayPast.value.length : 0) + livePreview.value.length)
+const livePreview = computed(() => todayLive.value.slice(0, LIVE_PREVIEW))
 
 /* ---------------- 接下来 = 下一件要办的事（2026-10-23 用户 m02477） ----------------
    旧口径：「接下来」只从 `todayCourses` 里筛，而 `todayCourses` 本身只装今天的东西 ——
@@ -4297,6 +4287,17 @@ function upcomingDayLabel(key) {
   if (diff === 2) return '后天 · ' + base
   return base
 }
+/* 「之后」那一行的短文案（2026-10-27 用户 m00452：那行字多、排版乱）。
+   长度定死成「明天 10/28」这种，一行放得下、不折行；不写星期是空间不够时最该省的，
+   日期本身足够认出是哪天。upcomingDayLabel 不动 —— 别的页面还在用长文案。 */
+function upcomingDayShort(key) {
+  const d = new Date(key + 'T00:00:00')
+  const md = d.getMonth() + 1 + '/' + d.getDate()
+  const diff = Math.round((d - new Date(todayStr.value + 'T00:00:00')) / 86400000)
+  if (diff === 1) return '明天 ' + md
+  if (diff === 2) return '后天 ' + md
+  return md
+}
 /* 今天还有没过的就不跨天（用户要的是「今天空了以后还能看到下一件」，不是把明天塞进今天）。
    最多往后找 45 天：再远就不是「接下来」，而是学期计划了，找也白找。 */
 const nextFuture = computed(() => {
@@ -4304,7 +4305,7 @@ const nextFuture = computed(() => {
   for (let i = 1; i <= UPCOMING_SCAN_DAYS; i++) {
     const key = addDaysKey(todayStr.value, i)
     const list = itemsOfDateKey(key)
-    if (list.length) return { date: key, label: upcomingDayLabel(key), item: list[0], count: list.length }
+    if (list.length) return { date: key, label: upcomingDayLabel(key), short: upcomingDayShort(key), item: list[0], count: list.length }
   }
   return null
 })
@@ -5325,23 +5326,23 @@ provide(APP_CTX, reactive({
   todayVersion, todayKeyCache, today, todayIdx, todayStr, syncToday, todayEffWd, todayMark,
   todayCourses, todayRoutineCount, termInfo, conflictPool, tParam, nowTime, GREET_CUTE, greetingText,
   state, currentCourse, headerCourseText, nextTodayId, minUntil, rowMeta, LIVE_PREVIEW, todayPast,
-  todayLive, todayExpanded, pastOpen, pastSpan, livePreview, hiddenCount, rowsShown, UPCOMING_SCAN_DAYS,
-  itemsOfDateKey, upcomingDayLabel, nextFuture, REVIEW_FROM, heroCourse, allTodayCoursesDone, heroMode, heroSubline,
-  heroTitle, recEntryOn, heroSub, dateText, weekDay, DAY_START, DAY_END, weekOffset,
-  weekNo, monday, weekDays, weekSubTerm, weekVisible, weekDayMarks, weekCols, gridRows,
-  gridRowOfIdx, gridCourses, WEEK_CHROME, winH, navH, satPx, gridTop, gridH,
-  measureNavH, measureSat, measureGridTop, onWinResize, gridColsStyle, gridBodyStyle, cardFit, PALETTES,
-  hashName, hexA, ROUTINE_PAL, isRoutine, pal, periods, periodSpan, courseStatus,
-  gridStatus, nowPct, nowClock, nowLineY, undoneCount, undoneTodos, doneTodos, scheduleItemsOfDay,
-  slotDurationOf, planHorizonDays, todoPlan, planText, examList, examSettings, examErr, examMsg,
-  examForm, examConfirmDel, examPlan, examText, examSoon, examMeLine, saveExamList, autoSyncExamsOnBoot,
-  reviewAdviceLine, reviewAdviceBusy, reviewAdviceDay, maybeReviewAdvice, openExamAdd, openExamAddFrom, openExamEdit, submitExam,
-  onDeleteExam, setExamMsg, toggleExamNotify, setExamAt, applyExamSchedule, detail, openDetail, WDN,
-  addForm, addErr, addWarn, addConfirmed, DURATIONS, DUR_MIN, DUR_MAX, durText,
-  spanText, pickDuration, fmtTime, clampStart, openAdd, openAddRoutine, addPick, pickKind,
-  editCourseFromDetail, editRoutineFromDetail, stepStart, submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse,
-  removeRoutineFromDetail, onDelRoutine, lpTimer, lpFrom, cellAt, firePick, gridDown, gridMove,
-  gridUp, gridDbl, anySheetOpen, syncBodyScrollLock,
+  todayLive, pastOpen, livePreview, UPCOMING_SCAN_DAYS, itemsOfDateKey, upcomingDayLabel, upcomingDayShort, nextFuture,
+  REVIEW_FROM, heroCourse, allTodayCoursesDone, heroMode, heroSubline, heroTitle, recEntryOn, heroSub,
+  dateText, weekDay, DAY_START, DAY_END, weekOffset, weekNo, monday, weekDays,
+  weekSubTerm, weekVisible, weekDayMarks, weekCols, gridRows, gridRowOfIdx, gridCourses, WEEK_CHROME,
+  winH, navH, satPx, gridTop, gridH, measureNavH, measureSat, measureGridTop,
+  onWinResize, gridColsStyle, gridBodyStyle, cardFit, PALETTES, hashName, hexA, ROUTINE_PAL,
+  isRoutine, pal, periods, periodSpan, courseStatus, gridStatus, nowPct, nowClock,
+  nowLineY, undoneCount, undoneTodos, doneTodos, scheduleItemsOfDay, slotDurationOf, planHorizonDays, todoPlan,
+  planText, examList, examSettings, examErr, examMsg, examForm, examConfirmDel, examPlan,
+  examText, examSoon, examMeLine, saveExamList, autoSyncExamsOnBoot, reviewAdviceLine, reviewAdviceBusy, reviewAdviceDay,
+  maybeReviewAdvice, openExamAdd, openExamAddFrom, openExamEdit, submitExam, onDeleteExam, setExamMsg, toggleExamNotify,
+  setExamAt, applyExamSchedule, detail, openDetail, WDN, addForm, addErr, addWarn,
+  addConfirmed, DURATIONS, DUR_MIN, DUR_MAX, durText, spanText, pickDuration, fmtTime,
+  clampStart, openAdd, openAddRoutine, addPick, pickKind, editCourseFromDetail, editRoutineFromDetail, stepStart,
+  submitAdd, removeCourseFromDetail, confirmDel, confirmDelTimer, onDelCourse, removeRoutineFromDetail, onDelRoutine, lpTimer,
+  lpFrom, cellAt, firePick, gridDown, gridMove, gridUp, gridDbl, anySheetOpen,
+  syncBodyScrollLock,
 }))
 /* ===== APP_CTX:end ===== */
 </script>

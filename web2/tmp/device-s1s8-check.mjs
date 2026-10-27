@@ -257,6 +257,7 @@ console.log('\n=== S2「接下来」区上下滑一屏 ===')
       n: items.length, heights: hs,
       fold: foldBtn ? foldBtn.innerText.trim() : null,
       expand: expandBtn ? expandBtn.innerText.trim() : null,
+      caret: !!document.querySelector('[data-today-past-caret]'),
       hasNow: !!nowCard,
       strip: document.querySelector('[data-today-strip]')?.innerText.replace(/\n/g, ' | ') || null,
     }
@@ -285,19 +286,11 @@ console.log('\n=== S2「接下来」区上下滑一屏 ===')
   } else {
     skipped('S2c', '点「已过 N 件」就地展开', '今天没有「已过」的行（该按钮不出现）')
   }
-  // 展开全部 = 换密度，必须把首屏没显示的那几条也放出来（严格判定：条数要变多）
-  if (info.expand) {
-    await page.locator('[data-today-expand]').first().click().catch(() => {})
-    await page.waitForTimeout(600)
-    const after = await page.evaluate(() => ({
-      n: document.querySelectorAll('[data-today-item]').length,
-      txt: document.querySelector('[data-today-expand]')?.innerText.trim() || null,
-    }))
-    ok('S2d', '「展开全部」可切换且放出被折叠的条目', after.txt !== null && after.txt !== info.expand && after.n > info.n,
-      `「${info.expand}」→「${after.txt}」，条目 ${info.n} → ${after.n}`)
-    await page.locator('[data-today-expand]').first().click().catch(() => {})
-    await page.waitForTimeout(400)
-  } else skipped('S2d', '「展开全部」可切换', '今天条目没多到出现这个按钮')
+  // 2026-10-27（用户 m00452）：「全部」那一行整个删了，折叠态固定「已过一行 + 接下来最多 3 条」。
+  // 所以这里不再点 data-today-expand（它已不存在），改成核对新口径真的落地了。
+  ok('S2d', '「全部」那一行已删，已过行只剩件数 + 一枚箭头',
+    info.expand === null && info.caret === true,
+    `expand=${info.expand} caret=${info.caret}`)
   await shoot('s2-today')
 }
 

@@ -58,10 +58,16 @@ console.log('已过展开', JSON.stringify(await rows()))
 
 await page.click('[data-today-past-fold]')
 await page.waitForTimeout(250)
-await page.click('[data-today-expand]')
-await page.waitForTimeout(350)
-await page.screenshot({ path: 'tmp/stage4-f-all.png' })
-console.log('F 全天表', JSON.stringify(await rows()))
+/* 2026-10-27（用户 m00452）：「展开全部」那一行已删，F 全天表随之不存在。
+   留 count 守卫：万一这套密度以后回来，脚本自己就跟上了，不用再改。 */
+if (await page.locator('[data-today-expand]').count()) {
+  await page.click('[data-today-expand]')
+  await page.waitForTimeout(350)
+  await page.screenshot({ path: 'tmp/stage4-f-all.png' })
+  console.log('F 全天表', JSON.stringify(await rows()))
+} else {
+  console.log('skip stage4-f-all.png（「展开全部」已删，页面只剩折叠态）')
+}
 
 await browser.close()
 console.log('已写出 tmp/stage4-{d-default,past-open,f-all}.png')

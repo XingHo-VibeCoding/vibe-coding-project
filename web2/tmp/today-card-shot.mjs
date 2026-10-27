@@ -60,17 +60,15 @@ async function shoot(page, name) {
 let s = await open('14:30', 'light')
 await shoot(s.page, 'today-card-1-now')
 
-/* 2. 展开全部（全天 5 张卡） */
-await s.page.click('[data-today-expand]')
-await s.page.waitForTimeout(400)
-await shoot(s.page, 'today-card-2-day')
-
-/* 3. 已过明细展开（切回 D 再点「已过」） */
-await s.page.click('[data-today-expand]')
-await s.page.waitForTimeout(350)
-await s.page.click('[data-today-past-fold]')
-await s.page.waitForTimeout(350)
-await shoot(s.page, 'today-card-3-past')
+/* 2. 已过明细展开（2026-10-27 起「展开全部」那一行已删，只剩「已过 N 件」可点；
+      今天没有已过条目时这个按钮不出现，用 count 守卫，别硬点一个不存在的按钮把脚本搞崩） */
+if (await s.page.locator('[data-today-past-fold]').count()) {
+  await s.page.click('[data-today-past-fold]')
+  await s.page.waitForTimeout(400)
+  await shoot(s.page, 'today-card-2-past')
+} else {
+  console.log('skip today-card-2-past（今天没有已过条目）')
+}
 await s.ctx.close()
 
 /* 4. 晚上：没课，只有循环日程 */

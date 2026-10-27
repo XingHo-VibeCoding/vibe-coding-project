@@ -185,7 +185,7 @@ if (!hasToday) {
     (await p3.locator('[data-header-status]').innerText()).includes('今日安排已结束'))
   /* C3：课程都上完后今天页没有「接下来」的行可渲染，列表自然是空的 ——
      这不变量该看的是「今天有过课」这件事仍然成立（顶卡「今天 N 节课」还在），
-     而不是「列表里还剩几行」（那是 D/F 密度的职责，见 today-expand-check）。 */
+     而不是「列表里还剩几行」（那是 D/F 密度的职责，见 today-fold-check）。 */
   const stripTxt = (await p3.locator('[data-today-strip]').innerText()).replace(/\s+/g, ' ')
   t('C3. 「今天 N 节课」的计数仍在（不因为都上完了就把今天的课抹掉）',
     /今天 \d+ 节课/.test(stripTxt), stripTxt)
