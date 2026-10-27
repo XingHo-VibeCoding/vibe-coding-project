@@ -4520,7 +4520,7 @@ function onWinResize() {
    收窄一点把宽度让给工作日（这是"恒定 7 列"唯一能让课名还读得清的办法）。
    权重写在 computed 里而不是提一个顶层常量：它是纯样式细节，不该进 APP_CTX。 */
 const gridColsStyle = computed(() => {
-  const fr = [1, 1, 1, 1, 1, 0.66, 0.66]
+  const fr = [1, 1, 1, 1, 1, 0.88, 0.88]
   return {
     gridTemplateColumns:
       `${GRID_AXIS_W}px ` +

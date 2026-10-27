@@ -492,7 +492,7 @@ web2 (App.vue watch / visibilitychange)
 
 **改法**：`web2/src/App.vue` 的 `weekCols` 整段换成 `computed(() => weekDays.value)`（**恒定七列**），删掉全部「按内容补列 / 按今天补列」逻辑。列出现了问题就变成「周日那列太窄」。
 
-- `gridColsStyle` 由 `repeat(N, minmax(0, 1fr))` 改为**按列权重**拼：`const fr = [1,1,1,1,1,0.66,0.66]`，`gridTemplateColumns: `${GRID_AXIS_W}px ` + weekCols.map(d => `minmax(0, ${fr[d.wd-1]}fr)`).join(' ')`。380–430 宽的手机上工作日列 ~49px、周末列 ~32px（权重 0.88 → 47.3/36.9 仍偏挤，0.78 → 45.8，最终定 0.66）。
+- `gridColsStyle` 由 `repeat(N, minmax(0, 1fr))` 改为**按列权重**拼：`const fr = [1,1,1,1,1,0.88,0.88]`，`gridTemplateColumns: `${GRID_AXIS_W}px ` + weekCols.map(d => `minmax(0, ${fr[d.wd-1]}fr)`).join(' ')`。380–430 宽的手机上工作日列 ~41.6px、周末列 ~36.6px（**2026-10-27 定稿 0.88**：曾有 0.88 → 0.66 那次收窄，实机看周末列 29.4px 太窄被用户 m00326 退回，取 0.88 让周末/工作日 = 88%）。
 - **权重数组必须写在 computed 内部**：提到模块顶层会多出一个绑定进入 `APP_CTX`（实测 930 → 931，`gen-app-ctx --check` 直接报「已过期」）。这不是风格问题，是这个项目里**任何新增顶层 const 都会改变对外暴露的上下文**。
 - 消费点没改：`web2/src/pages/WeekPage.vue` 的 `v-for="d in weekCols"` 两处照旧，只是永远拿到 7 项。
 
